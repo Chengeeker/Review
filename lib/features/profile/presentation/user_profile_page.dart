@@ -67,19 +67,25 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
     _tabController.addListener(_handleTabChange);
 
     final effectiveUid = widget.user?.id.isNotEmpty == true ? widget.user!.id : (widget.uid ?? '');
+    final effectiveScreenName = widget.user?.screenName.isNotEmpty == true ? widget.user!.screenName : (widget.screenName ?? '');
+    final cleanScreenName = effectiveScreenName.startsWith('@') ? effectiveScreenName.substring(1).trim() : effectiveScreenName.trim();
+
     if (effectiveUid.isNotEmpty && _profileUserCache.containsKey(effectiveUid)) {
       _user = _profileUserCache[effectiveUid]!;
+    } else if (cleanScreenName.isNotEmpty && _profileUserCache.containsKey(cleanScreenName)) {
+      _user = _profileUserCache[cleanScreenName]!;
     } else {
       _user = widget.user ??
           WeiboUserModel(
             id: widget.uid ?? '',
-            screenName: widget.screenName ?? '微博用户',
+            screenName: cleanScreenName.isNotEmpty ? cleanScreenName : '微博用户',
             avatar: '',
           );
     }
 
-    if (effectiveUid.isNotEmpty && _profileTimelineCache.containsKey(effectiveUid)) {
-      _statuses.addAll(_profileTimelineCache[effectiveUid]!);
+    final targetUid = _user.id.isNotEmpty ? _user.id : effectiveUid;
+    if (targetUid.isNotEmpty && _profileTimelineCache.containsKey(targetUid)) {
+      _statuses.addAll(_profileTimelineCache[targetUid]!);
       _isLoading = false;
     }
 
@@ -188,33 +194,69 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
     final client = ref.read(weiboDioClientProvider);
 
     var effectiveUid = _user.id.isNotEmpty ? _user.id : widget.uid;
+    bool profileFetched = false;
 
-    // 1. If UID is empty, resolve UID from search suggest API
-    if ((effectiveUid == null || effectiveUid.isEmpty) && _user.screenName.isNotEmpty) {
+    final cleanScreenName = (_user.screenName.startsWith('@')
+            ? _user.screenName.substring(1)
+            : _user.screenName)
+        .trim();
+
+    // 1. If UID is empty, directly query profile info via screen_name (Weibo native web mechanism)
+    if ((effectiveUid == null || effectiveUid.isEmpty) && cleanScreenName.isNotEmpty) {
       try {
-        final searchSuggestRes = await client.dio.get(
-          ApiConstants.searchSuggest,
-          queryParameters: {'q': _user.screenName},
+        final profileRes = await client.dio.get(
+          '/ajax/profile/info',
+          queryParameters: {'screen_name': cleanScreenName},
+          options: Options(headers: {'Referer': 'https://weibo.com/'}),
         );
-        if (searchSuggestRes.data is Map<String, dynamic> && searchSuggestRes.data['data'] != null) {
-          final users = searchSuggestRes.data['data']['user'] as List? ?? [];
-          if (users.isNotEmpty && users[0] is Map<String, dynamic>) {
-            final resolvedUid = users[0]['uid']?.toString() ?? users[0]['id']?.toString();
-            if (resolvedUid != null && resolvedUid.isNotEmpty) {
-              effectiveUid = resolvedUid;
-              _user = WeiboUserModel(
-                id: resolvedUid,
-                screenName: users[0]['nick']?.toString() ?? _user.screenName,
-                avatar: '',
-              );
+        if (profileRes.data is Map<String, dynamic> &&
+            profileRes.data['ok'] == 1 &&
+            profileRes.data['data'] != null) {
+          final uJson = profileRes.data['data']['user'];
+          if (uJson is Map<String, dynamic>) {
+            final parsedUser = WeiboUserModel.fromJson(uJson);
+            if (parsedUser.id.isNotEmpty) {
+              effectiveUid = parsedUser.id;
+              _user = parsedUser;
+              _profileUserCache[effectiveUid] = parsedUser;
+              _profileUserCache[parsedUser.screenName] = parsedUser;
+              _profileUserCache[cleanScreenName] = parsedUser;
+              profileFetched = true;
+              if (mounted) {
+                setState(() {});
+              }
             }
           }
         }
       } catch (_) {}
+
+      // Fallback: If direct screen_name lookup didn't succeed, try search suggest API
+      if (effectiveUid == null || effectiveUid.isEmpty) {
+        try {
+          final searchSuggestRes = await client.dio.get(
+            ApiConstants.searchSuggest,
+            queryParameters: {'q': cleanScreenName},
+          );
+          if (searchSuggestRes.data is Map<String, dynamic> && searchSuggestRes.data['data'] != null) {
+            final users = searchSuggestRes.data['data']['user'] as List? ?? [];
+            if (users.isNotEmpty && users[0] is Map<String, dynamic>) {
+              final resolvedUid = users[0]['uid']?.toString() ?? users[0]['id']?.toString();
+              if (resolvedUid != null && resolvedUid.isNotEmpty) {
+                effectiveUid = resolvedUid;
+                _user = WeiboUserModel(
+                  id: resolvedUid,
+                  screenName: users[0]['nick']?.toString() ?? _user.screenName,
+                  avatar: '',
+                );
+              }
+            }
+          }
+        } catch (_) {}
+      }
     }
 
-    // 2. Fetch full profile info with resolved UID
-    if (effectiveUid != null && effectiveUid.isNotEmpty) {
+    // 2. Fetch full profile info with resolved UID (if not already fetched via screen_name)
+    if (!profileFetched && effectiveUid != null && effectiveUid.isNotEmpty) {
       try {
         final profileRes = await client.dio.get(
           '/ajax/profile/info',
@@ -226,10 +268,11 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
           if (uJson is Map<String, dynamic>) {
             final parsedUser = WeiboUserModel.fromJson(uJson);
             _profileUserCache[effectiveUid] = parsedUser;
+            _profileUserCache[parsedUser.screenName] = parsedUser;
+            _user = parsedUser;
+            profileFetched = true;
             if (mounted) {
-              setState(() {
-                _user = parsedUser;
-              });
+              setState(() {});
             }
           }
         }
@@ -855,7 +898,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
         ],
       ),
       body: EasyRefresh(
-        onRefresh: () => _loadTimeline(page: 1, isRefresh: true),
+        onRefresh: () async {
+          if (_user.id.isEmpty) {
+            await _fetchUserProfileAndTimeline();
+          } else {
+            await _loadTimeline(page: 1, isRefresh: true);
+          }
+        },
         onLoad: () async {
           final hasMore = await _loadTimeline(page: _page + 1);
           if ((_tabController.index == 2 || _tabController.index == 1) && hasMore) {

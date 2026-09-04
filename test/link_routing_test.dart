@@ -16,6 +16,8 @@ void main() {
       expect(LinkRoutingService.canHandleNatively('https://m.weibo.cn/u/1234567890'), isTrue);
       expect(LinkRoutingService.canHandleNatively('https://weibo.com/u/1234567890'), isTrue);
       expect(LinkRoutingService.canHandleNatively('https://m.weibo.cn/profile/1234567890'), isTrue);
+      expect(LinkRoutingService.canHandleNatively('https://weibo.com/n/%E6%88%90%E9%83%BDAG%E6%95%91%E8%B5%8E_'), isTrue);
+      expect(LinkRoutingService.canHandleNatively('https://m.weibo.cn/n/成都AG救赎_'), isTrue);
     });
 
     test('Can correctly identify chaohua URLs', () {

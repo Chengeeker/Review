@@ -246,6 +246,29 @@ class SearchRepository {
               .where((u) => u.id.isNotEmpty && u.screenName != '匿名用户')
               .toList();
 
+          // If no user was matched in search suggest, attempt exact screen_name lookup
+          if (users.isEmpty && clean.isNotEmpty) {
+            final cleanScreenName = clean.startsWith('@') ? clean.substring(1).trim() : clean;
+            if (cleanScreenName.isNotEmpty) {
+              try {
+                final directRes = await _client.dio.get(
+                  '/ajax/profile/info',
+                  queryParameters: {'screen_name': cleanScreenName},
+                  options: Options(headers: {'Referer': 'https://weibo.com/'}),
+                );
+                if (directRes.data is Map<String, dynamic> && directRes.data['ok'] == 1) {
+                  final uJson = directRes.data['data']?['user'];
+                  if (uJson is Map<String, dynamic>) {
+                    final directUser = WeiboUserModel.fromJson(uJson);
+                    if (directUser.id.isNotEmpty) {
+                      users.add(directUser);
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
+          }
+
           final rawSuggestions = data['query_relates'] as List? ??
               data['hotquery'] as List? ??
               [];

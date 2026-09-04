@@ -27,6 +27,7 @@ class LinkRoutingService {
     if (RegExp(r'https?://(?:m\.)?weibo\.cn/u/([0-9]+)', caseSensitive: false).hasMatch(clean)) return true;
     if (RegExp(r'https?://(?:www\.)?weibo\.com/u/([0-9]+)', caseSensitive: false).hasMatch(clean)) return true;
     if (RegExp(r'https?://(?:m\.)?weibo\.cn/profile/([0-9]+)', caseSensitive: false).hasMatch(clean)) return true;
+    if (RegExp(r'https?://(?:m\.|www\.)?weibo\.(?:cn|com)/n/([^/?#]+)', caseSensitive: false).hasMatch(clean)) return true;
 
     // 3. 超话匹配
     if (RegExp(r'https?://(?:m\.)?weibo\.cn/p/(100808[0-9a-zA-Z_]+)', caseSensitive: false).hasMatch(clean)) return true;
@@ -84,6 +85,14 @@ class LinkRoutingService {
     if (match != null) {
       final uid = match.group(1)!;
       _navigate(context, UserProfilePage(uid: uid), replace: replaceCurrent);
+      return;
+    }
+
+    // weibo.com/n/{screenName} 或 m.weibo.cn/n/{screenName}
+    match = RegExp(r'https?://(?:m\.|www\.)?weibo\.(?:cn|com)/n/([^/?#]+)', caseSensitive: false).firstMatch(clean);
+    if (match != null) {
+      final screenName = Uri.decodeComponent(match.group(1)!);
+      _navigate(context, UserProfilePage(screenName: screenName), replace: replaceCurrent);
       return;
     }
 

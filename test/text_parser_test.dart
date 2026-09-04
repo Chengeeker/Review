@@ -88,4 +88,30 @@ void main() {
       ),
     );
   });
+
+  testWidgets('WeiboTextParser parses complex @user mentions correctly', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            const rawText = '本局MVP给到了@成都AG救赎_ ，队友有@成都AG丶轩染 和@AG长生-';
+            final parsedUsers = <String>[];
+            final spans = WeiboTextParser.parse(
+              rawText: rawText,
+              context: context,
+              onUserTap: (u) => parsedUsers.add(u),
+            );
+
+            expect(spans.isNotEmpty, isTrue);
+            final combinedText = spans.map((s) => s.toPlainText()).join();
+            expect(combinedText.contains('@成都AG救赎_'), isTrue);
+            expect(combinedText.contains('@成都AG丶轩染'), isTrue);
+            expect(combinedText.contains('@AG长生-'), isTrue);
+
+            return Text.rich(TextSpan(children: spans));
+          },
+        ),
+      ),
+    );
+  });
 }
