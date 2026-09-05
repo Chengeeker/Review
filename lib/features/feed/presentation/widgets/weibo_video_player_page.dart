@@ -227,14 +227,15 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
 
   void _toggleOrientation() {
     HapticFeedbackUtil.light();
+    final nextLandscape = !_isLandscape;
     setState(() {
-      _isLandscape = !_isLandscape;
+      _isLandscape = nextLandscape;
     });
 
-    if (_isLandscape) {
+    if (nextLandscape) {
       SystemChrome.setPreferredOrientations([
-        DeviceOrientation.landscapeLeft,
         DeviceOrientation.landscapeRight,
+        DeviceOrientation.landscapeLeft,
       ]);
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     } else {
@@ -601,167 +602,174 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
             final screenWidth = constraints.maxWidth;
             final screenHeight = constraints.maxHeight;
 
-            return GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapDown: (details) {
-                _lastTapDownPosition = details.localPosition;
-              },
-              onTap: () {
-                setState(() {
-                  _showControls = !_showControls;
-                });
-                _resetControlsTimer();
-              },
-              onDoubleTap: () {
-                final x = _lastTapDownPosition.dx;
-                // 1(c) 双击中间：播放/暂停
-                // 1(b) 双击左右两侧：快退或快进 10 秒
-                if (x < screenWidth * 0.35) {
-                  _seekRelative(-10);
-                } else if (x > screenWidth * 0.65) {
-                  _seekRelative(10);
-                } else {
-                  _togglePlayPause();
-                }
-              },
-              onLongPressStart: (details) {
-                final x = details.localPosition.dx;
-                // 1(a) 长按左侧或右侧：倍速
-                if (x < screenWidth * 0.45 || x > screenWidth * 0.55) {
-                  _onLongPressStart();
-                }
-              },
-              onLongPressEnd: (_) => _onLongPressEnd(),
-              onLongPressCancel: _onLongPressEnd,
-              onPanStart: (details) {
-                _panStartPos = details.localPosition;
-                _dragMode = _DragMode.none;
-                _startBrightness = _currentBrightness;
-                _startVolume = _currentVolume;
-                _startPosition = _controller?.value.position ?? Duration.zero;
-                _targetSeekPosition = _startPosition;
-              },
-              onPanUpdate: (details) {
-                final dx = details.localPosition.dx - _panStartPos.dx;
-                final dy = details.localPosition.dy - _panStartPos.dy;
-
-                if (_dragMode == _DragMode.none) {
-                  if (dx.abs() > 14 && dx.abs() > dy.abs()) {
-                    // 水平滑动判断：
-                    // 横屏状态：任意区域左右滑动调整进度 (2.c)
-                    // 竖屏状态：底部左右滑动调整进度 (3.c)
-                    if (_isLandscape || _panStartPos.dy > screenHeight * 0.55) {
-                      _dragMode = _DragMode.seek;
-                    }
-                  } else if (dy.abs() > 14 && dy.abs() > dx.abs()) {
-                    // 垂直滑动判断（以中间为界）：
-                    // 左侧上下滑动：调亮度 (2.a, 3.a)
-                    // 右侧上下滑动：调音量 (2.b, 3.b)
-                    if (_panStartPos.dx < screenWidth / 2) {
-                      _dragMode = _DragMode.brightness;
-                    } else {
-                      _dragMode = _DragMode.volume;
-                    }
-                  }
-                }
-
-                if (_dragMode == _DragMode.brightness) {
-                  final delta = -dy / (screenHeight * 0.65);
-                  final nextVal = (_startBrightness + delta).clamp(0.01, 1.0);
-                  _setBrightness(nextVal);
-                  _showHud(type: _HudType.brightness, value: nextVal, autoDismissMs: 0);
-                } else if (_dragMode == _DragMode.volume) {
-                  final delta = -dy / (screenHeight * 0.65);
-                  final nextVal = (_startVolume + delta).clamp(0.0, 1.0);
-                  _setVolume(nextVal);
-                  _showHud(type: _HudType.volume, value: nextVal, autoDismissMs: 0);
-                } else if (_dragMode == _DragMode.seek) {
-                  final totalDuration = _controller?.value.duration ?? Duration.zero;
-                  if (totalDuration > Duration.zero) {
-                    final maxSec = totalDuration.inSeconds;
-                    // 滑动满半屏跨度约为 90 秒或全片长度
-                    final span = maxSec > 180 ? 90 : (maxSec > 30 ? 60 : maxSec);
-                    final diffSec = ((dx / (screenWidth * 0.5)) * span).toInt();
-                    final targetSec = (_startPosition.inSeconds + diffSec).clamp(0, maxSec);
-                    final target = Duration(seconds: targetSec);
-                    _targetSeekPosition = target;
-                    _showHud(
-                      type: _HudType.seek,
-                      diff: diffSec,
-                      targetPosition: target,
-                      autoDismissMs: 0,
-                    );
-                  }
-                }
-              },
-              onPanEnd: (_) {
-                if (_dragMode == _DragMode.seek) {
-                  _controller?.seekTo(_targetSeekPosition);
-                }
-                _dragMode = _DragMode.none;
-                _showHud(
-                  type: _hudType,
-                  value: _hudValue,
-                  diff: _hudSeekDiff,
-                  targetPosition: _targetSeekPosition,
-                  autoDismissMs: 600,
-                );
-              },
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  // 1. 视频主体展示
-                  if (_isInitialized && _controller != null)
-                    Center(
-                      child: AspectRatio(
-                        aspectRatio: _controller!.value.aspectRatio > 0
-                            ? _controller!.value.aspectRatio
-                            : (_isLandscape ? 16 / 9 : 9 / 16),
-                        child: VideoPlayer(_controller!),
-                      ),
-                    )
-                  else if (_hasError)
-                    Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.error_outline_rounded, color: Colors.white70, size: 48),
-                          const SizedBox(height: 12),
-                          const Text('视频加载失败或链接已失效', style: TextStyle(color: Colors.white70)),
-                          const SizedBox(height: 16),
-                          FilledButton.tonal(
-                            onPressed: () {
-                              setState(() {
-                                _hasError = false;
-                              });
-                              _initPlayer();
-                            },
-                            child: const Text('重试'),
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    Center(
-                      child: widget.coverUrl != null
-                          ? Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                Image.network(
-                                  widget.coverUrl!,
-                                  headers: ApiConstants.imageHeaders,
-                                  fit: BoxFit.contain,
-                                ),
-                                const CircularProgressIndicator(color: Colors.white70),
-                              ],
-                            )
-                          : const CircularProgressIndicator(color: Colors.white70),
+            return Stack(
+              alignment: Alignment.center,
+              children: [
+                // 1. 视频主体展示
+                if (_isInitialized && _controller != null)
+                  Center(
+                    child: AspectRatio(
+                      aspectRatio: _controller!.value.aspectRatio > 0
+                          ? _controller!.value.aspectRatio
+                          : (_isLandscape ? 16 / 9 : 9 / 16),
+                      child: VideoPlayer(_controller!),
                     ),
+                  )
+                else if (_hasError)
+                  Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.error_outline_rounded, color: Colors.white70, size: 48),
+                        const SizedBox(height: 12),
+                        const Text('视频加载失败或链接已失效', style: TextStyle(color: Colors.white70)),
+                        const SizedBox(height: 16),
+                        FilledButton.tonal(
+                          onPressed: () {
+                            setState(() {
+                              _hasError = false;
+                            });
+                            _initPlayer();
+                          },
+                          child: const Text('重试'),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  Center(
+                    child: widget.coverUrl != null
+                        ? Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Image.network(
+                                widget.coverUrl!,
+                                headers: ApiConstants.imageHeaders,
+                                fit: BoxFit.contain,
+                              ),
+                              const CircularProgressIndicator(color: Colors.white70),
+                            ],
+                          )
+                        : const CircularProgressIndicator(color: Colors.white70),
+                  ),
 
-                  // 2. 长按加速浮动指示胶囊 (居中偏上)
-                  if (_isFastForwarding)
-                    Positioned(
-                      top: MediaQuery.of(context).padding.top + 50,
+                // 2. 专属全屏视频触控手势层（位于视频上方、操作栏下方，完全不干扰/延迟控制栏按钮响应）
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTapDown: (details) {
+                      _lastTapDownPosition = details.localPosition;
+                    },
+                    onTap: () {
+                      setState(() {
+                        _showControls = !_showControls;
+                      });
+                      _resetControlsTimer();
+                    },
+                    onDoubleTap: () {
+                      final x = _lastTapDownPosition.dx;
+                      // 1(c) 双击中间：播放/暂停
+                      // 1(b) 双击左右两侧：快退或快进 10 秒
+                      if (x < screenWidth * 0.35) {
+                        _seekRelative(-10);
+                      } else if (x > screenWidth * 0.65) {
+                        _seekRelative(10);
+                      } else {
+                        _togglePlayPause();
+                      }
+                    },
+                    onLongPressStart: (details) {
+                      final x = details.localPosition.dx;
+                      // 1(a) 长按左侧或右侧：倍速
+                      if (x < screenWidth * 0.45 || x > screenWidth * 0.55) {
+                        _onLongPressStart();
+                      }
+                    },
+                    onLongPressEnd: (_) => _onLongPressEnd(),
+                    onLongPressCancel: _onLongPressEnd,
+                    onPanStart: (details) {
+                      _panStartPos = details.localPosition;
+                      _dragMode = _DragMode.none;
+                      _startBrightness = _currentBrightness;
+                      _startVolume = _currentVolume;
+                      _startPosition = _controller?.value.position ?? Duration.zero;
+                      _targetSeekPosition = _startPosition;
+                    },
+                    onPanUpdate: (details) {
+                      final dx = details.localPosition.dx - _panStartPos.dx;
+                      final dy = details.localPosition.dy - _panStartPos.dy;
+
+                      if (_dragMode == _DragMode.none) {
+                        if (dx.abs() > 14 && dx.abs() > dy.abs()) {
+                          // 水平滑动判断：
+                          // 横屏状态：任意区域左右滑动调整进度 (2.c)
+                          // 竖屏状态：底部左右滑动调整进度 (3.c)
+                          if (_isLandscape || _panStartPos.dy > screenHeight * 0.55) {
+                            _dragMode = _DragMode.seek;
+                          }
+                        } else if (dy.abs() > 14 && dy.abs() > dx.abs()) {
+                          // 垂直滑动判断（以中间为界）：
+                          // 左侧上下滑动：调亮度 (2.a, 3.a)
+                          // 右侧上下滑动：调音量 (2.b, 3.b)
+                          if (_panStartPos.dx < screenWidth / 2) {
+                            _dragMode = _DragMode.brightness;
+                          } else {
+                            _dragMode = _DragMode.volume;
+                          }
+                        }
+                      }
+
+                      if (_dragMode == _DragMode.brightness) {
+                        final delta = -dy / (screenHeight * 0.65);
+                        final nextVal = (_startBrightness + delta).clamp(0.01, 1.0);
+                        _setBrightness(nextVal);
+                        _showHud(type: _HudType.brightness, value: nextVal, autoDismissMs: 0);
+                      } else if (_dragMode == _DragMode.volume) {
+                        final delta = -dy / (screenHeight * 0.65);
+                        final nextVal = (_startVolume + delta).clamp(0.0, 1.0);
+                        _setVolume(nextVal);
+                        _showHud(type: _HudType.volume, value: nextVal, autoDismissMs: 0);
+                      } else if (_dragMode == _DragMode.seek) {
+                        final totalDuration = _controller?.value.duration ?? Duration.zero;
+                        if (totalDuration > Duration.zero) {
+                          final maxSec = totalDuration.inSeconds;
+                          // 滑动满半屏跨度约为 90 秒或全片长度
+                          final span = maxSec > 180 ? 90 : (maxSec > 30 ? 60 : maxSec);
+                          final diffSec = ((dx / (screenWidth * 0.5)) * span).toInt();
+                          final targetSec = (_startPosition.inSeconds + diffSec).clamp(0, maxSec);
+                          final target = Duration(seconds: targetSec);
+                          _targetSeekPosition = target;
+                          _showHud(
+                            type: _HudType.seek,
+                            diff: diffSec,
+                            targetPosition: target,
+                            autoDismissMs: 0,
+                          );
+                        }
+                      }
+                    },
+                    onPanEnd: (_) {
+                      if (_dragMode == _DragMode.seek) {
+                        _controller?.seekTo(_targetSeekPosition);
+                      }
+                      _dragMode = _DragMode.none;
+                      _showHud(
+                        type: _hudType,
+                        value: _hudValue,
+                        diff: _hudSeekDiff,
+                        targetPosition: _targetSeekPosition,
+                        autoDismissMs: 600,
+                      );
+                    },
+                  ),
+                ),
+
+                // 3. 长按加速浮动指示胶囊 (居中偏上)
+                if (_isFastForwarding)
+                  Positioned(
+                    top: MediaQuery.of(context).padding.top + 50,
+                    child: IgnorePointer(
+                      ignoring: true,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         decoration: BoxDecoration(
@@ -793,9 +801,13 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                         ),
                       ),
                     ),
+                  ),
 
-                  // 3. 全局手势指示器浮层 (亮度 / 音量 / 滑动进度 / 双击快进退)
-                  _buildGestureHudOverlay(),
+                // 4. 全局手势指示器浮层 (亮度 / 音量 / 滑动进度 / 双击快进退)
+                IgnorePointer(
+                  ignoring: true,
+                  child: _buildGestureHudOverlay(),
+                ),
 
                   // 4. 顶部导航栏 (返回键、标题、下载按钮、分享按钮)
                   if (_showControls)
@@ -1016,9 +1028,8 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                       ),
                     ),
                 ],
-              ),
-            );
-          },
+              );
+            },
         ),
       ),
     );
