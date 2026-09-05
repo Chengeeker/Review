@@ -7,6 +7,7 @@ import android.location.Geocoder
 import android.location.Location
 import android.location.LocationManager
 import android.os.Build
+import android.media.AudioManager
 import android.provider.Settings
 import android.webkit.CookieManager
 import io.flutter.embedding.android.FlutterActivity
@@ -271,6 +272,73 @@ class MainActivity : FlutterActivity() {
                         result.success(null)
                     } catch (e: Exception) {
                         result.success(null)
+                    }
+                }
+                "setBrightness" -> {
+                    try {
+                        val brightness = call.argument<Double>("brightness")?.toFloat() ?: 0.5f
+                        val clamped = brightness.coerceIn(0.01f, 1.0f)
+                        runOnUiThread {
+                            val lp = window.attributes
+                            lp.screenBrightness = clamped
+                            window.attributes = lp
+                        }
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.success(false)
+                    }
+                }
+                "getBrightness" -> {
+                    try {
+                        var b = window.attributes.screenBrightness
+                        if (b < 0) {
+                            try {
+                                val sysB = Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS)
+                                b = sysB / 255.0f
+                            } catch (_: Exception) {
+                                b = 0.5f
+                            }
+                        }
+                        result.success(b.toDouble())
+                    } catch (e: Exception) {
+                        result.success(0.5)
+                    }
+                }
+                "setVolume" -> {
+                    try {
+                        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                        val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                        val vol = call.argument<Double>("volume") ?: 0.5
+                        val target = (vol * maxVol).toInt().coerceIn(0, maxVol)
+                        am.setStreamVolume(AudioManager.STREAM_MUSIC, target, 0)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.success(false)
+                    }
+                }
+                "getVolume" -> {
+                    try {
+                        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                        val maxVol = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                        val curVol = am.getStreamVolume(AudioManager.STREAM_MUSIC)
+                        val ratio = if (maxVol > 0) curVol.toDouble() / maxVol.toDouble() else 0.5
+                        result.success(ratio)
+                    } catch (e: Exception) {
+                        result.success(0.5)
+                    }
+                }
+                "shareText" -> {
+                    try {
+                        val text = call.argument<String>("text") ?: ""
+                        val title = call.argument<String>("title") ?: "分享"
+                        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(android.content.Intent.EXTRA_TEXT, text)
+                        }
+                        startActivity(android.content.Intent.createChooser(intent, title))
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.success(false)
                     }
                 }
                 "saveMediaToGallery" -> {
