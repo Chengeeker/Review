@@ -226,7 +226,6 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
   }
 
   void _toggleOrientation() {
-    HapticFeedbackUtil.light();
     final nextLandscape = !_isLandscape;
     setState(() {
       _isLandscape = nextLandscape;
@@ -265,7 +264,6 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
 
   void _togglePlayPause() {
     if (_controller == null || !_isInitialized) return;
-    HapticFeedbackUtil.light();
     setState(() {
       if (_controller!.value.isPlaying) {
         _controller!.pause();
@@ -289,7 +287,6 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
 
   void _onLongPressEnd() {
     if (!_isFastForwarding) return;
-    HapticFeedbackUtil.light();
     setState(() {
       _isFastForwarding = false;
     });
@@ -357,7 +354,6 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
   // 下载当前播放的视频并保存到相册
   Future<void> _performDownloadVideo() async {
     if (_isDownloading) return;
-    HapticFeedbackUtil.light();
 
     final currentUrl = _qualityMap[_currentQuality] ?? widget.videoUrl;
     if (currentUrl.isEmpty) {
@@ -424,7 +420,6 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
 
   // 分享当前视频
   Future<void> _performShareVideo() async {
-    HapticFeedbackUtil.light();
     final shareUrl = (widget.statusId != null && widget.statusId!.isNotEmpty)
         ? 'https://weibo.com/detail/${widget.statusId}'
         : (_qualityMap[_currentQuality] ?? widget.videoUrl);
@@ -453,7 +448,6 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
 
   // 弹出倍速选择菜单
   void _showSpeedMenu() {
-    HapticFeedbackUtil.light();
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.grey[900],
@@ -491,7 +485,6 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                         ? Icon(Icons.check_rounded, color: Theme.of(context).colorScheme.primary, size: 20)
                         : null,
                     onTap: () {
-                      HapticFeedbackUtil.light();
                       setState(() {
                         _playbackSpeed = speed;
                       });
@@ -511,7 +504,6 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
 
   // 弹出画质选择菜单
   void _showQualityMenu() {
-    HapticFeedbackUtil.light();
     if (_qualityMap.isEmpty) {
       AppToast.show(context, '暂无其他清晰度可选');
       return;
@@ -557,7 +549,6 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                         ? Icon(Icons.check_rounded, color: Theme.of(context).colorScheme.primary, size: 20)
                         : null,
                     onTap: () {
-                      HapticFeedbackUtil.light();
                       Navigator.pop(ctx);
                       if (isSelected) return;
 
@@ -834,7 +825,6 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                             IconButton(
                               icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
                               onPressed: () {
-                                HapticFeedbackUtil.light();
                                 if (_isLandscape) {
                                   _toggleOrientation();
                                 } else {
