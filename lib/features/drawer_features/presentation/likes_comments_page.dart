@@ -3,10 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/network/weibo_dio_client.dart';
+import '../../../core/utils/app_toast.dart';
 import '../../../core/utils/weibo_text_parser.dart';
 import '../../../core/utils/weibo_time_formatter.dart';
 import '../../../core/widgets/app_avatar.dart';
 import '../../auth/presentation/login_page.dart';
+import '../../detail/data/detail_repository.dart';
+import '../../detail/data/models/weibo_comment_model.dart';
 import '../../detail/presentation/status_detail_page.dart';
 import '../../feed/data/models/weibo_status_model.dart';
 
@@ -330,6 +333,7 @@ class _CommentsListView extends ConsumerStatefulWidget {
 class _CommentsListViewState extends ConsumerState<_CommentsListView>
     with AutomaticKeepAliveClientMixin {
   final List<Map<String, dynamic>> _comments = [];
+  final Set<String> _deletingCommentIds = <String>{};
   bool _isLoading = true;
   int _page = 1;
   bool _hasMore = true;
@@ -380,6 +384,243 @@ class _CommentsListViewState extends ConsumerState<_CommentsListView>
     }
   }
 
+  static Map<String, dynamic>? _mapValue(Object? value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return null;
+  }
+
+  static String _firstNonEmptyString(
+    Map<String, dynamic> json,
+    List<String> keys,
+  ) {
+    for (final key in keys) {
+      final value = json[key]?.toString().trim() ?? '';
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  static bool _isUsableCommentId(String value) {
+    final normalized = value.trim().toLowerCase();
+    return normalized.isNotEmpty &&
+        normalized != '0' &&
+        normalized != '-1' &&
+        normalized != 'null';
+  }
+
+  String _commentIdFromJson(Map<String, dynamic> json) {
+    final id = _firstNonEmptyString(
+      json,
+      const [
+        'id',
+        'idstr',
+        'cid',
+        'cidstr',
+        'comment_id',
+        'comment_idstr',
+        'commentId',
+        'commentIdStr',
+        'mid',
+      ],
+    );
+    return _isUsableCommentId(id) ? id : '';
+  }
+
+  List<String> _parentChainFromValue(Object? value, {int depth = 0}) {
+    if (depth > 8) return const [];
+
+    final map = _mapValue(value);
+    if (map == null) {
+      final id = value?.toString().trim() ?? '';
+      return _isUsableCommentId(id) ? [id] : const [];
+    }
+
+    final chain = <String>[];
+    final ownId = _commentIdFromJson(map);
+    if (ownId.isNotEmpty) chain.add(ownId);
+
+    for (final key in const [
+      'rootid',
+      'rootidstr',
+      'root_id',
+      'rootId',
+      'root_comment',
+      'rootComment',
+      'root_comment_id',
+      'rootCommentId',
+      'reply_comment',
+      'replyComment',
+      'reply_comment_id',
+      'replyCommentId',
+      'reply_cid',
+      'replyCid',
+      'parent_comment_id',
+      'parentCommentId',
+      'parent_cid',
+      'parentCid',
+    ]) {
+      final nestedChain =
+          _parentChainFromValue(map[key], depth: depth + 1);
+      for (final id in nestedChain) {
+        if (_isUsableCommentId(id) && !chain.contains(id)) chain.add(id);
+      }
+    }
+    return chain;
+  }
+
+  String _replyParentIdFromJson(Map<String, dynamic> json) {
+    for (final key in const [
+      'rootid',
+      'rootidstr',
+      'root_id',
+      'rootId',
+      'root_comment',
+      'rootComment',
+      'root_comment_id',
+      'rootCommentId',
+      'reply_comment',
+      'replyComment',
+      'reply_comment_id',
+      'replyCommentId',
+      'reply_cid',
+      'replyCid',
+      'parent_comment_id',
+      'parentCommentId',
+      'parent_cid',
+      'parentCid',
+    ]) {
+      final chain = _parentChainFromValue(json[key]);
+      if (chain.isNotEmpty) return chain.last;
+    }
+    return '';
+  }
+
+  Map<String, dynamic>? _statusFromComment(Map<String, dynamic> json) {
+    for (final key in const [
+      'status',
+      'root_status',
+      'rootStatus',
+      'mblog',
+      'weibo',
+    ]) {
+      final status = _mapValue(json[key]);
+      if (status != null) return status;
+    }
+    return null;
+  }
+
+  String _statusIdFromComment(
+    Map<String, dynamic> comment,
+    Map<String, dynamic>? status,
+  ) {
+    if (status != null) {
+      final statusId = _firstNonEmptyString(
+        status,
+        const ['id', 'mblogid', 'mid', 'idstr'],
+      );
+      if (statusId.isNotEmpty) return statusId;
+    }
+    return _firstNonEmptyString(
+      comment,
+      const [
+        'status_id',
+        'statusId',
+        'status_mid',
+        'mblogid',
+        'mblog_id',
+        'weibo_id',
+        'weibo_mid',
+      ],
+    );
+  }
+
+  bool _sameCommentId(String left, String right) {
+    final leftId = left.trim();
+    final rightId = right.trim();
+    if (leftId.isEmpty || rightId.isEmpty) return false;
+    if (leftId == rightId) return true;
+    return WeiboStatusModel.mblogidToMid(leftId) ==
+        WeiboStatusModel.mblogidToMid(rightId);
+  }
+
+  void _openComment(BuildContext context, Map<String, dynamic> comment) {
+    final statusJson = _statusFromComment(comment);
+    final statusId = _statusIdFromComment(comment, statusJson);
+    if (statusJson == null && statusId.isEmpty) return;
+
+    final commentId = _commentIdFromJson(comment);
+    final parentId = _replyParentIdFromJson(comment);
+    final status = statusJson == null
+        ? null
+        : WeiboStatusModel.fromJson(statusJson);
+    final initialComment = commentId.isEmpty
+        ? null
+        : WeiboCommentModel.fromJson(comment);
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (ctx) => StatusDetailPage(
+          status: status,
+          statusId: statusId.isEmpty ? null : statusId,
+          initialComment: initialComment,
+          initialCommentId: commentId.isEmpty ? null : commentId,
+          initialCommentParentId: parentId.isEmpty ? null : parentId,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteComment(
+    BuildContext context,
+    Map<String, dynamic> comment,
+  ) async {
+    final commentId = _commentIdFromJson(comment);
+    if (commentId.isEmpty) {
+      AppToast.show(context, '未找到评论编号，无法删除');
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除评论'),
+        content: const Text('确定要删除这条评论吗？删除后不可恢复。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _deletingCommentIds.add(commentId));
+    final result = await ref
+        .read(detailRepositoryProvider)
+        .destroyComment(cid: commentId);
+    if (!mounted) return;
+
+    setState(() {
+      _deletingCommentIds.remove(commentId);
+      if (result.success) {
+        _comments.removeWhere(
+          (item) => _sameCommentId(_commentIdFromJson(item), commentId),
+        );
+      }
+    });
+    final message = result.success
+        ? '评论已删除'
+        : (result.message?.isNotEmpty == true ? result.message! : '删除失败，请稍后重试');
+    if (!context.mounted) return;
+    AppToast.show(context, message);
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -415,18 +656,18 @@ class _CommentsListViewState extends ConsumerState<_CommentsListView>
                       const Divider(height: 1, indent: 64, thickness: 0.5),
                   itemBuilder: (context, index) {
                     final c = _comments[index];
-                    final user = c['user'] is Map ? (c['user'] as Map<String, dynamic>) : {};
+                    final user = _mapValue(c['user']) ?? <String, dynamic>{};
                     final text = c['text_raw']?.toString() ?? c['text']?.toString() ?? '';
                     final nick = user['screen_name']?.toString() ?? '微博用户';
                     final avatar = user['avatar_hd']?.toString() ??
                         user['profile_image_url']?.toString() ??
                         '';
                     final createdAt = c['created_at']?.toString() ?? '';
-                    final replyComment = c['reply_comment'] is Map
-                        ? (c['reply_comment'] as Map<String, dynamic>)
-                        : null;
-                    final rootStatus =
-                        c['status'] is Map ? (c['status'] as Map<String, dynamic>) : null;
+                    final replyComment = _mapValue(c['reply_comment']) ??
+                        _mapValue(c['replyComment']);
+                    final rootStatus = _statusFromComment(c);
+                    final commentId = _commentIdFromJson(c);
+                    final isDeleting = _deletingCommentIds.contains(commentId);
 
                     return ListTile(
                       leading: AppAvatar(url: avatar, size: 40, name: nick),
@@ -489,15 +730,35 @@ class _CommentsListViewState extends ConsumerState<_CommentsListView>
                           ],
                         ],
                       ),
-                      onTap: () {
-                        if (rootStatus != null) {
-                          final statusModel = WeiboStatusModel.fromJson(rootStatus);
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                                builder: (ctx) => StatusDetailPage(status: statusModel)),
-                          );
-                        }
-                      },
+                      trailing: widget.isOutbox
+                          ? OutlinedButton.icon(
+                              onPressed: isDeleting || commentId.isEmpty
+                                  ? null
+                                  : () => _confirmDeleteComment(context, c),
+                              icon: isDeleting
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.delete_outline_rounded),
+                              label: Text(isDeleting ? '删除中' : '删除'),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: colorScheme.primary,
+                                side: BorderSide(
+                                  color: colorScheme.outline,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                ),
+                                minimumSize: const Size(0, 40),
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                            )
+                          : null,
+                      onTap: () => _openComment(context, c),
                     );
                   },
                 ),

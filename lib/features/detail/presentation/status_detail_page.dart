@@ -27,11 +27,17 @@ import 'widgets/image_gallery_page.dart';
 class StatusDetailPage extends ConsumerStatefulWidget {
   final WeiboStatusModel? status;
   final String? statusId;
+  final WeiboCommentModel? initialComment;
+  final String? initialCommentId;
+  final String? initialCommentParentId;
 
   const StatusDetailPage({
     super.key,
     this.status,
     this.statusId,
+    this.initialComment,
+    this.initialCommentId,
+    this.initialCommentParentId,
   }) : assert(status != null || statusId != null,
             'Either status or statusId must be provided');
 
@@ -50,8 +56,18 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
   // Comments State
   final List<WeiboCommentModel> _comments = [];
   bool _isLoadingComments = true;
+  bool _isFetchingComments = false;
+  bool _isLoadingMoreComments = false;
   String _maxId = '0';
   bool _hasMore = true;
+  final Map<String, GlobalKey> _commentKeys = {};
+  final Set<String> _hydratedReplyParents = {};
+  bool _showInitialCommentPreview = false;
+  String? _pendingInitialCommentId;
+  String? _pendingInitialCommentParentId;
+  String? _highlightedCommentId;
+  bool _isSeekingInitialComment = false;
+  static const int _maxInitialReplySeekPages = 20;
 
   // Reposts State
   final List<WeiboStatusModel> _reposts = [];
@@ -89,6 +105,11 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
     _scrollController = ScrollController();
     _scrollController.addListener(_onScroll);
     _currentStatus = widget.status;
+    _showInitialCommentPreview = widget.initialComment != null;
+    _highlightedCommentId = widget.initialComment?.id;
+    _pendingInitialCommentId = _trimCommentId(widget.initialCommentId);
+    _pendingInitialCommentParentId =
+        _trimCommentId(widget.initialCommentParentId);
     _fetchDetailAndComments();
   }
 
@@ -158,7 +179,11 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
         _currentStatus = stableUpdated;
       });
       if (_comments.isEmpty) {
-        _fetchComments();
+        // The initial status and the full detail request run in parallel. Do
+        // not start a second first-page request while the initial request is
+        // still in flight; the late response could reset the cursor just as
+        // an initial-comment seek is paging through a busy post.
+        if (!_isFetchingComments) _fetchComments();
       }
       if (_reposts.isEmpty) {
         _fetchReposts();
@@ -172,50 +197,277 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
   Future<void> _fetchComments() async {
     final id = _effectiveStatusId;
     if (id.isEmpty) return;
+    if (_isFetchingComments) return;
+    _isFetchingComments = true;
     setState(() {
       _isLoadingComments = true;
     });
 
-    final repo = ref.read(detailRepositoryProvider);
-    final result = await repo.getComments(
-      id: id,
-      uid: _currentStatus?.user.id ?? '',
-      maxId: '0',
-      flow: _commentSortFlow,
-    );
+    try {
+      final repo = ref.read(detailRepositoryProvider);
+      final result = await repo.getComments(
+        id: id,
+        uid: _currentStatus?.user.id ?? '',
+        maxId: '0',
+        flow: _commentSortFlow,
+      );
 
-    if (mounted) {
-      setState(() {
-        _comments.clear();
-        _comments.addAll(result.comments);
-        _maxId = result.maxId;
-        _hasMore = result.hasMore;
-        _isLoadingComments = false;
-      });
+      if (mounted) {
+        final initialComment = widget.initialComment;
+        final hasInitialComment = initialComment != null &&
+            result.comments.any(
+              (comment) =>
+                  _findCommentInTree(comment, initialComment.id) != null,
+            );
+        setState(() {
+          _comments.clear();
+          _comments.addAll(result.comments);
+          _showInitialCommentPreview =
+              initialComment != null && !hasInitialComment;
+          if (_showInitialCommentPreview && initialComment != null) {
+            _highlightedCommentId = initialComment.id;
+          }
+          _maxId = result.maxId;
+          _hasMore = result.hasMore;
+          _isLoadingComments = false;
+        });
+        _scheduleInitialCommentReveal();
+      }
+    } finally {
+      _isFetchingComments = false;
     }
   }
 
   Future<bool> _loadMoreComments() async {
-    if (!_hasMore) return false;
+    if (!_hasMore || _isLoadingMoreComments || _isFetchingComments) {
+      return false;
+    }
     final id = _effectiveStatusId;
     if (id.isEmpty) return false;
-    final repo = ref.read(detailRepositoryProvider);
-    final result = await repo.getComments(
-      id: id,
-      uid: _currentStatus?.user.id ?? '',
-      maxId: _maxId,
-      flow: _commentSortFlow,
-    );
+    _isLoadingMoreComments = true;
+    final requestedMaxId = _maxId;
+    try {
+      final repo = ref.read(detailRepositoryProvider);
+      final result = await repo.getComments(
+        id: id,
+        uid: _currentStatus?.user.id ?? '',
+        maxId: _maxId,
+        flow: _commentSortFlow,
+      );
 
-    if (mounted) {
-      setState(() {
-        _comments.addAll(result.comments);
-        _maxId = result.maxId;
-        _hasMore = result.hasMore;
-      });
-      return result.hasMore;
+      if (mounted) {
+        final nextMaxId = result.maxId.trim();
+        setState(() {
+          _comments.addAll(result.comments);
+          _maxId = result.maxId;
+          // A broken/filtered response can repeat the same cursor.  Treat
+          // that as the end of this seek instead of requesting the same page
+          // forever while trying to locate a sent comment.
+          _hasMore = result.hasMore &&
+              nextMaxId.isNotEmpty &&
+              nextMaxId != '0' &&
+              nextMaxId != requestedMaxId;
+        });
+        _scheduleInitialCommentReveal();
+        return _hasMore;
+      }
+      return false;
+    } finally {
+      _isLoadingMoreComments = false;
     }
-    return false;
+  }
+
+  static String? _trimCommentId(String? value) {
+    final trimmed = value?.trim() ?? '';
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  bool _commentIdsMatch(String? left, String? right) {
+    final leftId = _trimCommentId(left);
+    final rightId = _trimCommentId(right);
+    if (leftId == null || rightId == null) return false;
+    if (leftId == rightId) return true;
+    return WeiboStatusModel.mblogidToMid(leftId) ==
+        WeiboStatusModel.mblogidToMid(rightId);
+  }
+
+  GlobalKey _commentKeyFor(String commentId) {
+    final key = commentId.trim();
+    return _commentKeys.putIfAbsent(key, GlobalKey.new);
+  }
+
+  WeiboCommentModel? _findCommentInTree(
+    WeiboCommentModel comment,
+    String targetId,
+  ) {
+    if (_commentIdsMatch(comment.id, targetId)) return comment;
+    for (final subComment in comment.subComments) {
+      final match = _findCommentInTree(subComment, targetId);
+      if (match != null) return match;
+    }
+    return null;
+  }
+
+  WeiboCommentModel? _findLoadedComment(String targetId) {
+    for (final comment in _comments) {
+      final match = _findCommentInTree(comment, targetId);
+      if (match != null) return match;
+    }
+    return null;
+  }
+
+  int? _topLevelIndexContaining(String targetId) {
+    for (var index = 0; index < _comments.length; index++) {
+      if (_findCommentInTree(_comments[index], targetId) != null) {
+        return index;
+      }
+    }
+    return null;
+  }
+
+  bool _isHighlightedComment(String commentId) {
+    return _commentIdsMatch(_highlightedCommentId, commentId);
+  }
+
+  void _scheduleInitialCommentReveal() {
+    final targetId = _pendingInitialCommentId;
+    if (targetId == null || _selectedTabIndex != 1) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _resolveInitialComment(targetId);
+    });
+  }
+
+  Future<void> _resolveInitialComment(String targetId) async {
+    if (!mounted || _pendingInitialCommentId == null) return;
+
+    final loadedComment = _findLoadedComment(targetId);
+    if (loadedComment != null) {
+      _pendingInitialCommentId = null;
+      _pendingInitialCommentParentId = null;
+      final topLevelIndex = _topLevelIndexContaining(targetId);
+      if (topLevelIndex != null && topLevelIndex > 0) {
+        final topLevelComment = _comments.removeAt(topLevelIndex);
+        _comments.insert(0, topLevelComment);
+      }
+      setState(() {
+        _showInitialCommentPreview = false;
+        _highlightedCommentId = loadedComment.id;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scrollToComment(loadedComment.id);
+      });
+      return;
+    }
+
+    if (_isSeekingInitialComment) return;
+
+    if (await _hydrateInitialReply(targetId)) {
+      _scheduleInitialCommentReveal();
+      return;
+    }
+
+    if (!_hasMore) {
+      _pendingInitialCommentId = null;
+      _pendingInitialCommentParentId = null;
+      return;
+    }
+
+    _isSeekingInitialComment = true;
+    try {
+      await _loadMoreComments();
+    } finally {
+      _isSeekingInitialComment = false;
+    }
+    if (mounted && _pendingInitialCommentId != null) {
+      _scheduleInitialCommentReveal();
+    }
+  }
+
+  Future<bool> _hydrateInitialReply(String targetId) async {
+    final parentId = _pendingInitialCommentParentId;
+    if (parentId == null) return false;
+
+    // The parent may itself be a nested reply.  Search the whole loaded tree
+    // so the target is attached to the same comment thread that the official
+    // response describes.
+    final parent = _findLoadedComment(parentId);
+    if (parent == null) return false;
+
+    final parentKey = parent.id.trim();
+    if (parentKey.isEmpty || !_hydratedReplyParents.add(parentKey)) {
+      return false;
+    }
+
+    final repository = ref.read(detailRepositoryProvider);
+    var maxId = '0';
+    for (var page = 0; page < _maxInitialReplySeekPages; page++) {
+      final result = await repository.getSecondComments(
+        commentId: parent.id,
+        maxId: maxId,
+      );
+      if (!mounted) return false;
+
+      if (result.comments.isNotEmpty) {
+        final newComments = result.comments.where((candidate) {
+          if (candidate.id.trim().isEmpty) return true;
+          return !parent.subComments.any(
+            (existing) => _commentIdsMatch(existing.id, candidate.id),
+          );
+        }).toList();
+        if (newComments.isNotEmpty) {
+          parent.subComments.addAll(newComments);
+          setState(() {});
+        }
+      }
+
+      if (_findLoadedComment(targetId) != null) return true;
+
+      final nextMaxId = result.maxId.trim();
+      if (!result.hasMore ||
+          nextMaxId.isEmpty ||
+          nextMaxId == maxId ||
+          nextMaxId == '0') {
+        break;
+      }
+      maxId = nextMaxId;
+    }
+    return _findLoadedComment(targetId) != null;
+  }
+
+  Future<void> _scrollToComment(String commentId, {int attempt = 0}) async {
+    if (!mounted) return;
+
+    final targetContext = _commentKeys[commentId.trim()]?.currentContext;
+    if (targetContext != null) {
+      await Scrollable.ensureVisible(
+        targetContext,
+        alignment: 0.18,
+        duration: const Duration(milliseconds: 420),
+        curve: Curves.easeOutCubic,
+      );
+      return;
+    }
+
+    if (!_scrollController.hasClients || attempt >= 3) return;
+    final topLevelIndex = _topLevelIndexContaining(commentId);
+    if (topLevelIndex == null) return;
+
+    final position = _scrollController.position;
+    final fraction = _comments.length <= 1
+        ? 0.0
+        : topLevelIndex / (_comments.length - 1);
+    final offset = (position.maxScrollExtent * fraction)
+        .clamp(0.0, position.maxScrollExtent);
+    await _scrollController.animateTo(
+      offset.toDouble(),
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scrollToComment(commentId, attempt: attempt + 1);
+      });
+    }
   }
 
   Future<void> _fetchReposts() async {
@@ -581,7 +833,9 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                       ),
                   ] else if (_selectedTabIndex == 1) ...[
                     // Comments Tab
-                    if (_isLoadingComments && _comments.isEmpty)
+                    if (_isLoadingComments &&
+                        _comments.isEmpty &&
+                        !_showInitialCommentPreview)
                       SliverToBoxAdapter(
                         child: Container(
                           constraints: BoxConstraints(
@@ -592,7 +846,8 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                               const CircularProgressIndicator(strokeWidth: 2),
                         ),
                       )
-                    else if (_comments.isEmpty)
+                    else if (_comments.isEmpty &&
+                        !_showInitialCommentPreview)
                       SliverToBoxAdapter(
                         child: Container(
                           constraints: BoxConstraints(
@@ -606,16 +861,29 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                           ),
                         ),
                       )
-                    else
-                      SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final comment = _comments[index];
-                            return _buildCommentItem(context, comment);
-                          },
-                          childCount: _comments.length,
+                    else ...[
+                      if (_showInitialCommentPreview &&
+                          widget.initialComment != null)
+                        SliverToBoxAdapter(
+                          child: _buildCommentItem(
+                            context,
+                            widget.initialComment!,
+                          ),
                         ),
-                      ),
+                      if (_comments.isNotEmpty)
+                        SliverList(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              final comment = _comments[index];
+                              return KeyedSubtree(
+                                key: _commentKeyFor(comment.id),
+                                child: _buildCommentItem(context, comment),
+                              );
+                            },
+                            childCount: _comments.length,
+                          ),
+                        ),
+                    ],
                   ] else ...[
                     // Attitudes (Likes) Tab
                     if (_isLoadingAttitudes && _attitudes.isEmpty)
@@ -1145,11 +1413,16 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
       enableFeedback: false,
       onTap: () => _showCommentOptions(context, comment),
       onLongPress: () => _showCommentOptions(context, comment),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 260),
+        color: _isHighlightedComment(comment.id)
+            ? colorScheme.primary.withValues(alpha: 0.12)
+            : Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             // Avatar
             AppAvatar(
               url: comment.user.avatar,
@@ -1330,16 +1603,24 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: comment.subComments.map((sub) {
                           return InkWell(
+                            key: _commentKeyFor(sub.id),
                             borderRadius: BorderRadius.circular(6),
                             enableFeedback: false,
                             onTap: () => _showCommentOptions(context, sub),
                             onLongPress: () =>
                                 _showCommentOptions(context, sub),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 3),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 260),
+                              color: _isHighlightedComment(sub.id)
+                                  ? colorScheme.primary.withValues(alpha: 0.12)
+                                  : Colors.transparent,
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 3),
+                                child: Row(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
                                   AppAvatar(
                                     url: sub.user.avatar,
                                     size: 28,
@@ -1439,7 +1720,8 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                                       ],
                                     ),
                                   ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           );
@@ -1450,7 +1732,8 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                 ],
               ),
             ),
-          ],
+            ],
+          ),
         ),
       ),
     );

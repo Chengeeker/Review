@@ -44,8 +44,8 @@ android {
         applicationId = "com.review"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        versionCode = 35
-        versionName = "2.4.4"
+        versionCode = 39
+        versionName = "2.5.3"
         ndk {
             abiFilters.add("arm64-v8a")
         }

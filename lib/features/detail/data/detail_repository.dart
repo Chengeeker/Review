@@ -158,30 +158,47 @@ class DetailRepository {
     int flow = 0,
   }) async {
     try {
+      final normalizedMaxId = maxId.trim().isEmpty ? '0' : maxId.trim();
+      final isFirstPage = normalizedMaxId == '0';
       final response = await _client.dio.get(
         ApiConstants.buildComments,
         queryParameters: {
           'id': id,
           'uid': uid,
-          'is_reload': maxId == '0' ? 1 : 0,
+          'is_reload': isFirstPage ? 1 : 0,
           'is_show_bulletin': 2,
-          'is_mix': 0,
+          // The web client marks requests after the first page as mixed
+          // pagination requests.  Keeping this at 0 makes high-volume posts
+          // repeatedly return the first page or stop advancing the cursor.
+          'is_mix': isFirstPage ? 0 : 1,
           'count': count,
           'flow': flow,
-          if (maxId != '0') 'max_id': maxId,
+          'max_id_type': 0,
+          'fetch_level': 0,
+          'type': 1,
+          'locale': 'zh-CN',
+          if (!isFirstPage) 'max_id': normalizedMaxId,
         },
       );
 
-      if (response.data is Map<String, dynamic>) {
-        final data = response.data as Map<String, dynamic>;
-        final rawComments = data['data'] as List? ?? [];
+      if (response.data is Map) {
+        final data = Map<String, dynamic>.from(response.data as Map);
+        // Different web responses use either `data: [...]` or a nested
+        // `data: {data: [...], max_id: ...}` envelope.  Use the same tolerant
+        // extraction as second-level comments so a valid page is not treated
+        // as empty just because the envelope changed.
+        final rawComments = _extractCommentList(data);
         final comments = rawComments
-            .whereType<Map<String, dynamic>>()
-            .map((c) => WeiboCommentModel.fromJson(c))
+            .whereType<Map>()
+            .map((c) => WeiboCommentModel.fromJson(
+                  Map<String, dynamic>.from(c),
+                ))
             .toList();
 
-        final nextMaxId = data['max_id']?.toString() ?? '0';
-        final hasMore = comments.isNotEmpty && nextMaxId != '0';
+        final nextMaxId = _extractMaxId(data);
+        final hasMore = comments.isNotEmpty &&
+            nextMaxId != '0' &&
+            nextMaxId != normalizedMaxId;
 
         return CommentResult(
           comments: comments,
@@ -330,15 +347,15 @@ class DetailRepository {
         },
       );
 
-      if (response.data is Map<String, dynamic>) {
-        final data = response.data as Map<String, dynamic>;
-        final rawComments = data['data'] as List? ?? [];
+      if (response.data is Map) {
+        final data = Map<String, dynamic>.from(response.data as Map);
+        final rawComments = _extractCommentList(data);
         final comments = rawComments
             .whereType<Map<String, dynamic>>()
             .map((c) => WeiboCommentModel.fromJson(c))
             .toList();
 
-        final nextMaxId = data['max_id']?.toString() ?? '0';
+        final nextMaxId = _extractMaxId(data);
         return CommentResult(
           comments: comments,
           maxId: nextMaxId,
@@ -347,6 +364,53 @@ class DetailRepository {
       }
     } catch (_) {}
     return const CommentResult(comments: [], hasMore: false);
+  }
+
+  static List<dynamic> _extractCommentList(
+    Object? payload, {
+    int depth = 0,
+  }) {
+    if (depth > 4) return const [];
+    if (payload is List) return payload;
+    if (payload is! Map) return const [];
+
+    List<dynamic>? emptyList;
+    for (final key in const [
+      'data',
+      'comments',
+      'list',
+      'comment_list',
+      'commentList',
+    ]) {
+      final value = payload[key];
+      final extracted = _extractCommentList(value, depth: depth + 1);
+      if (extracted.isNotEmpty) return extracted;
+      if (value is List) emptyList ??= value;
+    }
+    return emptyList ?? const [];
+  }
+
+  static String _extractMaxId(Object? payload, {int depth = 0}) {
+    if (depth > 4 || payload is! Map) return '0';
+
+    // Prefer the pagination value in the nested official data envelope.
+    for (final key in const ['data', 'meta', 'pagination']) {
+      final nested = payload[key];
+      if (nested is Map) {
+        final nestedMaxId = _extractMaxId(nested, depth: depth + 1);
+        if (nestedMaxId != '0') return nestedMaxId;
+        if (nested['max_id']?.toString().trim() == '0' ||
+            nested['maxId']?.toString().trim() == '0') {
+          return '0';
+        }
+      }
+    }
+
+    for (final key in const ['max_id', 'maxId']) {
+      final value = payload[key]?.toString().trim() ?? '';
+      if (value.isNotEmpty) return value;
+    }
+    return '0';
   }
 
   /// Send a comment on a Weibo Status (发评论)

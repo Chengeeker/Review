@@ -249,6 +249,27 @@ class WeiboCommentModel {
       rawSource = rawSource.replaceAll(RegExp(r'<[^>]*>'), '').trim();
     }
 
+    String firstNonEmpty(Iterable<Object?> values) {
+      for (final value in values) {
+        final text = value?.toString().trim() ?? '';
+        if (text.isNotEmpty && text != 'null') return text;
+      }
+      return '';
+    }
+
+    final commentId = firstNonEmpty([
+      json['id'],
+      json['idstr'],
+      json['cid'],
+      json['cidstr'],
+      json['comment_id'],
+      json['comment_idstr'],
+      json['commentId'],
+      json['commentIdStr'],
+      json['mid'],
+    ]);
+    final commentMid = firstNonEmpty([json['mid'], commentId]);
+
     // The web endpoint may repeat the parent comment's image metadata inside
     // every text-only reply. Keep genuine child-only images, but do not render
     // an inherited parent image again in the reply block.
@@ -272,8 +293,8 @@ class WeiboCommentModel {
     }
 
     return WeiboCommentModel(
-      id: json['id']?.toString() ?? '',
-      mid: json['mid']?.toString() ?? json['id']?.toString() ?? '',
+      id: commentId,
+      mid: commentMid,
       textRaw: rawText,
       createdAt: json['created_at']?.toString() ?? '',
       likeCount: json['like_counts'] is int
