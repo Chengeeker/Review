@@ -39,7 +39,8 @@ class UserProfilePage extends ConsumerStatefulWidget {
   ConsumerState<UserProfilePage> createState() => _UserProfilePageState();
 }
 
-class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTickerProviderStateMixin {
+class _UserProfilePageState extends ConsumerState<UserProfilePage>
+    with SingleTickerProviderStateMixin {
   static final Map<String, List<WeiboStatusModel>> _profileTimelineCache = {};
   static final Map<String, List<WeiboStatusModel>> _profileVideoCache = {};
   static final Map<String, WeiboUserModel> _profileUserCache = {};
@@ -72,13 +73,21 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
     _tabController = TabController(length: 3, vsync: this);
     _tabController.addListener(_handleTabChange);
 
-    final effectiveUid = widget.user?.id.isNotEmpty == true ? widget.user!.id : (widget.uid ?? '');
-    final effectiveScreenName = widget.user?.screenName.isNotEmpty == true ? widget.user!.screenName : (widget.screenName ?? '');
-    final cleanScreenName = effectiveScreenName.startsWith('@') ? effectiveScreenName.substring(1).trim() : effectiveScreenName.trim();
+    final effectiveUid = widget.user?.id.isNotEmpty == true
+        ? widget.user!.id
+        : (widget.uid ?? '');
+    final effectiveScreenName = widget.user?.screenName.isNotEmpty == true
+        ? widget.user!.screenName
+        : (widget.screenName ?? '');
+    final cleanScreenName = effectiveScreenName.startsWith('@')
+        ? effectiveScreenName.substring(1).trim()
+        : effectiveScreenName.trim();
 
-    if (effectiveUid.isNotEmpty && _profileUserCache.containsKey(effectiveUid)) {
+    if (effectiveUid.isNotEmpty &&
+        _profileUserCache.containsKey(effectiveUid)) {
       _user = _profileUserCache[effectiveUid]!;
-    } else if (cleanScreenName.isNotEmpty && _profileUserCache.containsKey(cleanScreenName)) {
+    } else if (cleanScreenName.isNotEmpty &&
+        _profileUserCache.containsKey(cleanScreenName)) {
       _user = _profileUserCache[cleanScreenName]!;
     } else {
       _user = widget.user ??
@@ -110,7 +119,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
   void _handleTopBarTap() {
     final now = DateTime.now();
     if (_lastTopBarTapTime != null &&
-        now.difference(_lastTopBarTapTime!) < const Duration(milliseconds: 300)) {
+        now.difference(_lastTopBarTapTime!) <
+            const Duration(milliseconds: 300)) {
       _topBarSingleTapTimer?.cancel();
       _topBarSingleTapTimer = null;
       _lastTopBarTapTime = null;
@@ -149,15 +159,19 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
       if (_getVideoStatuses().length < 12 && _hasMore) {
         _prefetchVideoBuffer();
       }
-    } else if (_tabController.index == 1 && _getAllAlbumPics().isEmpty && _hasMore) {
+    } else if (_tabController.index == 1 &&
+        _getAllAlbumPics().isEmpty &&
+        _hasMore) {
       _prefetchVideoBuffer();
     }
   }
 
   // Fetch a raw page without blocking UI or setting state directly
-  Future<List<WeiboStatusModel>> _fetchRawPage(int page, {int feature = 0, String? uidToUse}) async {
+  Future<List<WeiboStatusModel>> _fetchRawPage(int page,
+      {int feature = 0, String? uidToUse}) async {
     final client = ref.read(weiboDioClientProvider);
-    final effectiveUid = uidToUse ?? (_user.id.isNotEmpty ? _user.id : widget.uid);
+    final effectiveUid =
+        uidToUse ?? (_user.id.isNotEmpty ? _user.id : widget.uid);
     if (effectiveUid == null || effectiveUid.isEmpty) return [];
 
     try {
@@ -168,7 +182,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
           'page': page,
           'feature': feature,
         },
-        options: Options(headers: {'Referer': 'https://weibo.com/u/$effectiveUid'}),
+        options:
+            Options(headers: {'Referer': 'https://weibo.com/u/$effectiveUid'}),
       );
 
       if (res.data is Map<String, dynamic>) {
@@ -180,7 +195,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
   }
 
   // Actively prefetch background pages in parallel to maintain a rich video/album buffer
-  Future<void> _prefetchVideoBuffer({int targetVideoCount = 16, int maxPages = 4}) async {
+  Future<void> _prefetchVideoBuffer(
+      {int targetVideoCount = 16, int maxPages = 4}) async {
     if (_isPrefetching || !_hasMore) return;
     _isPrefetching = true;
     try {
@@ -239,7 +255,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
         .trim();
 
     // 1. If UID is empty, directly query profile info via screen_name (Weibo native web mechanism)
-    if ((effectiveUid == null || effectiveUid.isEmpty) && cleanScreenName.isNotEmpty) {
+    if ((effectiveUid == null || effectiveUid.isEmpty) &&
+        cleanScreenName.isNotEmpty) {
       try {
         final profileRes = await client.dio.get(
           '/ajax/profile/info',
@@ -274,10 +291,12 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
             ApiConstants.searchSuggest,
             queryParameters: {'q': cleanScreenName},
           );
-          if (searchSuggestRes.data is Map<String, dynamic> && searchSuggestRes.data['data'] != null) {
+          if (searchSuggestRes.data is Map<String, dynamic> &&
+              searchSuggestRes.data['data'] != null) {
             final users = searchSuggestRes.data['data']['user'] as List? ?? [];
             if (users.isNotEmpty && users[0] is Map<String, dynamic>) {
-              final resolvedUid = users[0]['uid']?.toString() ?? users[0]['id']?.toString();
+              final resolvedUid =
+                  users[0]['uid']?.toString() ?? users[0]['id']?.toString();
               if (resolvedUid != null && resolvedUid.isNotEmpty) {
                 effectiveUid = resolvedUid;
                 _user = WeiboUserModel(
@@ -298,9 +317,11 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
         final profileRes = await client.dio.get(
           '/ajax/profile/info',
           queryParameters: {'uid': effectiveUid},
-          options: Options(headers: {'Referer': 'https://weibo.com/u/$effectiveUid'}),
+          options: Options(
+              headers: {'Referer': 'https://weibo.com/u/$effectiveUid'}),
         );
-        if (profileRes.data is Map<String, dynamic> && profileRes.data['data'] != null) {
+        if (profileRes.data is Map<String, dynamic> &&
+            profileRes.data['data'] != null) {
           final uJson = profileRes.data['data']['user'];
           if (uJson is Map<String, dynamic>) {
             final parsedUser = WeiboUserModel.fromJson(uJson);
@@ -325,31 +346,39 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
     }
   }
 
-  Future<bool> _loadTimeline({required int page, bool isRefresh = false, String? uidToUse}) async {
+  Future<bool> _loadTimeline(
+      {required int page, bool isRefresh = false, String? uidToUse}) async {
     final client = ref.read(weiboDioClientProvider);
-    final effectiveUid = uidToUse ?? (_user.id.isNotEmpty ? _user.id : widget.uid);
+    final effectiveUid =
+        uidToUse ?? (_user.id.isNotEmpty ? _user.id : widget.uid);
     final weiboStyle = ref.read(weiboStyleProvider);
 
     try {
       final res = await client.dio.get(
         ApiConstants.userTimeline,
         queryParameters: {
-          if (effectiveUid != null && effectiveUid.isNotEmpty) 'uid': effectiveUid,
+          if (effectiveUid != null && effectiveUid.isNotEmpty)
+            'uid': effectiveUid,
           'page': page,
           'feature': _currentFeature,
         },
-        options: Options(headers: {'Referer': 'https://weibo.com/u/$effectiveUid'}),
+        options:
+            Options(headers: {'Referer': 'https://weibo.com/u/$effectiveUid'}),
       );
 
       if (res.data is Map<String, dynamic>) {
         final rawList = res.data['data']?['list'] as List? ?? [];
-        var list = await ref.read(feedRepositoryProvider).parseStatuses(rawList);
+        var list =
+            await ref.read(feedRepositoryProvider).parseStatuses(rawList);
 
         // 2. 个人主页是否显示ta赞过的微博过滤
         if (!weiboStyle.showProfileLikedTweets && effectiveUid != null) {
           list = list.where((s) {
-            final isLikedTitle = s.titleText != null && s.titleText!.contains('赞');
-            final isOtherAuthorNoRetweet = s.user.id.isNotEmpty && s.user.id != effectiveUid && s.retweetedStatus == null;
+            final isLikedTitle =
+                s.titleText != null && s.titleText!.contains('赞');
+            final isOtherAuthorNoRetweet = s.user.id.isNotEmpty &&
+                s.user.id != effectiveUid &&
+                s.retweetedStatus == null;
             return !isLikedTitle && !isOtherAuthorNoRetweet;
           }).toList();
         }
@@ -359,7 +388,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
           list = list.where((s) {
             if (s.createdAt.isEmpty) return true;
             if (_selectedMonth != null) {
-              final mStr = _selectedMonth! < 10 ? '0$_selectedMonth' : '$_selectedMonth';
+              final mStr =
+                  _selectedMonth! < 10 ? '0$_selectedMonth' : '$_selectedMonth';
               return s.createdAt.contains('$_selectedYear-$mStr') ||
                   s.createdAt.contains('$_selectedYear年$_selectedMonth月') ||
                   s.createdAt.contains('$_selectedYear');
@@ -409,7 +439,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
         );
         if (searchRes.data is Map<String, dynamic>) {
           final rawStatuses = searchRes.data['statuses'] as List? ?? [];
-          final list = await ref.read(feedRepositoryProvider).parseStatuses(rawStatuses);
+          final list =
+              await ref.read(feedRepositoryProvider).parseStatuses(rawStatuses);
 
           if (mounted) {
             setState(() {
@@ -456,7 +487,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
       if (msg.contains('成功') || msg.contains('已取消') || msg.contains('已关注')) {
         return true;
       }
-      if (data['id'] != null || data['idstr'] != null || data['screen_name'] != null) {
+      if (data['id'] != null ||
+          data['idstr'] != null ||
+          data['screen_name'] != null) {
         if (data.containsKey('following')) {
           return data['following'] == isFollowAction;
         }
@@ -468,10 +501,14 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
         if (inner['code'] == '100000' || inner['code'] == 100000) return true;
         if (inner['result'] == true || inner['result'] == 1) return true;
         final innerMsg = (inner['msg'] ?? inner['message'] ?? '').toString();
-        if (innerMsg.contains('成功') || innerMsg.contains('已取消') || innerMsg.contains('已关注')) {
+        if (innerMsg.contains('成功') ||
+            innerMsg.contains('已取消') ||
+            innerMsg.contains('已关注')) {
           return true;
         }
-        if (inner['id'] != null || inner['idstr'] != null || inner['screen_name'] != null) {
+        if (inner['id'] != null ||
+            inner['idstr'] != null ||
+            inner['screen_name'] != null) {
           if (inner.containsKey('following')) {
             return inner['following'] == isFollowAction;
           }
@@ -495,12 +532,16 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
 
     final client = ref.read(weiboDioClientProvider);
     final isFollowing = _user.following;
-    final fullCookie = client.storageService.getFullCookie() ?? ref.read(authProvider).fullCookie ?? '';
+    final fullCookie = client.storageService.getFullCookie() ??
+        ref.read(authProvider).fullCookie ??
+        '';
 
     // 确保使用纯数字 UID
     var targetUid = _user.id;
     if (targetUid.isEmpty || int.tryParse(targetUid) == null) {
-      if (widget.uid != null && widget.uid!.isNotEmpty && int.tryParse(widget.uid!) != null) {
+      if (widget.uid != null &&
+          widget.uid!.isNotEmpty &&
+          int.tryParse(widget.uid!) != null) {
         targetUid = widget.uid!;
       }
     }
@@ -528,7 +569,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
             options: Options(
               contentType: Headers.formUrlEncodedContentType,
               headers: {
-                'Cookie': fullCookie.contains('XSRF-TOKEN') ? fullCookie : '$fullCookie; XSRF-TOKEN=$st; MLOGIN=1;',
+                'Cookie': fullCookie.contains('XSRF-TOKEN')
+                    ? fullCookie
+                    : '$fullCookie; XSRF-TOKEN=$st; MLOGIN=1;',
                 'Referer': 'https://m.weibo.cn/u/$targetUid',
                 'User-Agent':
                     'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
@@ -540,7 +583,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
           );
           if (_isFollowSuccess(mRes.data, isFollowAction: false)) {
             success = true;
-          } else if (mRes.data is Map && mRes.data['msg'] != null && mRes.data['msg'].toString().isNotEmpty) {
+          } else if (mRes.data is Map &&
+              mRes.data['msg'] != null &&
+              mRes.data['msg'].toString().isNotEmpty) {
             errorMsg = mRes.data['msg'].toString();
           }
         } catch (_) {}
@@ -566,7 +611,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
             );
             if (_isFollowSuccess(res.data, isFollowAction: false)) {
               success = true;
-            } else if (res.data is Map && res.data['msg'] != null && res.data['msg'].toString().isNotEmpty) {
+            } else if (res.data is Map &&
+                res.data['msg'] != null &&
+                res.data['msg'].toString().isNotEmpty) {
               errorMsg = res.data['msg'].toString();
             }
           } catch (_) {}
@@ -600,7 +647,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
           } catch (_) {}
         }
 
-        if (errorMsg != null && (errorMsg.contains('成功') || errorMsg.contains('已取消') || errorMsg.contains('已关注'))) {
+        if (errorMsg != null &&
+            (errorMsg.contains('成功') ||
+                errorMsg.contains('已取消') ||
+                errorMsg.contains('已关注'))) {
           success = true;
         }
 
@@ -616,7 +666,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
               verifiedType: _user.verifiedType,
               verifiedReason: _user.verifiedReason,
               description: _user.description,
-              followersCount: _user.followersCount > 0 ? _user.followersCount - 1 : 0,
+              followersCount:
+                  _user.followersCount > 0 ? _user.followersCount - 1 : 0,
               friendsCount: _user.friendsCount,
               statusesCount: _user.statusesCount,
               following: false,
@@ -648,7 +699,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
             options: Options(
               contentType: Headers.formUrlEncodedContentType,
               headers: {
-                'Cookie': fullCookie.contains('XSRF-TOKEN') ? fullCookie : '$fullCookie; XSRF-TOKEN=$st; MLOGIN=1;',
+                'Cookie': fullCookie.contains('XSRF-TOKEN')
+                    ? fullCookie
+                    : '$fullCookie; XSRF-TOKEN=$st; MLOGIN=1;',
                 'Referer': 'https://m.weibo.cn/u/$targetUid',
                 'User-Agent':
                     'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
@@ -660,7 +713,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
           );
           if (_isFollowSuccess(mRes.data, isFollowAction: true)) {
             success = true;
-          } else if (mRes.data is Map && mRes.data['msg'] != null && mRes.data['msg'].toString().isNotEmpty) {
+          } else if (mRes.data is Map &&
+              mRes.data['msg'] != null &&
+              mRes.data['msg'].toString().isNotEmpty) {
             errorMsg = mRes.data['msg'].toString();
           }
         } catch (_) {}
@@ -686,7 +741,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
             );
             if (_isFollowSuccess(res.data, isFollowAction: true)) {
               success = true;
-            } else if (res.data is Map && res.data['msg'] != null && res.data['msg'].toString().isNotEmpty) {
+            } else if (res.data is Map &&
+                res.data['msg'] != null &&
+                res.data['msg'].toString().isNotEmpty) {
               errorMsg = res.data['msg'].toString();
             }
           } catch (_) {}
@@ -698,7 +755,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
             final xsrf = WeiboDioClient.extractXsrfToken(fullCookie) ?? '';
             final legacyRes = await standaloneDio.post(
               'https://weibo.com/aj/f/followed?ajkey=wb_follow',
-              data: 'uid=$targetUid&objectid=&f=1&extra=&refer_sort=&refer_flag=1005050001_',
+              data:
+                  'uid=$targetUid&objectid=&f=1&extra=&refer_sort=&refer_flag=1005050001_',
               options: Options(
                 contentType: Headers.formUrlEncodedContentType,
                 headers: {
@@ -720,7 +778,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
           } catch (_) {}
         }
 
-        if (errorMsg != null && (errorMsg.contains('成功') || errorMsg.contains('已关注'))) {
+        if (errorMsg != null &&
+            (errorMsg.contains('成功') || errorMsg.contains('已关注'))) {
           success = true;
         }
 
@@ -803,7 +862,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('按年份与月份筛选微博', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    const Text('按年份与月份筛选微博',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16)),
                     if (_selectedYear != null || _selectedMonth != null)
                       TextButton(
                         onPressed: () {
@@ -819,7 +880,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                   ],
                 ),
                 const SizedBox(height: 12),
-                const Text('选择年份', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                const Text('选择年份',
+                    style: TextStyle(fontSize: 13, color: Colors.grey)),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -836,7 +898,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                   }).toList(),
                 ),
                 const SizedBox(height: 14),
-                const Text('选择月份', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                const Text('选择月份',
+                    style: TextStyle(fontSize: 13, color: Colors.grey)),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 6,
@@ -848,7 +911,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                       label: Text('$month月'),
                       selected: isSelected,
                       onSelected: (selected) {
-                        setState(() => _selectedMonth = selected ? month : null);
+                        setState(
+                            () => _selectedMonth = selected ? month : null);
                       },
                     );
                   }),
@@ -889,7 +953,11 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
 
   // 提取纯视频动态 (严格排除纯 Live 图片，只保留纯视频)
   List<WeiboStatusModel> _getVideoStatuses() {
-    return _statuses.where((s) => s.hasVideo || (s.videoCoverUrl != null && s.videoCoverUrl!.isNotEmpty)).toList();
+    return _statuses
+        .where((s) =>
+            s.hasVideo ||
+            (s.videoCoverUrl != null && s.videoCoverUrl!.isNotEmpty))
+        .toList();
   }
 
   @override
@@ -943,7 +1011,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
         },
         onLoad: () async {
           final hasMore = await _loadTimeline(page: _page + 1);
-          if ((_tabController.index == 2 || _tabController.index == 1) && hasMore) {
+          if ((_tabController.index == 2 || _tabController.index == 1) &&
+              hasMore) {
             await _loadTimeline(page: _page + 1);
           }
           return hasMore ? IndicatorResult.success : IndicatorResult.noMore;
@@ -955,7 +1024,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
             SliverToBoxAdapter(
               child: Card(
                 margin: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
@@ -980,17 +1050,22 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                                     Flexible(
                                       child: Text(
                                         _user.screenName,
-                                        style: TextStyle(fontSize: 18, fontWeight: context.adjustWeight(FontWeight.bold)),
+                                        style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: context
+                                                .adjustWeight(FontWeight.bold)),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
                                     if (_user.gender == 'f') ...[
                                       const SizedBox(width: 4),
-                                      const Icon(Icons.female_rounded, size: 16, color: Colors.pinkAccent),
+                                      const Icon(Icons.female_rounded,
+                                          size: 16, color: Colors.pinkAccent),
                                     ] else if (_user.gender == 'm') ...[
                                       const SizedBox(width: 4),
-                                      const Icon(Icons.male_rounded, size: 16, color: Colors.blueAccent),
+                                      const Icon(Icons.male_rounded,
+                                          size: 16, color: Colors.blueAccent),
                                     ],
                                   ],
                                 ),
@@ -998,12 +1073,17 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                                 if (_user.id.isNotEmpty)
                                   Text(
                                     'UID: ${_user.id}',
-                                    style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color: colorScheme.onSurfaceVariant),
                                   ),
                                 if (_user.ipLocation.isNotEmpty)
                                   Text(
                                     'IP属地: ${_user.ipLocation}',
-                                    style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.8)),
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: colorScheme.onSurfaceVariant
+                                            .withValues(alpha: 0.8)),
                                   ),
                               ],
                             ),
@@ -1015,25 +1095,33 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                                 ? const SizedBox(
                                     width: 24,
                                     height: 24,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
                                   )
                                 : _user.following
                                     ? OutlinedButton.icon(
                                         onPressed: _toggleFollow,
-                                        icon: const Icon(Icons.check_rounded, size: 14),
-                                        label: Text(_user.followMe ? '互相关注' : '已关注'),
+                                        icon: const Icon(Icons.check_rounded,
+                                            size: 14),
+                                        label: Text(
+                                            _user.followMe ? '互相关注' : '已关注'),
                                         style: OutlinedButton.styleFrom(
                                           visualDensity: VisualDensity.compact,
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                          shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(20)),
                                         ),
                                       )
                                     : FilledButton.icon(
                                         onPressed: _toggleFollow,
-                                        icon: const Icon(Icons.add_rounded, size: 16),
+                                        icon: const Icon(Icons.add_rounded,
+                                            size: 16),
                                         label: const Text('关注'),
                                         style: FilledButton.styleFrom(
                                           visualDensity: VisualDensity.compact,
-                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                          shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(20)),
                                         ),
                                       ),
                         ],
@@ -1042,7 +1130,10 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                         const SizedBox(height: 12),
                         Text(
                           _user.description,
-                          style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant, height: 1.35),
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: colorScheme.onSurfaceVariant,
+                              height: 1.35),
                         ),
                       ],
                       const SizedBox(height: 14),
@@ -1050,9 +1141,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                         children: [
                           _buildStatItem('关注', _user.friendsCount, colorScheme),
                           const SizedBox(width: 24),
-                          _buildStatItem('粉丝', _user.followersCount, colorScheme),
+                          _buildStatItem(
+                              '粉丝', _user.followersCount, colorScheme),
                           const SizedBox(width: 24),
-                          _buildStatItem('微博', _user.statusesCount > 0 ? _user.statusesCount : _statuses.length, colorScheme),
+                          _buildStatItem(
+                              '微博',
+                              _user.statusesCount > 0
+                                  ? _user.statusesCount
+                                  : _statuses.length,
+                              colorScheme),
                         ],
                       ),
                     ],
@@ -1066,7 +1163,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                  color: colorScheme.surfaceContainerHighest
+                      .withValues(alpha: 0.35),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: TabBar(
@@ -1078,7 +1176,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                   ),
                   labelColor: colorScheme.onPrimaryContainer,
                   unselectedLabelColor: colorScheme.onSurfaceVariant,
-                  labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  labelStyle: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 14),
                   dividerColor: Colors.transparent,
                   tabs: const [
                     Tab(text: '微博'),
@@ -1112,16 +1211,21 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                         onTap: _showDateFilterDialog,
                         borderRadius: BorderRadius.circular(16),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
                           decoration: BoxDecoration(
-                            color: (_selectedYear != null || _selectedMonth != null)
+                            color: (_selectedYear != null ||
+                                    _selectedMonth != null)
                                 ? colorScheme.primaryContainer
-                                : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                                : colorScheme.surfaceContainerHighest
+                                    .withValues(alpha: 0.5),
                             borderRadius: BorderRadius.circular(16),
                             border: Border.all(
-                              color: (_selectedYear != null || _selectedMonth != null)
+                              color: (_selectedYear != null ||
+                                      _selectedMonth != null)
                                   ? colorScheme.primary
-                                  : colorScheme.outlineVariant.withValues(alpha: 0.5),
+                                  : colorScheme.outlineVariant
+                                      .withValues(alpha: 0.5),
                               width: 0.8,
                             ),
                           ),
@@ -1131,7 +1235,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                               Icon(
                                 Icons.calendar_month_outlined,
                                 size: 14,
-                                color: (_selectedYear != null || _selectedMonth != null)
+                                color: (_selectedYear != null ||
+                                        _selectedMonth != null)
                                     ? colorScheme.onPrimaryContainer
                                     : colorScheme.onSurfaceVariant,
                               ),
@@ -1142,8 +1247,12 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                                     : '日期筛选',
                                 style: TextStyle(
                                   fontSize: 12,
-                                  fontWeight: (_selectedYear != null || _selectedMonth != null) ? FontWeight.bold : FontWeight.normal,
-                                  color: (_selectedYear != null || _selectedMonth != null)
+                                  fontWeight: (_selectedYear != null ||
+                                          _selectedMonth != null)
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: (_selectedYear != null ||
+                                          _selectedMonth != null)
                                       ? colorScheme.onPrimaryContainer
                                       : colorScheme.onSurfaceVariant,
                                 ),
@@ -1162,7 +1271,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
               const SliverToBoxAdapter(
                 child: Padding(
                   padding: EdgeInsets.all(40),
-                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                  child:
+                      Center(child: CircularProgressIndicator(strokeWidth: 2)),
                 ),
               )
             else if (_tabController.index == 0) ...[
@@ -1172,7 +1282,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                   child: Padding(
                     padding: const EdgeInsets.all(40),
                     child: Center(
-                      child: Text('暂无符合条件的微博', style: TextStyle(color: colorScheme.onSurfaceVariant)),
+                      child: Text('暂无符合条件的微博',
+                          style:
+                              TextStyle(color: colorScheme.onSurfaceVariant)),
                     ),
                   ),
                 )
@@ -1181,7 +1293,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                   delegate: SliverChildBuilderDelegate(
                     (context, index) {
                       // 提前 8 条静默预加载下一页
-                      if (index >= _statuses.length - 8 && _hasMore && !_isLoading) {
+                      if (index >= _statuses.length - 8 &&
+                          _hasMore &&
+                          !_isLoading) {
                         WidgetsBinding.instance.addPostFrameCallback((_) {
                           _loadTimeline(page: _page + 1);
                         });
@@ -1199,7 +1313,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                   child: Padding(
                     padding: const EdgeInsets.all(40),
                     child: Center(
-                      child: Text('相册暂无图片', style: TextStyle(color: colorScheme.onSurfaceVariant)),
+                      child: Text('相册暂无图片',
+                          style:
+                              TextStyle(color: colorScheme.onSurfaceVariant)),
                     ),
                   ),
                 )
@@ -1207,7 +1323,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                 SliverPadding(
                   padding: const EdgeInsets.all(12),
                   sliver: SliverGrid(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 3,
                       crossAxisSpacing: 6,
                       mainAxisSpacing: 6,
@@ -1246,7 +1363,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                                   fit: BoxFit.cover,
                                   errorBuilder: (_, __, ___) => Container(
                                     color: colorScheme.surfaceContainerHighest,
-                                    child: const Icon(Icons.broken_image_outlined, size: 24),
+                                    child: const Icon(
+                                        Icons.broken_image_outlined,
+                                        size: 24),
                                   ),
                                 ),
                                 if (pic.isLivePhoto)
@@ -1254,7 +1373,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                                     top: 4,
                                     right: 4,
                                     child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 5, vertical: 2),
                                       decoration: BoxDecoration(
                                         color: Colors.black54,
                                         borderRadius: BorderRadius.circular(4),
@@ -1262,11 +1382,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                                       child: const Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          Icon(Icons.motion_photos_on_rounded, size: 10, color: Colors.white),
+                                          Icon(Icons.motion_photos_on_rounded,
+                                              size: 10, color: Colors.white),
                                           SizedBox(width: 2),
                                           Text(
                                             'LIVE',
-                                            style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                                            style: TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.bold),
                                           ),
                                         ],
                                       ),
@@ -1288,7 +1412,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                   child: Padding(
                     padding: const EdgeInsets.all(40),
                     child: Center(
-                      child: Text('暂无视频动态', style: TextStyle(color: colorScheme.onSurfaceVariant)),
+                      child: Text('暂无视频动态',
+                          style:
+                              TextStyle(color: colorScheme.onSurfaceVariant)),
                     ),
                   ),
                 )
@@ -1296,7 +1422,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                 SliverPadding(
                   padding: const EdgeInsets.all(12),
                   sliver: SliverGrid(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
                       crossAxisSpacing: 10,
                       mainAxisSpacing: 10,
@@ -1305,7 +1432,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
                         final status = videoStatuses[index];
-                        return _buildWaterfallVideoCard(context, status, colorScheme);
+                        return _buildWaterfallVideoCard(
+                            context, status, colorScheme);
                       },
                       childCount: videoStatuses.length,
                     ),
@@ -1319,18 +1447,22 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
   }
 
   // 2 列视频瀑布流精致卡片
-  Widget _buildWaterfallVideoCard(BuildContext context, WeiboStatusModel status, ColorScheme colorScheme) {
+  Widget _buildWaterfallVideoCard(
+      BuildContext context, WeiboStatusModel status, ColorScheme colorScheme) {
     final cardSettings = ref.watch(cardDisplayProvider);
     final formattedTime = WeiboTimeFormatter.format(
       rawDate: status.createdAt,
       settings: cardSettings,
       language: 'zh',
     );
-    final coverUrl = status.videoCoverUrl ?? (status.pics.isNotEmpty ? status.pics.first.largeUrl : '');
+    final coverUrl = status.videoCoverUrl ??
+        (status.pics.isNotEmpty ? status.pics.first.largeUrl : '');
     final streamUrl = status.videoStreamUrl ?? '';
     final duration = status.videoDuration;
     final playCount = status.videoPlayCount;
-    final playCountStr = playCount > 10000 ? '${(playCount / 10000).toStringAsFixed(1)}万' : (playCount > 0 ? '$playCount' : '');
+    final playCountStr = playCount > 10000
+        ? '${(playCount / 10000).toStringAsFixed(1)}万'
+        : (playCount > 0 ? '$playCount' : '');
 
     return Card(
       elevation: 0,
@@ -1351,9 +1483,14 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                 videoUrl: streamUrl,
                 statusId: status.id,
                 coverUrl: coverUrl,
-                title: status.videoTitle ?? (status.effectiveText.length > 30 ? '${status.effectiveText.substring(0, 30)}...' : status.effectiveText),
+                title: status.videoTitle ??
+                    (status.effectiveText.length > 30
+                        ? '${status.effectiveText.substring(0, 30)}...'
+                        : status.effectiveText),
                 authorName: status.user.screenName,
                 videoQualityUrls: status.videoQualityUrls,
+                liveId: status.liveId,
+                liveStatus: status.liveStatus,
               ),
             ),
           );
@@ -1374,13 +1511,16 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => Container(
                         color: colorScheme.surfaceContainerHighest,
-                        child: const Center(child: Icon(Icons.video_library_rounded, size: 28)),
+                        child: const Center(
+                            child: Icon(Icons.video_library_rounded, size: 28)),
                       ),
                     )
                   else
                     Container(
                       color: Colors.black87,
-                      child: const Center(child: Icon(Icons.video_library_rounded, size: 28, color: Colors.white70)),
+                      child: const Center(
+                          child: Icon(Icons.video_library_rounded,
+                              size: 28, color: Colors.white70)),
                     ),
 
                   // Center Play Icon
@@ -1393,7 +1533,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.white70, width: 1.2),
                       ),
-                      child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 24),
+                      child: const Icon(Icons.play_arrow_rounded,
+                          color: Colors.white, size: 24),
                     ),
                   ),
 
@@ -1407,14 +1548,20 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                       children: [
                         if (playCountStr.isNotEmpty)
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
-                            decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 1.5),
+                            decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(4)),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.play_arrow_outlined, size: 10, color: Colors.white),
+                                const Icon(Icons.play_arrow_outlined,
+                                    size: 10, color: Colors.white),
                                 const SizedBox(width: 2),
-                                Text(playCountStr, style: const TextStyle(color: Colors.white, fontSize: 10)),
+                                Text(playCountStr,
+                                    style: const TextStyle(
+                                        color: Colors.white, fontSize: 10)),
                               ],
                             ),
                           )
@@ -1422,11 +1569,17 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                           const SizedBox.shrink(),
                         if (duration != null && duration.isNotEmpty)
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
-                            decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 1.5),
+                            decoration: BoxDecoration(
+                                color: Colors.black54,
+                                borderRadius: BorderRadius.circular(4)),
                             child: Text(
                               duration,
-                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold),
                             ),
                           ),
                       ],
@@ -1447,8 +1600,13 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                     Text(
                       status.videoTitle?.isNotEmpty == true
                           ? status.videoTitle!
-                          : (status.textRaw.isNotEmpty ? status.textRaw : '视频动态'),
-                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, height: 1.3),
+                          : (status.textRaw.isNotEmpty
+                              ? status.textRaw
+                              : '视频动态'),
+                      style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          height: 1.3),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1458,7 +1616,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                         Flexible(
                           child: Text(
                             formattedTime,
-                            style: TextStyle(fontSize: 10.5, color: colorScheme.onSurfaceVariant),
+                            style: TextStyle(
+                                fontSize: 10.5,
+                                color: colorScheme.onSurfaceVariant),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -1467,11 +1627,15 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.thumb_up_outlined, size: 11, color: colorScheme.onSurfaceVariant),
+                              Icon(Icons.thumb_up_outlined,
+                                  size: 11,
+                                  color: colorScheme.onSurfaceVariant),
                               const SizedBox(width: 2),
                               Text(
                                 '${status.attitudesCount}',
-                                style: TextStyle(fontSize: 10, color: colorScheme.onSurfaceVariant),
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    color: colorScheme.onSurfaceVariant),
                               ),
                             ],
                           ),
@@ -1510,12 +1674,16 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage> with SingleTi
   }
 
   Widget _buildStatItem(String label, int count, ColorScheme colorScheme) {
-    final countStr = count > 10000 ? '${(count / 10000).toStringAsFixed(1)}万' : '$count';
+    final countStr =
+        count > 10000 ? '${(count / 10000).toStringAsFixed(1)}万' : '$count';
     return Row(
       children: [
-        Text(countStr, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+        Text(countStr,
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
         const SizedBox(width: 4),
-        Text(label, style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12)),
+        Text(label,
+            style:
+                TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12)),
       ],
     );
   }

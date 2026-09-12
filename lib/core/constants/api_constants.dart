@@ -2,8 +2,8 @@
 class ApiConstants {
   ApiConstants._();
 
-  static const String appVersion = '2.5.3';
-  static const int appVersionCode = 39;
+  static const String appVersion = '2.5.5';
+  static const int appVersionCode = 41;
 
   static const String baseUrl = 'https://weibo.com';
   static const String passportUrl = 'https://passport.weibo.com';
@@ -12,13 +12,17 @@ class ApiConstants {
   // Endpoints (2024-2026 Modern Weibo REST API)
   static const String visitorGen = '/visitor/genvisitor';
   static const String visitorIncarnate = '/visitor/visitor';
-  
+
   static const String hotTimeline = '/ajax/feed/hottimeline';
   static const String friendsTimeline = '/ajax/feed/friendstimeline';
   static const String groupTimeline = '/ajax/feed/groupstimeline';
   static const String allGroups = '/ajax/feed/allGroups';
   static const String userTimeline = '/ajax/statuses/mymblog';
   static const String statusDetail = '/ajax/statuses/show';
+
+  /// Official live-room metadata endpoint. A live post's page URL only
+  /// identifies the room; the current signed playback stream comes from here.
+  static const String liveRoom = '/l/!/2/wblive/room/show_pc_live.json';
   static const String editHistory = '/ajax/statuses/editHistory';
   static const String longText = '/ajax/statuses/longtext';
   static const String updateStatus = '/ajax/statuses/update';

@@ -43,6 +43,20 @@ class RepostResult {
   });
 }
 
+class _LivePlayback {
+  final int status;
+  final String? coverUrl;
+  final String? streamUrl;
+  final String? title;
+
+  const _LivePlayback({
+    required this.status,
+    this.coverUrl,
+    this.streamUrl,
+    this.title,
+  });
+}
+
 /// Detail Repository for Fetching Status Detail, Comments, and Posting Comments
 class DetailRepository {
   final WeiboDioClient _client;
@@ -80,6 +94,7 @@ class DetailRepository {
         var status =
             WeiboStatusModel.fromJson(response.data as Map<String, dynamic>);
         status = await _enrichOfficialEngagement(status);
+        status = await enrichLivePlayback(status);
         if (status.needsLongText) {
           final longText = await getLongText(status.mblogid ?? status.id);
           if (longText != null && longText.isNotEmpty) {
@@ -101,6 +116,130 @@ class DetailRepository {
       }
     } catch (e) {
       print('[DetailRepository] getStatusDetail error: $e');
+    }
+    return null;
+  }
+
+  /// Resolves a live post's room page into the current official playback
+  /// stream. The normal status response only contains a `wblive` page link;
+  /// passing that HTML URL to video_player is what caused the endless loading
+  /// state reported for live updates.
+  Future<WeiboStatusModel> enrichLivePlayback(
+    WeiboStatusModel status,
+  ) async {
+    final liveId = status.liveId?.trim() ?? '';
+    if (liveId.isEmpty) return status;
+
+    final playback = await _getLivePlayback(liveId);
+    if (playback == null) return status;
+
+    final isLive = playback.status == 1;
+    final mergedQualityUrls = <String, String>{
+      if (isLive) ...?status.videoQualityUrls,
+    };
+    if (isLive && playback.streamUrl != null && playback.streamUrl!.isNotEmpty) {
+      mergedQualityUrls['直播'] = playback.streamUrl!;
+    }
+
+    return status.copyWith(
+      videoCoverUrl: status.videoCoverUrl?.isNotEmpty == true
+          ? status.videoCoverUrl
+          : playback.coverUrl,
+      // status=3 is a replay and status=5 is an ended room. Neither should
+      // be handed to the native player as if it were the current live feed.
+      videoStreamUrl: isLive ? (playback.streamUrl ?? status.videoStreamUrl) : '',
+      videoTitle: status.videoTitle?.isNotEmpty == true
+          ? status.videoTitle
+          : playback.title,
+      videoQualityUrls: isLive && mergedQualityUrls.isNotEmpty
+          ? mergedQualityUrls
+          : (isLive ? status.videoQualityUrls : const <String, String>{}),
+      liveStatus: playback.status,
+    );
+  }
+
+  Future<String?> getLiveStreamUrl(String liveId) async {
+    final playback = await _getLivePlayback(liveId.trim());
+    return playback?.streamUrl;
+  }
+
+  Future<_LivePlayback?> _getLivePlayback(String liveId) async {
+    try {
+      final response = await _client.dio.get(
+        ApiConstants.liveRoom,
+        queryParameters: {'live_id': liveId},
+        options: Options(
+          headers: {
+            'Referer': 'https://weibo.com/l/wblive/p/show/$liveId',
+            'Accept': 'application/json, text/plain, */*',
+          },
+        ),
+      );
+
+      final body = response.data;
+      final data = body is Map ? body['data'] : null;
+      if (data is! Map) return null;
+      final dataMap = Map<String, dynamic>.from(data);
+      final liveStatus = int.tryParse(dataMap['status']?.toString() ?? '') ?? 0;
+
+      // The official endpoint currently labels the live FLV stream as
+      // `live_origin_hls_url` in some responses. Keep the official field
+      // order and accept both transport variants; video_player/Android's
+      // ExoPlayer can detect the FLV container from the URL/content type.
+      final streamUrl = liveStatus == 1
+          ? _firstPlayableMediaUrl([
+              dataMap['live_origin_hls_url'],
+              dataMap['live_origin_flv_url'],
+              dataMap['hls_url'],
+              dataMap['m3u8_url'],
+              dataMap['stream_url'],
+              dataMap['play_url'],
+            ])
+          : null;
+
+      return _LivePlayback(
+        status: liveStatus,
+        coverUrl: _firstNonEmptyString([
+          dataMap['cover'],
+          dataMap['cover_url'],
+          dataMap['poster'],
+        ]),
+        streamUrl: streamUrl,
+        title: _firstNonEmptyString([
+          dataMap['title'],
+          dataMap['desc'],
+        ]),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String? _firstNonEmptyString(List<Object?> values) {
+    for (final value in values) {
+      final text = value?.toString().trim() ?? '';
+      if (text.isNotEmpty) return text;
+    }
+    return null;
+  }
+
+  static String? _firstPlayableMediaUrl(List<Object?> values) {
+    for (final value in values) {
+      final raw = value?.toString().trim() ?? '';
+      if (raw.isEmpty) continue;
+      final normalized = raw.startsWith('http://')
+          ? raw.replaceFirst('http://', 'https://')
+          : raw;
+      final uri = Uri.tryParse(normalized);
+      if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+        continue;
+      }
+      final lower = normalized.toLowerCase();
+      if (lower.contains('weibo.com/l/wblive/') ||
+          lower.contains('weibo.cn/l/wblive/')) {
+        continue;
+      }
+      return normalized;
     }
     return null;
   }
@@ -143,6 +282,16 @@ class DetailRepository {
         poll: status.poll ?? official.poll,
         hotTopic: status.hotTopic ?? official.hotTopic,
         visibilityType: status.visibilityType ?? official.visibilityType,
+        liveId: status.liveId ?? official.liveId,
+        liveStatus: status.liveStatus ?? official.liveStatus,
+        videoCoverUrl: status.videoCoverUrl ?? official.videoCoverUrl,
+        videoStreamUrl: status.videoStreamUrl ?? official.videoStreamUrl,
+        videoDuration: status.videoDuration ?? official.videoDuration,
+        videoPlayCount: status.videoPlayCount != 0
+            ? status.videoPlayCount
+            : official.videoPlayCount,
+        videoTitle: status.videoTitle ?? official.videoTitle,
+        videoQualityUrls: status.videoQualityUrls ?? official.videoQualityUrls,
       );
     } catch (_) {
       // Enrichment is best effort; the already-renderable desktop status wins.

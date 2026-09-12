@@ -669,8 +669,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                   isDetail: isDetail,
                   authorName: status.user.screenName,
                 ),
-              ] else if (status.videoCoverUrl != null &&
-                  status.videoCoverUrl!.isNotEmpty) ...[
+              ] else if (status.hasVideo) ...[
                 // 3.5 Native Video Preview Card
                 const SizedBox(height: 10),
                 _buildVideoPreviewCard(context, status),
@@ -1180,8 +1179,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                 isDetail: widget.isDetail,
                 authorName: retweet.user.screenName,
               ),
-            ] else if (retweet.videoCoverUrl?.isNotEmpty == true ||
-                retweet.videoStreamUrl?.isNotEmpty == true) ...[
+            ] else if (retweet.hasVideo) ...[
               const SizedBox(height: 8),
               _buildVideoPreviewCard(context, retweet),
             ],
@@ -1711,6 +1709,8 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                           : status.effectiveText),
                   authorName: status.user.screenName,
                   videoQualityUrls: status.videoQualityUrls,
+                  liveId: status.liveId,
+                  liveStatus: status.liveStatus,
                 ),
               ),
             );

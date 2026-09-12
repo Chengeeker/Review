@@ -11,6 +11,7 @@ import '../../../../core/utils/haptic_feedback_util.dart';
 import '../../../detail/data/detail_repository.dart';
 
 enum _DragMode { none, brightness, volume, seek }
+
 enum _HudType { none, brightness, volume, seek, doubleTapSeek }
 
 /// 沉浸式全功能微博视频播放器页面
@@ -26,6 +27,8 @@ class WeiboVideoPlayerPage extends ConsumerStatefulWidget {
   final String? title;
   final String? authorName;
   final Map<String, String>? videoQualityUrls;
+  final String? liveId;
+  final int? liveStatus;
 
   const WeiboVideoPlayerPage({
     super.key,
@@ -35,14 +38,18 @@ class WeiboVideoPlayerPage extends ConsumerStatefulWidget {
     this.title,
     this.authorName,
     this.videoQualityUrls,
+    this.liveId,
+    this.liveStatus,
   });
 
   @override
-  ConsumerState<WeiboVideoPlayerPage> createState() => _WeiboVideoPlayerPageState();
+  ConsumerState<WeiboVideoPlayerPage> createState() =>
+      _WeiboVideoPlayerPageState();
 }
 
 class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
-  static const MethodChannel _mediaChannel = MethodChannel('com.sharelite/cookies');
+  static const MethodChannel _mediaChannel =
+      MethodChannel('com.sharelite/cookies');
 
   VideoPlayerController? _controller;
   bool _isInitialized = false;
@@ -56,7 +63,15 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
   // 播放倍速控制
   double _playbackSpeed = 1.0;
   bool _isFastForwarding = false;
-  static const List<double> _availableSpeeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0];
+  static const List<double> _availableSpeeds = [
+    0.5,
+    0.75,
+    1.0,
+    1.25,
+    1.5,
+    2.0,
+    3.0
+  ];
 
   // 清晰度控制
   late Map<String, String> _qualityMap;
@@ -64,6 +79,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
 
   // 下载与分享状态
   bool _isDownloading = false;
+  int? _liveStatus;
 
   // 手势与 HUD 状态
   _DragMode _dragMode = _DragMode.none;
@@ -83,6 +99,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
   @override
   void initState() {
     super.initState();
+    _liveStatus = widget.liveStatus;
     _qualityMap = Map.from(widget.videoQualityUrls ?? {});
     if (_qualityMap.isEmpty && widget.videoUrl.isNotEmpty) {
       _qualityMap['高清'] = widget.videoUrl;
@@ -116,6 +133,27 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
     Duration? startPosition,
     bool autoPlay = true,
   }) async {
+    final liveMessage = _liveMessageForStatus(_liveStatus);
+    if (liveMessage != null) {
+      if (mounted) {
+        setState(() {
+          _hasError = false;
+          _isInitialized = false;
+        });
+      }
+      return;
+    }
+
+    // A live post may have a stale or missing stream in the timeline cache.
+    // Resolve its current official state before trusting a cached URL.
+    if (widget.liveId != null &&
+        widget.liveId!.isNotEmpty &&
+        _liveStatus == null &&
+        overrideUrl == null) {
+      final success = await _refreshAndPlay();
+      if (success) return;
+    }
+
     final targetUrl = overrideUrl ?? widget.videoUrl;
     if (targetUrl.isEmpty) {
       if (widget.statusId != null && widget.statusId!.isNotEmpty) {
@@ -133,6 +171,20 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
     String cleanUrl = targetUrl.trim();
     if (cleanUrl.startsWith('http://')) {
       cleanUrl = cleanUrl.replaceFirst('http://', 'https://');
+    }
+
+    // The /l/wblive/p/show/... address is an HTML room page, not a media
+    // source. Resolve it through the official live-room API first.
+    if (_isLiveRoomPageUrl(cleanUrl)) {
+      final success = await _refreshAndPlay();
+      if (success) return;
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _isInitialized = false;
+        });
+      }
+      return;
     }
 
     try {
@@ -171,7 +223,9 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
         if (mounted) setState(() {});
       });
     } catch (e) {
-      if (widget.statusId != null && widget.statusId!.isNotEmpty && overrideUrl == null) {
+      if (widget.statusId != null &&
+          widget.statusId!.isNotEmpty &&
+          overrideUrl == null) {
         final success = await _refreshAndPlay();
         if (success) return;
       }
@@ -191,20 +245,56 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
       final repo = ref.read(detailRepositoryProvider);
       final detail = await repo.getStatusDetail(widget.statusId!);
       if (detail != null) {
-        if (detail.videoQualityUrls != null && detail.videoQualityUrls!.isNotEmpty) {
+        if (detail.liveStatus != null) {
+          final liveMessage = _liveMessageForStatus(detail.liveStatus);
+          if (mounted) {
+            setState(() {
+              _liveStatus = detail.liveStatus;
+              _hasError = false;
+              _isInitialized = false;
+            });
+          }
+          if (liveMessage != null) return true;
+        }
+        if (detail.videoQualityUrls != null &&
+            detail.videoQualityUrls!.isNotEmpty) {
           setState(() {
             _qualityMap = Map.from(detail.videoQualityUrls!);
             _currentQuality = _qualityMap.keys.first;
           });
         }
-        final streamUrl = detail.videoStreamUrl ?? (detail.videoQualityUrls?.values.firstOrNull);
-        if (streamUrl != null && streamUrl.isNotEmpty) {
+        final streamUrl = detail.videoStreamUrl ??
+            (detail.videoQualityUrls?.values.firstOrNull);
+        if (streamUrl != null &&
+            streamUrl.isNotEmpty &&
+            !_isLiveRoomPageUrl(streamUrl)) {
           await _initPlayer(overrideUrl: streamUrl);
           return true;
+        }
+
+        final liveId = detail.liveId ?? widget.liveId;
+        if (liveId != null && liveId.isNotEmpty) {
+          final liveStreamUrl = await repo.getLiveStreamUrl(liveId);
+          if (liveStreamUrl != null && liveStreamUrl.isNotEmpty) {
+            await _initPlayer(overrideUrl: liveStreamUrl);
+            return true;
+          }
         }
       }
     } catch (_) {}
     return false;
+  }
+
+  static bool _isLiveRoomPageUrl(String url) {
+    final lower = url.toLowerCase();
+    return lower.contains('weibo.com/l/wblive/') ||
+        lower.contains('weibo.cn/l/wblive/');
+  }
+
+  static String? _liveMessageForStatus(int? status) {
+    if (status == null || status == 1) return null;
+    if (status == 0) return '直播尚未开始';
+    return '直播已结束';
   }
 
   @override
@@ -316,13 +406,15 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
   // 滑动调节亮度
   void _setBrightness(double value) {
     _currentBrightness = value;
-    _mediaChannel.invokeMethod('setBrightness', {'brightness': value}).catchError((_) {});
+    _mediaChannel.invokeMethod(
+        'setBrightness', {'brightness': value}).catchError((_) {});
   }
 
   // 滑动调节音量
   void _setVolume(double value) {
     _currentVolume = value;
-    _mediaChannel.invokeMethod('setVolume', {'volume': value}).catchError((_) {});
+    _mediaChannel
+        .invokeMethod('setVolume', {'volume': value}).catchError((_) {});
     _controller?.setVolume(value);
   }
 
@@ -382,11 +474,14 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
       final storage = ref.read(storageServiceProvider);
       final pathType = storage.getImageSavePathType();
       String relativeSubDir = 'Review';
-      if (pathType == 2 && widget.authorName != null && widget.authorName!.isNotEmpty) {
+      if (pathType == 2 &&
+          widget.authorName != null &&
+          widget.authorName!.isNotEmpty) {
         relativeSubDir = 'Review/${widget.authorName}';
       }
 
-      final fileName = 'wb_video_${widget.statusId ?? DateTime.now().millisecondsSinceEpoch}_${DateTime.now().millisecondsSinceEpoch}.mp4';
+      final fileName =
+          'wb_video_${widget.statusId ?? DateTime.now().millisecondsSinceEpoch}_${DateTime.now().millisecondsSinceEpoch}.mp4';
 
       final savedPath = await _mediaChannel.invokeMethod<String>(
         'saveMediaToGallery',
@@ -424,7 +519,8 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
         ? 'https://weibo.com/detail/${widget.statusId}'
         : (_qualityMap[_currentQuality] ?? widget.videoUrl);
 
-    final title = widget.title ?? (widget.authorName != null ? '${widget.authorName}的微博视频' : '微博视频');
+    final title = widget.title ??
+        (widget.authorName != null ? '${widget.authorName}的微博视频' : '微博视频');
     final shareText = '$title\n$shareUrl';
 
     // 1. 复制到剪贴板兜底
@@ -466,7 +562,10 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                   padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   child: Text(
                     '播放倍速',
-                    style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold),
                   ),
                 ),
                 ..._availableSpeeds.reversed.map((speed) {
@@ -476,13 +575,18 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                     title: Text(
                       '${speed}X',
                       style: TextStyle(
-                        color: isSelected ? Theme.of(context).colorScheme.primary : Colors.white,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        color: isSelected
+                            ? Theme.of(context).colorScheme.primary
+                            : Colors.white,
+                        fontWeight:
+                            isSelected ? FontWeight.bold : FontWeight.normal,
                         fontSize: 15,
                       ),
                     ),
                     trailing: isSelected
-                        ? Icon(Icons.check_rounded, color: Theme.of(context).colorScheme.primary, size: 20)
+                        ? Icon(Icons.check_rounded,
+                            color: Theme.of(context).colorScheme.primary,
+                            size: 20)
                         : null,
                     onTap: () {
                       setState(() {
@@ -527,7 +631,10 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                   padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                   child: Text(
                     '清晰度选择',
-                    style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold),
                   ),
                 ),
                 ..._qualityMap.entries.map((entry) {
@@ -540,19 +647,25 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                     title: Text(
                       qName,
                       style: TextStyle(
-                        color: isSelected ? Theme.of(context).colorScheme.primary : Colors.white,
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                        color: isSelected
+                            ? Theme.of(context).colorScheme.primary
+                            : Colors.white,
+                        fontWeight:
+                            isSelected ? FontWeight.bold : FontWeight.normal,
                         fontSize: 15,
                       ),
                     ),
                     trailing: isSelected
-                        ? Icon(Icons.check_rounded, color: Theme.of(context).colorScheme.primary, size: 20)
+                        ? Icon(Icons.check_rounded,
+                            color: Theme.of(context).colorScheme.primary,
+                            size: 20)
                         : null,
                     onTap: () {
                       Navigator.pop(ctx);
                       if (isSelected) return;
 
-                      final savedPos = _controller?.value.position ?? Duration.zero;
+                      final savedPos =
+                          _controller?.value.position ?? Duration.zero;
                       final wasPlaying = _controller?.value.isPlaying ?? true;
 
                       setState(() {
@@ -606,14 +719,31 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                       child: VideoPlayer(_controller!),
                     ),
                   )
+                else if (_liveMessageForStatus(_liveStatus) != null)
+                  Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.live_tv_rounded,
+                            color: Colors.white70, size: 48),
+                        const SizedBox(height: 12),
+                        Text(
+                          _liveMessageForStatus(_liveStatus)!,
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                      ],
+                    ),
+                  )
                 else if (_hasError)
                   Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.error_outline_rounded, color: Colors.white70, size: 48),
+                        const Icon(Icons.error_outline_rounded,
+                            color: Colors.white70, size: 48),
                         const SizedBox(height: 12),
-                        const Text('视频加载失败或链接已失效', style: TextStyle(color: Colors.white70)),
+                        const Text('视频加载失败或链接已失效',
+                            style: TextStyle(color: Colors.white70)),
                         const SizedBox(height: 16),
                         FilledButton.tonal(
                           onPressed: () {
@@ -638,10 +768,12 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                                 headers: ApiConstants.imageHeaders,
                                 fit: BoxFit.contain,
                               ),
-                              const CircularProgressIndicator(color: Colors.white70),
+                              const CircularProgressIndicator(
+                                  color: Colors.white70),
                             ],
                           )
-                        : const CircularProgressIndicator(color: Colors.white70),
+                        : const CircularProgressIndicator(
+                            color: Colors.white70),
                   ),
 
                 // 2. 专属全屏视频触控手势层（位于视频上方、操作栏下方，完全不干扰/延迟控制栏按钮响应）
@@ -683,7 +815,8 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                       _dragMode = _DragMode.none;
                       _startBrightness = _currentBrightness;
                       _startVolume = _currentVolume;
-                      _startPosition = _controller?.value.position ?? Duration.zero;
+                      _startPosition =
+                          _controller?.value.position ?? Duration.zero;
                       _targetSeekPosition = _startPosition;
                     },
                     onPanUpdate: (details) {
@@ -695,7 +828,8 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                           // 水平滑动判断：
                           // 横屏状态：任意区域左右滑动调整进度 (2.c)
                           // 竖屏状态：底部左右滑动调整进度 (3.c)
-                          if (_isLandscape || _panStartPos.dy > screenHeight * 0.55) {
+                          if (_isLandscape ||
+                              _panStartPos.dy > screenHeight * 0.55) {
                             _dragMode = _DragMode.seek;
                           }
                         } else if (dy.abs() > 14 && dy.abs() > dx.abs()) {
@@ -712,22 +846,33 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
 
                       if (_dragMode == _DragMode.brightness) {
                         final delta = -dy / (screenHeight * 0.65);
-                        final nextVal = (_startBrightness + delta).clamp(0.01, 1.0);
+                        final nextVal =
+                            (_startBrightness + delta).clamp(0.01, 1.0);
                         _setBrightness(nextVal);
-                        _showHud(type: _HudType.brightness, value: nextVal, autoDismissMs: 0);
+                        _showHud(
+                            type: _HudType.brightness,
+                            value: nextVal,
+                            autoDismissMs: 0);
                       } else if (_dragMode == _DragMode.volume) {
                         final delta = -dy / (screenHeight * 0.65);
                         final nextVal = (_startVolume + delta).clamp(0.0, 1.0);
                         _setVolume(nextVal);
-                        _showHud(type: _HudType.volume, value: nextVal, autoDismissMs: 0);
+                        _showHud(
+                            type: _HudType.volume,
+                            value: nextVal,
+                            autoDismissMs: 0);
                       } else if (_dragMode == _DragMode.seek) {
-                        final totalDuration = _controller?.value.duration ?? Duration.zero;
+                        final totalDuration =
+                            _controller?.value.duration ?? Duration.zero;
                         if (totalDuration > Duration.zero) {
                           final maxSec = totalDuration.inSeconds;
                           // 滑动满半屏跨度约为 90 秒或全片长度
-                          final span = maxSec > 180 ? 90 : (maxSec > 30 ? 60 : maxSec);
-                          final diffSec = ((dx / (screenWidth * 0.5)) * span).toInt();
-                          final targetSec = (_startPosition.inSeconds + diffSec).clamp(0, maxSec);
+                          final span =
+                              maxSec > 180 ? 90 : (maxSec > 30 ? 60 : maxSec);
+                          final diffSec =
+                              ((dx / (screenWidth * 0.5)) * span).toInt();
+                          final targetSec = (_startPosition.inSeconds + diffSec)
+                              .clamp(0, maxSec);
                           final target = Duration(seconds: targetSec);
                           _targetSeekPosition = target;
                           _showHud(
@@ -762,7 +907,8 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                     child: IgnorePointer(
                       ignoring: true,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 8),
                         decoration: BoxDecoration(
                           color: Colors.black87,
                           borderRadius: BorderRadius.circular(20),
@@ -777,7 +923,8 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                         child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.fast_forward_rounded, color: Colors.amberAccent, size: 20),
+                            Icon(Icons.fast_forward_rounded,
+                                color: Colors.amberAccent, size: 20),
                             SizedBox(width: 8),
                             Text(
                               '2.0X 倍速快进中',
@@ -800,226 +947,248 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                   child: _buildGestureHudOverlay(),
                 ),
 
-                  // 4. 顶部导航栏 (返回键、标题、下载按钮、分享按钮)
-                  if (_showControls)
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      child: Container(
-                        padding: EdgeInsets.fromLTRB(
-                          _isLandscape ? 24 : 12,
-                          MediaQuery.of(context).padding.top + 8,
-                          _isLandscape ? 24 : 12,
-                          16,
-                        ),
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [Colors.black87, Colors.transparent],
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            IconButton(
-                              icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
-                              onPressed: () {
-                                if (_isLandscape) {
-                                  _toggleOrientation();
-                                } else {
-                                  Navigator.pop(context);
-                                }
-                              },
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    widget.title != null && widget.title!.isNotEmpty
-                                        ? widget.title!
-                                        : (widget.authorName != null
-                                            ? '${widget.authorName}的微博视频'
-                                            : '微博视频'),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  if (widget.authorName != null && !_isLandscape)
-                                    Text(
-                                      '@${widget.authorName}',
-                                      style: const TextStyle(color: Colors.white70, fontSize: 12),
-                                    ),
-                                ],
-                              ),
-                            ),
-                            // 右上方：下载按钮
-                            IconButton(
-                              tooltip: '下载视频',
-                              icon: _isDownloading
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Icon(Icons.download_rounded, color: Colors.white),
-                              onPressed: _performDownloadVideo,
-                            ),
-                            // 下载右边：分享按钮
-                            IconButton(
-                              tooltip: '分享视频',
-                              icon: const Icon(Icons.share_rounded, color: Colors.white),
-                              onPressed: _performShareVideo,
-                            ),
-                          ],
+                // 4. 顶部导航栏 (返回键、标题、下载按钮、分享按钮)
+                if (_showControls)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      padding: EdgeInsets.fromLTRB(
+                        _isLandscape ? 24 : 12,
+                        MediaQuery.of(context).padding.top + 8,
+                        _isLandscape ? 24 : 12,
+                        16,
+                      ),
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Colors.black87, Colors.transparent],
                         ),
                       ),
-                    ),
-
-                  // 5. 中间播放/暂停大图标
-                  if (_showControls && _isInitialized && _controller != null && !_isFastForwarding)
-                    Center(
-                      child: IconButton(
-                        iconSize: 64,
-                        icon: Icon(
-                          _controller!.value.isPlaying
-                              ? Icons.pause_circle_filled_rounded
-                              : Icons.play_circle_filled_rounded,
-                          color: Colors.white.withValues(alpha: 0.85),
-                        ),
-                        onPressed: _togglePlayPause,
-                      ),
-                    ),
-
-                  // 6. 底部进度条与控制栏 (含时间、倍速、画质切换及横屏开关)
-                  if (_showControls && _isInitialized && _controller != null)
-                    Positioned(
-                      bottom: 0,
-                      left: 0,
-                      right: 0,
-                      child: Container(
-                        padding: EdgeInsets.fromLTRB(
-                          _isLandscape ? 28 : 16,
-                          12,
-                          _isLandscape ? 28 : 16,
-                          MediaQuery.of(context).padding.bottom + 12,
-                        ),
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.bottomCenter,
-                            end: Alignment.topCenter,
-                            colors: [Colors.black87, Colors.transparent],
+                      child: Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.arrow_back_rounded,
+                                color: Colors.white),
+                            onPressed: () {
+                              if (_isLandscape) {
+                                _toggleOrientation();
+                              } else {
+                                Navigator.pop(context);
+                              }
+                            },
                           ),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            // 进度滑块
-                            VideoProgressIndicator(
-                              _controller!,
-                              allowScrubbing: true,
-                              padding: const EdgeInsets.symmetric(vertical: 6),
-                              colors: VideoProgressColors(
-                                playedColor: Theme.of(context).colorScheme.primary,
-                                bufferedColor: Colors.white30,
-                                backgroundColor: Colors.white12,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            // 进度条下方行：时间、倍速、画质、最右侧横屏开关
-                            Row(
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  _formatDuration(_controller!.value.position),
-                                  style: const TextStyle(color: Colors.white, fontSize: 12),
-                                ),
-                                const Text(' / ', style: TextStyle(color: Colors.white38, fontSize: 12)),
-                                Text(
-                                  _formatDuration(_controller!.value.duration),
-                                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                                ),
-                                const Spacer(),
-                                // 倍速选择按钮
-                                InkWell(
-                                  borderRadius: BorderRadius.circular(12),
-                                  onTap: _showSpeedMenu,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white12,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: Colors.white24, width: 0.6),
-                                    ),
-                                    child: Text(
-                                      _playbackSpeed == 1.0 ? '倍速' : '${_playbackSpeed}X',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
+                                  widget.title != null &&
+                                          widget.title!.isNotEmpty
+                                      ? widget.title!
+                                      : (widget.authorName != null
+                                          ? '${widget.authorName}的微博视频'
+                                          : '微博视频'),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
                                   ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                const SizedBox(width: 8),
-                                // 画质选择按钮
-                                InkWell(
-                                  borderRadius: BorderRadius.circular(12),
-                                  onTap: _showQualityMenu,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white12,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: Colors.white24, width: 0.6),
-                                    ),
-                                    child: Text(
-                                      _currentQuality,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
+                                if (widget.authorName != null && !_isLandscape)
+                                  Text(
+                                    '@${widget.authorName}',
+                                    style: const TextStyle(
+                                        color: Colors.white70, fontSize: 12),
                                   ),
-                                ),
-                                const SizedBox(width: 8),
-                                // 画质右侧最右边：横屏显示开关 (全屏切换)
-                                InkWell(
-                                  borderRadius: BorderRadius.circular(12),
-                                  onTap: _toggleOrientation,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white12,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: Colors.white24, width: 0.6),
-                                    ),
-                                    child: Icon(
-                                      _isLandscape ? Icons.fullscreen_exit_rounded : Icons.fullscreen_rounded,
-                                      color: Colors.white,
-                                      size: 20,
-                                    ),
-                                  ),
-                                ),
                               ],
                             ),
-                          ],
-                        ),
+                          ),
+                          // 右上方：下载按钮
+                          IconButton(
+                            tooltip: '下载视频',
+                            icon: _isDownloading
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.download_rounded,
+                                    color: Colors.white),
+                            onPressed: _performDownloadVideo,
+                          ),
+                          // 下载右边：分享按钮
+                          IconButton(
+                            tooltip: '分享视频',
+                            icon: const Icon(Icons.share_rounded,
+                                color: Colors.white),
+                            onPressed: _performShareVideo,
+                          ),
+                        ],
                       ),
                     ),
-                ],
-              );
-            },
+                  ),
+
+                // 5. 中间播放/暂停大图标
+                if (_showControls &&
+                    _isInitialized &&
+                    _controller != null &&
+                    !_isFastForwarding)
+                  Center(
+                    child: IconButton(
+                      iconSize: 64,
+                      icon: Icon(
+                        _controller!.value.isPlaying
+                            ? Icons.pause_circle_filled_rounded
+                            : Icons.play_circle_filled_rounded,
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                      onPressed: _togglePlayPause,
+                    ),
+                  ),
+
+                // 6. 底部进度条与控制栏 (含时间、倍速、画质切换及横屏开关)
+                if (_showControls && _isInitialized && _controller != null)
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      padding: EdgeInsets.fromLTRB(
+                        _isLandscape ? 28 : 16,
+                        12,
+                        _isLandscape ? 28 : 16,
+                        MediaQuery.of(context).padding.bottom + 12,
+                      ),
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [Colors.black87, Colors.transparent],
+                        ),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // 进度滑块
+                          VideoProgressIndicator(
+                            _controller!,
+                            allowScrubbing: true,
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            colors: VideoProgressColors(
+                              playedColor:
+                                  Theme.of(context).colorScheme.primary,
+                              bufferedColor: Colors.white30,
+                              backgroundColor: Colors.white12,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          // 进度条下方行：时间、倍速、画质、最右侧横屏开关
+                          Row(
+                            children: [
+                              Text(
+                                _formatDuration(_controller!.value.position),
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 12),
+                              ),
+                              const Text(' / ',
+                                  style: TextStyle(
+                                      color: Colors.white38, fontSize: 12)),
+                              Text(
+                                _formatDuration(_controller!.value.duration),
+                                style: const TextStyle(
+                                    color: Colors.white70, fontSize: 12),
+                              ),
+                              const Spacer(),
+                              // 倍速选择按钮
+                              InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: _showSpeedMenu,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white12,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                        color: Colors.white24, width: 0.6),
+                                  ),
+                                  child: Text(
+                                    _playbackSpeed == 1.0
+                                        ? '倍速'
+                                        : '${_playbackSpeed}X',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              // 画质选择按钮
+                              InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: _showQualityMenu,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white12,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                        color: Colors.white24, width: 0.6),
+                                  ),
+                                  child: Text(
+                                    _currentQuality,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              // 画质右侧最右边：横屏显示开关 (全屏切换)
+                              InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: _toggleOrientation,
+                                child: Container(
+                                  padding: const EdgeInsets.all(4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white12,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                        color: Colors.white24, width: 0.6),
+                                  ),
+                                  child: Icon(
+                                    _isLandscape
+                                        ? Icons.fullscreen_exit_rounded
+                                        : Icons.fullscreen_rounded,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -1037,7 +1206,9 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              pct > 50 ? Icons.brightness_7_rounded : Icons.brightness_4_rounded,
+              pct > 50
+                  ? Icons.brightness_7_rounded
+                  : Icons.brightness_4_rounded,
               color: Colors.amberAccent,
               size: 26,
             ),
@@ -1049,7 +1220,8 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                 child: LinearProgressIndicator(
                   value: _hudValue,
                   backgroundColor: Colors.white24,
-                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.amberAccent),
+                  valueColor:
+                      const AlwaysStoppedAnimation<Color>(Colors.amberAccent),
                   minHeight: 6,
                 ),
               ),
@@ -1057,7 +1229,10 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
             const SizedBox(width: 12),
             Text(
               '$pct%',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13),
             ),
           ],
         );
@@ -1071,7 +1246,9 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
             Icon(
               pct == 0
                   ? Icons.volume_off_rounded
-                  : (pct > 50 ? Icons.volume_up_rounded : Icons.volume_down_rounded),
+                  : (pct > 50
+                      ? Icons.volume_up_rounded
+                      : Icons.volume_down_rounded),
               color: Colors.cyanAccent,
               size: 26,
             ),
@@ -1083,7 +1260,8 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                 child: LinearProgressIndicator(
                   value: _hudValue,
                   backgroundColor: Colors.white24,
-                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.cyanAccent),
+                  valueColor:
+                      const AlwaysStoppedAnimation<Color>(Colors.cyanAccent),
                   minHeight: 6,
                 ),
               ),
@@ -1091,33 +1269,44 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
             const SizedBox(width: 12),
             Text(
               '$pct%',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13),
             ),
           ],
         );
         break;
 
       case _HudType.seek:
-        final diffStr = _hudSeekDiff >= 0 ? '+${_hudSeekDiff}s' : '${_hudSeekDiff}s';
+        final diffStr =
+            _hudSeekDiff >= 0 ? '+${_hudSeekDiff}s' : '${_hudSeekDiff}s';
         final totalDur = _controller?.value.duration ?? Duration.zero;
         content = Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              _hudSeekDiff >= 0 ? Icons.fast_forward_rounded : Icons.fast_rewind_rounded,
+              _hudSeekDiff >= 0
+                  ? Icons.fast_forward_rounded
+                  : Icons.fast_rewind_rounded,
               color: Colors.white,
               size: 32,
             ),
             const SizedBox(height: 6),
             Text(
               '${_formatDuration(_targetSeekPosition)} / ${_formatDuration(totalDur)}',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15),
             ),
             const SizedBox(height: 4),
             Text(
               '[$diffStr]',
               style: TextStyle(
-                color: _hudSeekDiff >= 0 ? Colors.greenAccent : Colors.orangeAccent,
+                color: _hudSeekDiff >= 0
+                    ? Colors.greenAccent
+                    : Colors.orangeAccent,
                 fontWeight: FontWeight.bold,
                 fontSize: 13,
               ),
@@ -1132,14 +1321,19 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              _hudSeekDiff >= 0 ? Icons.forward_10_rounded : Icons.replay_10_rounded,
+              _hudSeekDiff >= 0
+                  ? Icons.forward_10_rounded
+                  : Icons.replay_10_rounded,
               color: Colors.white,
               size: 28,
             ),
             const SizedBox(width: 8),
             Text(
               diffStr,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16),
             ),
           ],
         );

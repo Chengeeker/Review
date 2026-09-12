@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/network/weibo_dio_client.dart';
 import '../../../core/storage/storage_service.dart';
+import '../../detail/data/detail_repository.dart';
 import 'models/weibo_engagement_models.dart';
 import 'models/weibo_status_model.dart';
 
@@ -75,8 +76,10 @@ class UserGroupsResult {
 class FeedRepository {
   final WeiboDioClient _client;
   final StorageService _storage;
+  final DetailRepository _detailRepository;
 
-  FeedRepository(this._client, this._storage);
+  FeedRepository(this._client, this._storage)
+      : _detailRepository = DetailRepository(_client);
 
   /// Parses desktop timeline statuses and, only when an official engagement
   /// marker is present, fills omitted poll/topic metadata from the official
@@ -94,6 +97,9 @@ class FeedRepository {
           if (officialJson != null) {
             status = WeiboStatusModel.fromJson({...json, ...officialJson});
           }
+        }
+        if (status.isLiveBroadcast && !status.hasPlayableVideoStream) {
+          status = await _detailRepository.enrichLivePlayback(status);
         }
         if (status.id.isNotEmpty) statuses.add(status);
       } catch (_) {}

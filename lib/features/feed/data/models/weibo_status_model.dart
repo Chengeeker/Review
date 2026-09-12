@@ -68,6 +68,78 @@ int? _visibilityTypeFromJson(Map<String, dynamic> json) {
   return _visibilityCodeFromValue(json['privacy']);
 }
 
+String? _normalizeMediaUrl(Object? value) {
+  final raw = value?.toString().trim() ?? '';
+  if (raw.isEmpty) return null;
+
+  final normalized = raw.startsWith('//')
+      ? 'https:$raw'
+      : (raw.startsWith('http://')
+          ? raw.replaceFirst('http://', 'https://')
+          : raw);
+  final uri = Uri.tryParse(normalized);
+  if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+    return null;
+  }
+
+  // A live-room page is HTML, not a playable media source. It can still be
+  // used to extract the live id, but must never be handed to video_player.
+  final lower = normalized.toLowerCase();
+  if (lower.contains('weibo.com/l/wblive/') ||
+      lower.contains('weibo.cn/l/wblive/')) {
+    return null;
+  }
+  return normalized;
+}
+
+String? _liveIdFromString(String value) {
+  final text = value.trim();
+  if (text.isEmpty) return null;
+
+  final pageMatch = RegExp(
+    r'(?:https?://)?(?:www\.)?weibo\.(?:com|cn)/l/(?:wblive/)?p/show/([^/?#]+)',
+    caseSensitive: false,
+  ).firstMatch(text);
+  if (pageMatch != null) {
+    return Uri.decodeComponent(pageMatch.group(1) ?? '');
+  }
+
+  final queryMatch = RegExp(r'(?:[?&])live_id=([^&#]+)', caseSensitive: false)
+      .firstMatch(text);
+  if (queryMatch != null) {
+    return Uri.decodeComponent(queryMatch.group(1) ?? '');
+  }
+  return null;
+}
+
+String? _extractLiveId(Object? value) {
+  if (value is String) return _liveIdFromString(value);
+  if (value is List) {
+    for (final item in value) {
+      final liveId = _extractLiveId(item);
+      if (liveId != null && liveId.isNotEmpty) return liveId;
+    }
+    return null;
+  }
+  if (value is Map) {
+    for (final key in const ['live_id', 'liveId', 'liveid', 'lid']) {
+      final candidate = value[key]?.toString().trim() ?? '';
+      if (candidate.isNotEmpty && !candidate.contains('/')) return candidate;
+    }
+    for (final item in value.values) {
+      final liveId = _extractLiveId(item);
+      if (liveId != null && liveId.isNotEmpty) return liveId;
+    }
+  }
+  return null;
+}
+
+int? _liveStatusFromValue(Object? value) {
+  if (value is num) return value.toInt();
+  final text = value?.toString().trim() ?? '';
+  return text.isEmpty ? null : int.tryParse(text);
+}
+
 class WeiboPicModel {
   final String pid;
   final String thumbnail;
@@ -362,6 +434,13 @@ class WeiboStatusModel {
   final int videoPlayCount;
   final String? videoTitle;
   final Map<String, String>? videoQualityUrls;
+
+  /// Official live-room identifier (for example `1022:...`). This is
+  /// different from a Live Photo URL and is resolved through Weibo's live
+  /// room endpoint before playback.
+  final String? liveId;
+  /// Official live-room status: 0 not started, 1 live, 3 replay, 5 ended.
+  final int? liveStatus;
   final String? chaohuaTitle;
   final String? chaohuaContainerId;
   final String? chaohuaAvatar;
@@ -399,6 +478,8 @@ class WeiboStatusModel {
     this.videoPlayCount = 0,
     this.videoTitle,
     this.videoQualityUrls,
+    this.liveId,
+    this.liveStatus,
     this.chaohuaTitle,
     this.chaohuaContainerId,
     this.chaohuaAvatar,
@@ -408,7 +489,14 @@ class WeiboStatusModel {
     this.editCount = 0,
   });
 
-  bool get hasVideo => videoStreamUrl != null && videoStreamUrl!.isNotEmpty;
+  bool get hasPlayableVideoStream =>
+      videoStreamUrl != null && videoStreamUrl!.isNotEmpty;
+  bool get isLiveBroadcast => liveId != null && liveId!.isNotEmpty;
+  bool get isLiveNow => isLiveBroadcast && liveStatus == 1;
+  bool get isLiveNotStarted => isLiveBroadcast && liveStatus == 0;
+  bool get isLiveEnded =>
+      isLiveBroadcast && liveStatus != null && liveStatus != 0 && liveStatus != 1;
+  bool get hasVideo => hasPlayableVideoStream || isLiveBroadcast;
   String get effectiveText =>
       (fullTextRaw != null && fullTextRaw!.isNotEmpty) ? fullTextRaw! : textRaw;
   bool get needsLongText =>
@@ -497,6 +585,8 @@ class WeiboStatusModel {
     int? videoPlayCount,
     String? videoTitle,
     Map<String, String>? videoQualityUrls,
+    String? liveId,
+    int? liveStatus,
     String? chaohuaTitle,
     String? chaohuaContainerId,
     String? chaohuaAvatar,
@@ -534,6 +624,8 @@ class WeiboStatusModel {
       videoPlayCount: videoPlayCount ?? this.videoPlayCount,
       videoTitle: videoTitle ?? this.videoTitle,
       videoQualityUrls: videoQualityUrls ?? this.videoQualityUrls,
+      liveId: liveId ?? this.liveId,
+      liveStatus: liveStatus ?? this.liveStatus,
       chaohuaTitle: chaohuaTitle ?? this.chaohuaTitle,
       chaohuaContainerId: chaohuaContainerId ?? this.chaohuaContainerId,
       chaohuaAvatar: chaohuaAvatar ?? this.chaohuaAvatar,
@@ -695,6 +787,46 @@ class WeiboStatusModel {
     String? videoTitle;
     final Map<String, String> videoQualityMap = {};
 
+    final rawUrlStructList = json['url_struct'] as List? ?? [];
+    final typedUrlStruct = rawUrlStructList
+        .whereType<Map>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
+    final liveId = _extractLiveId({
+      'live_id': json['live_id'],
+      'liveId': json['liveId'],
+      'live': json['live'],
+      'live_info': json['live_info'],
+      'page_info': json['page_info'],
+      'card_info': json['card_info'],
+      'url_struct': typedUrlStruct,
+    });
+    int? liveStatus = _liveStatusFromValue(json['live_status']) ??
+        _liveStatusFromValue(json['liveStatus']);
+    for (final key in const ['live', 'live_info', 'wblive', 'live_room']) {
+      final liveInfo = json[key];
+      if (liveInfo is Map) {
+        liveStatus ??= _liveStatusFromValue(liveInfo['status']) ??
+            _liveStatusFromValue(liveInfo['live_status']) ??
+            _liveStatusFromValue(liveInfo['liveStatus']);
+      }
+    }
+    final rawPageInfoForStatus = json['page_info'];
+    if (rawPageInfoForStatus is Map) {
+      final pageType =
+          rawPageInfoForStatus['type']?.toString().toLowerCase() ?? '';
+      final isLivePage = liveId != null ||
+          pageType == 'live' ||
+          pageType == 'wblive' ||
+          pageType == 'live_video' ||
+          pageType == 'livevideo';
+      if (isLivePage) {
+        liveStatus ??= _liveStatusFromValue(rawPageInfoForStatus['status']) ??
+            _liveStatusFromValue(rawPageInfoForStatus['live_status']) ??
+            _liveStatusFromValue(rawPageInfoForStatus['liveStatus']);
+      }
+    }
+
     final pageInfoRaw = json['page_info'];
     // A retweet wrapper can repeat the original post's page_info at the
     // wrapper level. That media belongs to retweeted_status and must not be
@@ -709,7 +841,15 @@ class WeiboStatusModel {
       final mediaInfo =
           mediaInfoRaw is Map ? mediaInfoRaw as Map<String, dynamic> : null;
 
-      if (pType == 'video' || pType == 'media' || mediaInfo != null) {
+      final isLivePage = liveId != null ||
+          pType == 'live' ||
+          pType == 'wblive' ||
+          pType == 'live_video' ||
+          pType == 'livevideo';
+      if (pType == 'video' ||
+          pType == 'media' ||
+          mediaInfo != null ||
+          isLivePage) {
         videoTitle = pageInfo['page_title']?.toString();
 
         final pagePic = pageInfo['page_pic'];
@@ -736,8 +876,8 @@ class WeiboStatusModel {
             for (final p in playbackList) {
               if (p is Map && p['play_info'] is Map) {
                 final pi = p['play_info'] as Map<String, dynamic>;
-                final url = pi['url']?.toString();
-                if (url != null && url.isNotEmpty) {
+                final normalizedUrl = _normalizeMediaUrl(pi['url']);
+                if (normalizedUrl != null && normalizedUrl.isNotEmpty) {
                   final label = pi['label']?.toString().toLowerCase() ?? '';
                   String qName = '标清';
                   if (label.contains('1080') || label.contains('fhd')) {
@@ -751,9 +891,6 @@ class WeiboStatusModel {
                   } else {
                     qName = pi['quality_label']?.toString() ?? '默认画质';
                   }
-                  final normalizedUrl = url.startsWith('http://')
-                      ? url.replaceFirst('http://', 'https://')
-                      : url;
                   videoQualityMap[qName] = normalizedUrl;
 
                   if (label == 'mp4_720p' ||
@@ -772,46 +909,67 @@ class WeiboStatusModel {
 
           // 2. Direct resolution streams
           if (mediaInfo['mp4_1080p_mp4'] != null) {
-            final u = mediaInfo['mp4_1080p_mp4']
-                .toString()
-                .replaceFirst('http://', 'https://');
-            videoQualityMap['1080P 超清'] = u;
-            videoStream ??= u;
+            final u = _normalizeMediaUrl(mediaInfo['mp4_1080p_mp4']);
+            if (u != null) {
+              videoQualityMap['1080P 超清'] = u;
+              videoStream ??= u;
+            }
           }
           if (mediaInfo['mp4_720p_mp4'] != null) {
-            final u = mediaInfo['mp4_720p_mp4']
-                .toString()
-                .replaceFirst('http://', 'https://');
-            videoQualityMap['720P 高清'] = u;
-            videoStream ??= u;
+            final u = _normalizeMediaUrl(mediaInfo['mp4_720p_mp4']);
+            if (u != null) {
+              videoQualityMap['720P 高清'] = u;
+              videoStream ??= u;
+            }
           }
           if (mediaInfo['stream_url_hd'] != null) {
-            final u = mediaInfo['stream_url_hd']
-                .toString()
-                .replaceFirst('http://', 'https://');
-            videoQualityMap['720P 高清'] ??= u;
-            videoStream ??= u;
+            final u = _normalizeMediaUrl(mediaInfo['stream_url_hd']);
+            if (u != null) {
+              videoQualityMap['720P 高清'] ??= u;
+              videoStream ??= u;
+            }
           }
           if (mediaInfo['mp4_hd_url'] != null) {
-            final u = mediaInfo['mp4_hd_url']
-                .toString()
-                .replaceFirst('http://', 'https://');
-            videoQualityMap['720P 高清'] ??= u;
-            videoStream ??= u;
+            final u = _normalizeMediaUrl(mediaInfo['mp4_hd_url']);
+            if (u != null) {
+              videoQualityMap['720P 高清'] ??= u;
+              videoStream ??= u;
+            }
           }
           if (mediaInfo['stream_url'] != null) {
-            final u = mediaInfo['stream_url']
-                .toString()
-                .replaceFirst('http://', 'https://');
-            videoQualityMap['480P 标清'] ??= u;
-            videoStream ??= u;
+            final u = _normalizeMediaUrl(mediaInfo['stream_url']);
+            if (u != null) {
+              videoQualityMap['480P 标清'] ??= u;
+              videoStream ??= u;
+            }
           }
           if (mediaInfo['mp4_sd_url'] != null) {
-            final u = mediaInfo['mp4_sd_url']
-                .toString()
-                .replaceFirst('http://', 'https://');
-            videoQualityMap['480P 标清'] ??= u;
-            videoStream ??= u;
+            final u = _normalizeMediaUrl(mediaInfo['mp4_sd_url']);
+            if (u != null) {
+              videoQualityMap['480P 标清'] ??= u;
+              videoStream ??= u;
+            }
+          }
+
+          // Live posts use a separate live-room response. Some status
+          // payloads already carry one of these fields; accept the direct
+          // media URL but never the /l/wblive HTML page URL.
+          if (liveStatus == null || liveStatus == 1) {
+            for (final key in const [
+              'live_origin_hls_url',
+              'live_origin_flv_url',
+              'hls_url',
+              'm3u8_url',
+              'play_url',
+              'playback_url',
+            ]) {
+              final normalizedUrl = _normalizeMediaUrl(mediaInfo[key]);
+              if (normalizedUrl != null) {
+                videoQualityMap['直播'] ??= normalizedUrl;
+                videoStream ??= normalizedUrl;
+                break;
+              }
+            }
           }
 
           // 3. Normalize videoStream to HTTPS if it starts with http://
@@ -842,14 +1000,16 @@ class WeiboStatusModel {
       }
     } else if (json['video'] is Map) {
       final vMap = json['video'] as Map<String, dynamic>;
-      videoStream = vMap['stream_url']?.toString() ?? vMap['url']?.toString();
-      if (videoStream != null && videoStream.startsWith('http://')) {
-        videoStream = videoStream.replaceFirst('http://', 'https://');
-      }
+      videoStream = _normalizeMediaUrl(vMap['stream_url']) ??
+          _normalizeMediaUrl(vMap['hls_url']) ??
+          _normalizeMediaUrl(vMap['m3u8_url']) ??
+          _normalizeMediaUrl(vMap['url']);
       if (videoStream != null && videoStream.isNotEmpty) {
         videoQualityMap['默认画质'] = videoStream;
       }
-      videoCover = vMap['cover_url']?.toString();
+      videoCover = vMap['cover_url']?.toString() ??
+          vMap['cover']?.toString() ??
+          vMap['poster']?.toString();
     }
 
     final isLongText = json['isLongText'] == true ||
@@ -893,12 +1053,6 @@ class WeiboStatusModel {
         }
       }
     }
-
-    final rawUrlStructList = json['url_struct'] as List? ?? [];
-    final typedUrlStruct = rawUrlStructList
-        .whereType<Map>()
-        .map((m) => Map<String, dynamic>.from(m))
-        .toList();
 
     final poll = WeiboPollModel.fromStatusJson(
       json,
@@ -974,6 +1128,8 @@ class WeiboStatusModel {
       videoPlayCount: videoPlayCount,
       videoTitle: videoTitle,
       videoQualityUrls: videoQualityMap.isNotEmpty ? videoQualityMap : null,
+      liveId: liveId,
+      liveStatus: liveStatus,
       chaohuaTitle: chaohuaTitle,
       chaohuaContainerId: chaohuaCid,
       chaohuaAvatar: chaohuaAvatar,
@@ -1012,6 +1168,8 @@ class WeiboStatusModel {
       'video_duration': videoDuration,
       'video_play_count': videoPlayCount,
       'video_title': videoTitle,
+      'live_id': liveId,
+      'live_status': liveStatus,
       'chaohua_title': chaohuaTitle,
       'chaohua_containerid': chaohuaContainerId,
       'chaohua_avatar': chaohuaAvatar,
