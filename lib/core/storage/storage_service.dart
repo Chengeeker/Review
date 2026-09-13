@@ -6,6 +6,10 @@ class StorageService {
   static const String keySubCookie = 'weibo_sub_cookie';
   static const String keySubpCookie = 'weibo_subp_cookie';
   static const String keyFullCookie = 'weibo_full_cookie';
+  // Keep cookies scoped to the host that will consume them. Weibo's mobile
+  // (weibo.cn) and desktop (weibo.com) sessions can briefly differ during SSO.
+  static const String keyDesktopCookie = 'weibo_desktop_cookie';
+  static const String keyMobileCookie = 'weibo_mobile_cookie';
   static const String keyAccessToken = 'weibo_access_token';
   static const String keyIsLoggedIn = 'is_logged_in';
   static const String keyUserUid = 'user_uid';
@@ -95,6 +99,14 @@ class StorageService {
   String? getFullCookie() => _prefs.getString(keyFullCookie);
   Future<bool> setFullCookie(String value) =>
       _prefs.setString(keyFullCookie, value);
+
+  String? getDesktopCookie() => _prefs.getString(keyDesktopCookie);
+  Future<bool> setDesktopCookie(String value) =>
+      _prefs.setString(keyDesktopCookie, value);
+
+  String? getMobileCookie() => _prefs.getString(keyMobileCookie);
+  Future<bool> setMobileCookie(String value) =>
+      _prefs.setString(keyMobileCookie, value);
 
   String? getAccessToken() => _prefs.getString(keyAccessToken);
   Future<bool> setAccessToken(String value) =>
@@ -429,6 +441,8 @@ class StorageService {
     await _prefs.remove(keySubCookie);
     await _prefs.remove(keySubpCookie);
     await _prefs.remove(keyFullCookie);
+    await _prefs.remove(keyDesktopCookie);
+    await _prefs.remove(keyMobileCookie);
     await _prefs.remove(keyAccessToken);
     await _prefs.remove(keyIsLoggedIn);
     await _prefs.remove(keyUserUid);

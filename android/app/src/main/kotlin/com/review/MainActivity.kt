@@ -222,8 +222,8 @@ class MainActivity : FlutterActivity() {
                         cookieManager.flush()
                         val cookieList = mutableListOf<String>()
                         val domains = listOf(
-                            "https://m.weibo.cn",
                             "https://weibo.com",
+                            "https://m.weibo.cn",
                             "https://passport.weibo.com",
                             "https://sina.cn",
                             "https://weibo.cn",
@@ -246,6 +246,46 @@ class MainActivity : FlutterActivity() {
                         }
                         val combined = cookieList.distinct().joinToString("; ")
                         result.success(combined)
+                    } catch (e: Exception) {
+                        result.error("ERROR", e.message, null)
+                    }
+                }
+                "getNativeCookiesByDomain" -> {
+                    try {
+                        val cookieManager = CookieManager.getInstance()
+                        cookieManager.flush()
+
+                        fun readCookie(urls: List<String>): String {
+                            val values = mutableListOf<String>()
+                            for (url in urls) {
+                                val cookie = cookieManager.getCookie(url)
+                                if (!cookie.isNullOrEmpty()) values.add(cookie)
+                            }
+                            return values.distinct().joinToString("; ")
+                        }
+
+                        result.success(
+                            mapOf(
+                                "desktop" to readCookie(
+                                    listOf(
+                                        "https://weibo.com",
+                                        "weibo.com",
+                                        ".weibo.com",
+                                        "https://m.weibo.com",
+                                        "m.weibo.com"
+                                    )
+                                ),
+                                "mobile" to readCookie(
+                                    listOf(
+                                        "https://m.weibo.cn",
+                                        "m.weibo.cn",
+                                        "https://weibo.cn",
+                                        "weibo.cn",
+                                        ".weibo.cn"
+                                    )
+                                )
+                            )
+                        )
                     } catch (e: Exception) {
                         result.error("ERROR", e.message, null)
                     }

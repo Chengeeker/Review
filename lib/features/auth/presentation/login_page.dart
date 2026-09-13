@@ -112,6 +112,20 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             await _cookieChannel.invokeMethod<String>('getNativeCookies');
       } catch (_) {}
 
+      // Prefer the CookieManager's desktop host jar. The legacy combined
+      // bridge starts with m.weibo.cn and can otherwise select a mobile-only
+      // SUB value before the desktop SSO cookie has settled.
+      String? desktopCookies;
+      try {
+        final scoped = await _cookieChannel.invokeMethod<dynamic>(
+          'getNativeCookiesByDomain',
+        );
+        if (scoped is Map) {
+          final value = scoped['desktop']?.toString() ?? '';
+          if (value.isNotEmpty) desktopCookies = value;
+        }
+      } catch (_) {}
+
       // 2. Secondary: JS extraction inside WebView
       String? jsCookies;
       try {
@@ -123,20 +137,26 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       } catch (_) {}
 
       final effectiveCookie =
-          (nativeCookies != null && nativeCookies.isNotEmpty)
-              ? nativeCookies
-              : (jsCookies ?? '');
+          (desktopCookies != null && desktopCookies.isNotEmpty)
+              ? desktopCookies
+              : (jsCookies != null && jsCookies.isNotEmpty)
+                  ? jsCookies
+                  : (nativeCookies ?? '');
 
       if (effectiveCookie.isNotEmpty &&
           (effectiveCookie.contains('SUB=') ||
               effectiveCookie.contains('_2A'))) {
-        final success = await ref
-            .read(authProvider.notifier)
-            .setAndVerifyCookie(effectiveCookie);
+        final success =
+            await ref.read(authProvider.notifier).setAndVerifyCookie(
+                  effectiveCookie,
+                  requireDesktopSession: true,
+                );
         if (success && mounted) {
           if (_hasSuccessfullyLogged) return;
           _hasSuccessfullyLogged = true;
 
+          // Complete the host-scoped Cookie snapshot before the feed starts.
+          await ref.read(authProvider.notifier).reconcileNativeSession();
           ref.read(feedControllerProvider.notifier).setCategory('friends');
           AppToast.show(context, '🎉 微博账号登录成功！已为您同步真实关注流');
           if (mounted && Navigator.of(context).canPop()) {

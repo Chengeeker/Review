@@ -54,7 +54,11 @@ class AuthState {
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
+  static const MethodChannel _cookieChannel =
+      MethodChannel('com.sharelite/cookies');
+
   final StorageService _storage;
+  Future<bool>? _nativeSyncFuture;
 
   AuthNotifier(this._storage) : super(const AuthState()) {
     _loadFromStorage();
@@ -111,6 +115,21 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (storedFull != null && full != storedFull) {
       _storage.setFullCookie(full!);
     }
+    // Older installations only stored one merged Cookie header. Keep it as a
+    // backwards-compatible fallback until a host-scoped native session sync
+    // can obtain the desktop/mobile values separately.
+    if ((_storage.getDesktopCookie() == null ||
+            _storage.getDesktopCookie()!.isEmpty) &&
+        full != null &&
+        full.isNotEmpty) {
+      _storage.setDesktopCookie(full);
+    }
+    if ((_storage.getMobileCookie() == null ||
+            _storage.getMobileCookie()!.isEmpty) &&
+        full != null &&
+        full.isNotEmpty) {
+      _storage.setMobileCookie(full);
+    }
 
     state = AuthState(
       isLoggedIn: isLoggedIn,
@@ -138,20 +157,27 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required String avatar,
     required String fullCookie,
   }) async {
+    final normalizedCookie = normalizeCookieHeader(fullCookie);
+    final effectiveCookie =
+        normalizedCookie.isNotEmpty ? normalizedCookie : fullCookie.trim();
     String sub = '';
     String subp = '';
 
-    final subMatch = RegExp(r'SUB=([^;]+)').firstMatch(fullCookie);
+    final subMatch = RegExp(r'SUB=([^;]+)', caseSensitive: false)
+        .firstMatch(effectiveCookie);
     if (subMatch != null) sub = subMatch.group(1)!.trim();
 
-    final subpMatch = RegExp(r'SUBP=([^;]+)').firstMatch(fullCookie);
+    final subpMatch = RegExp(r'SUBP=([^;]+)', caseSensitive: false)
+        .firstMatch(effectiveCookie);
     if (subpMatch != null) subp = subpMatch.group(1)!.trim();
 
     await _storage.setLoggedIn(true);
     await _storage.setString(StorageService.keyUserUid, uid);
     await _storage.setString(StorageService.keyUserNickname, nickname);
     await _storage.setString(StorageService.keyUserAvatar, avatar);
-    await _storage.setFullCookie(fullCookie);
+    await _storage.setFullCookie(effectiveCookie);
+    await _storage.setDesktopCookie(effectiveCookie);
+    await _storage.setMobileCookie(effectiveCookie);
     if (sub.isNotEmpty) await _storage.setSubCookie(sub);
     if (subp.isNotEmpty) await _storage.setSubpCookie(subp);
 
@@ -160,7 +186,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       uid: uid,
       nickname: nickname,
       avatar: avatar,
-      fullCookie: fullCookie,
+      fullCookie: effectiveCookie,
       subCookie: sub,
       subpCookie: subp,
       isValidating: false,
@@ -168,7 +194,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   /// Parse and set user cookie or token from raw string
-  Future<bool> setAndVerifyCookie(String rawInput) async {
+  Future<bool> setAndVerifyCookie(
+    String rawInput, {
+    bool requireDesktopSession = false,
+  }) async {
     state = state.copyWith(isValidating: true);
     final raw = rawInput.trim();
     final normalizedCookie = normalizeCookieHeader(raw);
@@ -213,6 +242,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     String resolvedUid = '';
     String resolvedNickname = '';
     String resolvedAvatar = '';
+    bool desktopSessionVerified = false;
 
     try {
       final dio = Dio(
@@ -234,18 +264,27 @@ class AuthNotifier extends StateNotifier<AuthState> {
         final configRes = await dio.get('/ajax/config/getconfig');
         if (configRes.data is Map<String, dynamic> &&
             configRes.data['data'] != null) {
-          final configData = configRes.data['data'] as Map<String, dynamic>;
-          final uidFromConfig = configData['uid']?.toString() ?? '';
-          final userObj = configData['user'] as Map<String, dynamic>?;
-          if (userObj != null) {
-            resolvedUid = userObj['id']?.toString() ?? uidFromConfig;
-            resolvedNickname = userObj['screen_name']?.toString() ?? '';
-            resolvedAvatar = userObj['avatar_large']?.toString() ??
-                userObj['avatar_hd']?.toString() ??
-                userObj['profile_image_url']?.toString() ??
-                '';
-          } else if (uidFromConfig.isNotEmpty) {
-            resolvedUid = uidFromConfig;
+          final configData = _asMap(configRes.data['data']);
+          if (configData != null) {
+            final uidFromConfig = configData['uid']?.toString() ?? '';
+            final userObj = _asMap(configData['user']);
+            final loginFlagPresent = configData.containsKey('islogin') ||
+                configData.containsKey('login');
+            final desktopLoggedIn = _isTruthy(configData['islogin']) ||
+                _isTruthy(configData['login']) ||
+                (!loginFlagPresent && userObj != null);
+            if (desktopLoggedIn && userObj != null) {
+              desktopSessionVerified = true;
+              resolvedUid = userObj['id']?.toString() ?? uidFromConfig;
+              resolvedNickname = userObj['screen_name']?.toString() ?? '';
+              resolvedAvatar = userObj['avatar_large']?.toString() ??
+                  userObj['avatar_hd']?.toString() ??
+                  userObj['profile_image_url']?.toString() ??
+                  '';
+            } else if (desktopLoggedIn && uidFromConfig.isNotEmpty) {
+              desktopSessionVerified = true;
+              resolvedUid = uidFromConfig;
+            }
           }
         }
       } catch (_) {}
@@ -335,9 +374,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
       }
     } catch (_) {}
 
-    // Atomic commit ONLY if verification resolved a genuine UID
-    if (resolvedUid.isNotEmpty) {
+    // Atomic commit ONLY if verification resolved a genuine UID. Login-page
+    // auto-detection additionally requires the desktop session, otherwise a
+    // mobile-only SSO response could close the page before the desktop feed
+    // Cookie had been synchronized.
+    if (resolvedUid.isNotEmpty &&
+        (!requireDesktopSession || desktopSessionVerified)) {
       await _storage.setFullCookie(effectiveFullCookie);
+      await _storage.setDesktopCookie(effectiveFullCookie);
+      await _storage.setMobileCookie(effectiveFullCookie);
       if (sub.isNotEmpty) await _storage.setSubCookie(sub);
       if (subp.isNotEmpty) await _storage.setSubpCookie(subp);
       await _storage.setAccessToken('');
@@ -370,6 +415,151 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return false;
   }
 
+  /// Reconcile the persisted session with WebView's host-scoped cookies.
+  ///
+  /// Weibo's mobile and desktop SSO cookies can be temporarily different.
+  /// The old bridge flattened cookies from both hosts into one arbitrary
+  /// order, so an otherwise valid mobile session could be sent to the desktop
+  /// following-feed endpoint. This method prefers the desktop cookie for
+  /// desktop requests and only adopts a changed native session after the
+  /// desktop config endpoint confirms the same account.
+  Future<bool> reconcileNativeSession({bool force = false}) async {
+    final running = _nativeSyncFuture;
+    if (running != null) return running;
+
+    final future = _reconcileNativeSession(force: force);
+    _nativeSyncFuture = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_nativeSyncFuture, future)) _nativeSyncFuture = null;
+    }
+  }
+
+  Future<bool> _reconcileNativeSession({required bool force}) async {
+    if (!_storage.isLoggedIn() && !state.isLoggedIn) return false;
+
+    try {
+      final raw = await _cookieChannel.invokeMethod<dynamic>(
+        'getNativeCookiesByDomain',
+      );
+      if (raw is! Map) return false;
+
+      final scoped = <String, String>{};
+      for (final entry in raw.entries) {
+        final value = entry.value?.toString() ?? '';
+        if (value.isNotEmpty) scoped[entry.key.toString()] = value;
+      }
+
+      final nativeDesktop = normalizeCookieHeader(scoped['desktop'] ?? '');
+      final nativeMobile = normalizeCookieHeader(scoped['mobile'] ?? '');
+      final storedFull = normalizeCookieHeader(_storage.getFullCookie() ?? '');
+      final storedDesktop =
+          normalizeCookieHeader(_storage.getDesktopCookie() ?? '');
+      final storedMobile =
+          normalizeCookieHeader(_storage.getMobileCookie() ?? '');
+      final existingDesktop =
+          storedDesktop.isNotEmpty ? storedDesktop : storedFull;
+      final candidateDesktop =
+          nativeDesktop.isNotEmpty ? nativeDesktop : existingDesktop;
+
+      if (_cookieValue(candidateDesktop, 'SUB').isEmpty) return false;
+
+      final expectedUid =
+          _storage.getString(StorageService.keyUserUid) ?? state.uid ?? '';
+      final existingSub = _cookieValue(existingDesktop, 'SUB');
+      final candidateSub = _cookieValue(candidateDesktop, 'SUB');
+
+      var canUseCandidate = !force &&
+          candidateDesktop == existingDesktop &&
+          candidateSub == existingSub;
+      if (!canUseCandidate) {
+        canUseCandidate =
+            await _verifyDesktopCookie(candidateDesktop, expectedUid);
+      }
+      if (!canUseCandidate) return false;
+
+      final effectiveMobile = nativeMobile.isNotEmpty
+          ? nativeMobile
+          : (storedMobile.isNotEmpty ? storedMobile : storedFull);
+      final merged = normalizeCookieHeader(
+        [candidateDesktop, effectiveMobile, storedFull]
+            .where((item) => item.isNotEmpty)
+            .join('; '),
+      );
+      if (merged.isEmpty) return false;
+
+      final candidateSubp = _cookieValue(candidateDesktop, 'SUBP');
+      await _storage.setFullCookie(merged);
+      await _storage.setDesktopCookie(candidateDesktop);
+      if (effectiveMobile.isNotEmpty) {
+        await _storage.setMobileCookie(effectiveMobile);
+      }
+      if (candidateSub.isNotEmpty) await _storage.setSubCookie(candidateSub);
+      if (candidateSubp.isNotEmpty) {
+        await _storage.setSubpCookie(candidateSubp);
+      }
+
+      state = state.copyWith(
+        fullCookie: merged,
+        subCookie: candidateSub.isNotEmpty ? candidateSub : state.subCookie,
+        subpCookie: candidateSubp.isNotEmpty ? candidateSubp : state.subpCookie,
+        isCookieExpired: false,
+      );
+      return merged != storedFull || candidateDesktop != storedDesktop;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _verifyDesktopCookie(String cookie, String expectedUid) async {
+    try {
+      final dio = Dio(
+        BaseOptions(
+          connectTimeout: const Duration(seconds: 8),
+          receiveTimeout: const Duration(seconds: 8),
+        ),
+      );
+      final response = await dio.get(
+        '${ApiConstants.baseUrl}/ajax/config/getconfig',
+        options: Options(
+          headers: {
+            'Cookie': cookie,
+            'Referer': 'https://weibo.com/',
+            'User-Agent': ApiConstants.defaultUserAgent,
+            'Accept': 'application/json, text/plain, */*',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          validateStatus: (status) => status != null && status < 500,
+        ),
+      );
+      if (response.statusCode != 200 || response.data is! Map) return false;
+      final body = _asMap(response.data);
+      final data = _asMap(body?['data']);
+      if (data == null) return false;
+      final user = _asMap(data['user']);
+      final loginFlagPresent =
+          data.containsKey('islogin') || data.containsKey('login');
+      final loggedIn = _isTruthy(data['islogin']) ||
+          _isTruthy(data['login']) ||
+          (!loginFlagPresent && user != null);
+      if (!loggedIn) return false;
+      final uid = user?['id']?.toString() ?? data['uid']?.toString() ?? '';
+      return uid.isNotEmpty && (expectedUid.isEmpty || uid == expectedUid);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static String _cookieValue(String cookie, String name) {
+    if (cookie.isEmpty) return '';
+    final match = RegExp(
+      '(?:^|;)\\s*${RegExp.escape(name)}=([^;]*)',
+      caseSensitive: false,
+    ).firstMatch(cookie);
+    return match?.group(1)?.trim() ?? '';
+  }
+
   void notifyCookieExpired() {
     if (state.isLoggedIn && !state.isCookieExpired) {
       state = state.copyWith(isCookieExpired: true);
@@ -378,17 +568,37 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   /// Check current user cookie validity via official session verification APIs
   Future<bool> checkCookieValidity({bool silent = false}) async {
-    final storedFullCookie = _storage.getFullCookie();
     final isLoggedIn = _storage.isLoggedIn();
-    final savedUid =
-        _storage.getString(StorageService.keyUserUid) ?? state.uid ?? '';
-    final normalizedFullCookie =
-        storedFullCookie == null ? '' : normalizeCookieHeader(storedFullCookie);
-    final fullCookie = normalizedFullCookie.isNotEmpty
-        ? normalizedFullCookie
-        : (storedFullCookie ?? '');
+    if (!isLoggedIn) {
+      state = state.copyWith(isCookieExpired: false, isValidating: false);
+      return false;
+    }
 
-    if (!isLoggedIn || fullCookie.isEmpty) {
+    // Refresh the host-scoped snapshot first. This prevents a stale merged
+    // Cookie header from making the validity check disagree with the desktop
+    // timeline request after an SSO/WebView refresh.
+    await reconcileNativeSession();
+
+    final storedFullCookie = _storage.getFullCookie();
+    final storedDesktopCookie = _storage.getDesktopCookie();
+    final storedMobileCookie = _storage.getMobileCookie();
+    final normalizedFullCookie = normalizeCookieHeader(storedFullCookie ?? '');
+    final normalizedDesktopCookie =
+        normalizeCookieHeader(storedDesktopCookie ?? '');
+    final normalizedMobileCookie =
+        normalizeCookieHeader(storedMobileCookie ?? '');
+    final fullCookie = normalizeCookieHeader(
+      [normalizedDesktopCookie, normalizedMobileCookie, normalizedFullCookie]
+          .where((cookie) => cookie.isNotEmpty)
+          .join('; '),
+    );
+    final desktopCookie = normalizedDesktopCookie.isNotEmpty
+        ? normalizedDesktopCookie
+        : fullCookie;
+    final mobileCookie =
+        normalizedMobileCookie.isNotEmpty ? normalizedMobileCookie : fullCookie;
+
+    if (fullCookie.isEmpty) {
       state = state.copyWith(isCookieExpired: false, isValidating: false);
       return false;
     }
@@ -410,128 +620,106 @@ class AuthNotifier extends StateNotifier<AuthState> {
         ),
       );
 
-      bool isValid = false;
+      bool desktopSessionValid = false;
+      bool mobileSessionObserved = false;
       bool sawDefinitiveInvalidResponse = false;
       String? resolvedUid;
       String? resolvedName;
       String? resolvedAvatar;
 
-      // Tier 1: Mobile API Config Check (m.weibo.cn) - Primary for SMS/Mobile login sessions
+      // Tier 1: Desktop Config Check. This is the only authoritative login
+      // signal because the app's following timeline is a weibo.com endpoint.
       try {
-        final mRes = await dio.get(
-          'https://m.weibo.cn/api/config',
+        final configRes = await dio.get(
+          'https://weibo.com/ajax/config/getconfig',
           options: Options(
             headers: {
-              'Cookie': fullCookie,
-              'Referer': 'https://m.weibo.cn/',
-              'User-Agent':
-                  'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+              'Cookie': desktopCookie,
+              'Referer': 'https://weibo.com/',
+              'User-Agent': ApiConstants.defaultUserAgent,
               'Accept': 'application/json, text/plain, */*',
               'X-Requested-With': 'XMLHttpRequest',
             },
             validateStatus: (s) => s != null && s < 500,
           ),
         );
-        if (mRes.statusCode == 200 && mRes.data is Map<String, dynamic>) {
-          final mData = _asMap(mRes.data['data']);
-          if (mData != null) {
-            final mUser = _asMap(mData['user']);
-            final mLogin = _isTruthy(mData['login']);
-            if (mData.containsKey('login') && !mLogin) {
+        if (configRes.statusCode == 200 &&
+            configRes.data is Map<String, dynamic>) {
+          final data = _asMap(configRes.data['data']);
+          if (data != null) {
+            final user = _asMap(data['user']);
+            final loginFlagPresent =
+                data.containsKey('islogin') || data.containsKey('login');
+            final loggedIn = _isTruthy(data['islogin']) ||
+                _isTruthy(data['login']) ||
+                (!loginFlagPresent && user != null);
+            if (loginFlagPresent && !loggedIn) {
               sawDefinitiveInvalidResponse = true;
             }
-            final mUid =
-                mData['uid']?.toString() ?? mUser?['id']?.toString() ?? '';
-            if (mLogin && mUid.isNotEmpty) {
-              isValid = true;
-              resolvedUid = mUid;
-              resolvedName = mUser?['screen_name']?.toString();
-              resolvedAvatar = mUser?['profile_image_url']?.toString();
+            final uid =
+                data['uid']?.toString() ?? user?['id']?.toString() ?? '';
+            if (loggedIn && uid.isNotEmpty) {
+              desktopSessionValid = true;
+              resolvedUid = uid;
+              resolvedName = user?['screen_name']?.toString();
+              resolvedAvatar = user?['avatar_large']?.toString() ??
+                  user?['avatar_hd']?.toString() ??
+                  user?['profile_image_url']?.toString();
             }
           }
         }
       } catch (_) {}
 
-      // Tier 2: Friends Timeline Accessibility Check (unreadfriendstimeline)
-      if (!isValid) {
+      // Tier 2: Mobile Config Check. It is useful for filling profile data and
+      // diagnosing an SSO race, but it must not by itself declare the desktop
+      // following session valid.
+      if (!desktopSessionValid) {
         try {
-          final fRes = await dio.get(
-            'https://weibo.com/ajax/feed/unreadfriendstimeline',
+          final mRes = await dio.get(
+            'https://m.weibo.cn/api/config',
             options: Options(
               headers: {
-                'Cookie': fullCookie,
-                'Referer': 'https://weibo.com/',
-                'User-Agent': ApiConstants.defaultUserAgent,
+                'Cookie': mobileCookie,
+                'Referer': 'https://m.weibo.cn/',
+                'User-Agent':
+                    'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
                 'Accept': 'application/json, text/plain, */*',
                 'X-Requested-With': 'XMLHttpRequest',
               },
               validateStatus: (s) => s != null && s < 500,
             ),
           );
-          if (fRes.statusCode == 200 && fRes.data is Map<String, dynamic>) {
-            final body = _asMap(fRes.data)!;
-            if (body.containsKey('ok')) {
-              final ok = body['ok'];
-              if (_isTruthy(ok)) {
-                isValid = true;
-                resolvedUid = savedUid.isNotEmpty ? savedUid : resolvedUid;
-              } else {
-                sawDefinitiveInvalidResponse = true;
+          if (mRes.statusCode == 200 && mRes.data is Map<String, dynamic>) {
+            final mData = _asMap(mRes.data['data']);
+            if (mData != null) {
+              final mUser = _asMap(mData['user']);
+              final mLogin = _isTruthy(mData['login']);
+              final mUid =
+                  mData['uid']?.toString() ?? mUser?['id']?.toString() ?? '';
+              if (mLogin && mUid.isNotEmpty) {
+                mobileSessionObserved = true;
+                resolvedUid ??= mUid;
+                resolvedName ??= mUser?['screen_name']?.toString();
+                resolvedAvatar ??= mUser?['profile_image_url']?.toString();
               }
             }
           }
         } catch (_) {}
       }
 
-      // Tier 3: Desktop Config Check (/ajax/config/getconfig)
-      if (!isValid) {
-        try {
-          final configRes = await dio.get(
-            'https://weibo.com/ajax/config/getconfig',
-            options: Options(
-              headers: {
-                'Cookie': fullCookie,
-                'Referer': 'https://weibo.com/',
-                'User-Agent': ApiConstants.defaultUserAgent,
-                'Accept': 'application/json, text/plain, */*',
-                'X-Requested-With': 'XMLHttpRequest',
-              },
-              validateStatus: (s) => s != null && s < 500,
-            ),
-          );
-          if (configRes.statusCode == 200 &&
-              configRes.data is Map<String, dynamic>) {
-            final data = _asMap(configRes.data['data']);
-            if (data != null) {
-              final isLogin = _isTruthy(data['islogin']);
-              if (data.containsKey('islogin') && !isLogin) {
-                sawDefinitiveInvalidResponse = true;
-              }
-              final uid = data['uid']?.toString() ?? '';
-              final user = _asMap(data['user']);
-              if (isLogin && (uid.isNotEmpty || user != null)) {
-                isValid = true;
-                resolvedUid = user?['id']?.toString() ?? uid;
-                resolvedName = user?['screen_name']?.toString();
-                resolvedAvatar = user?['avatar_large']?.toString() ??
-                    user?['avatar_hd']?.toString() ??
-                    user?['profile_image_url']?.toString();
-              }
-            }
-          }
-        } catch (_) {}
-      }
-
-      // Tier 4: User Profile Verification if UID is available
-      if (!isValid && savedUid.isNotEmpty) {
+      // Only enrich an already verified desktop session. A public profile
+      // response is not evidence that the Cookie can access the feed.
+      if (desktopSessionValid &&
+          resolvedUid != null &&
+          (resolvedName == null || resolvedAvatar == null)) {
         try {
           final pRes = await dio.get(
             'https://weibo.com/ajax/profile/info',
-            queryParameters: {'uid': savedUid},
+            queryParameters: {'uid': resolvedUid},
             options: Options(
               headers: {
-                'Cookie': fullCookie,
-                'Referer': 'https://weibo.com/u/$savedUid',
+                'Cookie': desktopCookie,
+                'Referer': 'https://weibo.com/u/$resolvedUid',
                 'User-Agent': ApiConstants.defaultUserAgent,
                 'Accept': 'application/json, text/plain, */*',
               },
@@ -540,11 +728,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
           );
           if (pRes.statusCode == 200 && pRes.data is Map<String, dynamic>) {
             final user = pRes.data['data']?['user'] as Map<String, dynamic>?;
-            if (user != null && user['id']?.toString() == savedUid) {
-              isValid = true;
-              resolvedUid = savedUid;
-              resolvedName = user['screen_name']?.toString();
-              resolvedAvatar = user['avatar_large']?.toString() ??
+            if (user != null && user['id']?.toString() == resolvedUid) {
+              resolvedName ??= user['screen_name']?.toString();
+              resolvedAvatar ??= user['avatar_large']?.toString() ??
                   user['avatar_hd']?.toString() ??
                   user['profile_image_url']?.toString();
             }
@@ -552,7 +738,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         } catch (_) {}
       }
 
-      if (isValid) {
+      if (desktopSessionValid &&
+          resolvedUid != null &&
+          resolvedUid.isNotEmpty) {
         if (resolvedUid != null && resolvedUid.isNotEmpty) {
           await _storage.setString(StorageService.keyUserUid, resolvedUid);
         }
@@ -575,6 +763,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
         );
         return true;
       } else {
+        // A valid mobile session while the desktop endpoint is unavailable is
+        // a recoverable synchronization state, not proof that the Cookie has
+        // expired. Keep the account logged in and let the next feed refresh
+        // reconcile the native jars again.
+        if (mobileSessionObserved) {
+          state = state.copyWith(
+            isCookieExpired: false,
+            isValidating: false,
+          );
+          return false;
+        }
+
         // A timeout, DNS failure, proxy error, or an undocumented response
         // shape is not evidence that the account has expired. Keep the
         // existing session state and let the user retry later.

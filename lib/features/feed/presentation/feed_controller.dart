@@ -175,6 +175,11 @@ class FeedController extends StateNotifier<FeedState> {
   }
 
   Future<void> initAndLoad() async {
+    // The WebView may finish restoring the desktop SSO cookies shortly after
+    // Flutter has been created. Reconcile them before any account-scoped
+    // groups or timeline request is made.
+    await _ref.read(authProvider.notifier).reconcileNativeSession();
+
     try {
       final groupsResult = await _repository.getUserGroups();
 
@@ -238,20 +243,39 @@ class FeedController extends StateNotifier<FeedState> {
   Future<void> refreshFeed({bool retryOnEmpty = false}) async {
     final currentGen = ++_generation;
     state = state.copyWith(isLoading: true, errorMessage: null);
-    final auth = _ref.read(authProvider);
 
-    Future<TimelineResult> fetchFirstPage() => _repository.getTimeline(
-          category: state.currentCategory,
-          userUid: auth.uid,
-          page: 1,
-          maxId: '0',
-          sinceId: '0',
-        );
+    Future<TimelineResult> fetchFirstPage() {
+      // Read the auth state for every attempt. The first request can trigger
+      // a native-cookie reconciliation that refreshes the UID/session before
+      // the retry is issued.
+      final currentAuth = _ref.read(authProvider);
+      return _repository.getTimeline(
+        category: state.currentCategory,
+        userUid: currentAuth.uid,
+        page: 1,
+        maxId: '0',
+        sinceId: '0',
+      );
+    }
 
     var result = await fetchFirstPage();
 
     // If another request was started while this one was in-flight, discard stale result
     if (currentGen != _generation) return;
+
+    // An empty desktop response is often caused by the WebView/native Cookie
+    // jars being out of sync after startup or an SSO refresh. Repair that
+    // session once before showing an empty timeline. The reconciliation is
+    // internally coalesced, so simultaneous refreshes do not race each other.
+    final authBeforeRecovery = _ref.read(authProvider);
+    if (result.statuses.isEmpty && authBeforeRecovery.isLoggedIn) {
+      await _ref
+          .read(authProvider.notifier)
+          .reconcileNativeSession(force: true);
+      if (currentGen != _generation) return;
+      result = await fetchFirstPage();
+      if (currentGen != _generation) return;
+    }
 
     if (retryOnEmpty && result.statuses.isEmpty) {
       await Future<void>.delayed(const Duration(milliseconds: 350));
@@ -260,6 +284,7 @@ class FeedController extends StateNotifier<FeedState> {
       if (currentGen != _generation) return;
     }
 
+    final auth = _ref.read(authProvider);
     final visibleStatuses = _withoutBlockedUsers(result.statuses);
     // 刷新失败/空响应不能清空已经显示的内容，否则启动时的竞态或一次
     // 短暂网络异常会把可用的时间线替换成“暂无微博内容”。切换分组时
