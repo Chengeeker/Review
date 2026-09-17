@@ -1,9 +1,37 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:review/core/services/link_routing_service.dart';
 import 'package:review/features/feed/data/models/weibo_status_model.dart';
+import 'package:review/features/detail/presentation/weibo_article_page.dart';
 
 void main() {
   group('LinkRoutingService URL Matching Tests', () {
+    test('Normalizes official Weibo HTTP smart links to HTTPS', () {
+      expect(
+        LinkRoutingService.normalizeOfficialUrl(
+          'http://weibo.com/ttarticle/p/show?id=2310475343796384104518',
+        ),
+        'https://weibo.com/ttarticle/p/show?id=2310475343796384104518',
+      );
+      expect(
+        LinkRoutingService.articleIdFromUrl(
+          'http://weibo.com/ttarticle/p/show?id=2310475343796384104518',
+        ),
+        '2310475343796384104518',
+      );
+      expect(
+        LinkRoutingService.canHandleNatively(
+          'https://weibo.com/ttarticle/p/show?id=2310475343796384104518',
+        ),
+        isTrue,
+      );
+      expect(
+        LinkRoutingService.normalizeOfficialUrl(
+          'http://example.com/article?id=1',
+        ),
+        'http://example.com/article?id=1',
+      );
+    });
+
     test('Can correctly identify native status URLs', () {
       expect(
           LinkRoutingService.canHandleNatively(
@@ -65,6 +93,38 @@ void main() {
           LinkRoutingService.canHandleNatively(
               'https://github.com/flutter/flutter'),
           isFalse);
+    });
+  });
+
+  group('WeiboArticleParser Tests', () {
+    test('Parses the official article markers and keeps block order', () {
+      final document = WeiboArticleParser.parse('''
+        <html><head><title>备用标题 - 微博</title></head><body>
+          <div class="authorinfo">
+            <span class="author1"><img class="W_face_radius" src="http://wx1.sinaimg.cn/avatar.jpg">
+              <a href="/u/6048569942"><em>数码闲聊站</em></a>
+            </span>
+            <span class="time">09-16 15:30</span><span class="num">阅读数：31万+</span>
+          </div>
+          <div node-type="articleTitle">官方文章标题</div>
+          <div node-type="contentBody">
+            <p>第一段 &amp; 正文</p>
+            <figure><img src="http://wx1.sinaimg.cn/wap720/pic.jpg" aspect="1.25"></figure>
+            <p><strong>一、章节标题</strong></p>
+          </div>
+        </body></html>
+      ''');
+
+      expect(document.title, '官方文章标题');
+      expect(document.author, '数码闲聊站');
+      expect(document.publishedAt, '09-16 15:30');
+      expect(document.readCount, '阅读数：31万+');
+      expect(document.blocks, hasLength(3));
+      expect(document.blocks[0].value, '第一段 & 正文');
+      expect(document.blocks[0].type, WeiboArticleBlockType.text);
+      expect(document.blocks[1].value, 'https://wx1.sinaimg.cn/wap720/pic.jpg');
+      expect(document.blocks[1].type, WeiboArticleBlockType.image);
+      expect(document.blocks[2].type, WeiboArticleBlockType.heading);
     });
   });
 

@@ -20,6 +20,16 @@ class WeiboTextParser {
   static final RegExp _imageTagRegex =
       RegExp(r'<img\b[^>]*>', caseSensitive: false);
 
+  // Weibo appends zero-width characters after some short links (for example
+  // t.cn smart-card links). They are part of the displayed text, but not part
+  // of url_struct.short_url, so exact matching would silently lose the
+  // official long_url and fall back to the generic browser route.
+  static String _normalizeLinkToken(String value) {
+    return value
+        .replaceAll(RegExp(r'[\u200B\u200C\u200D\uFEFF]'), '')
+        .trim();
+  }
+
   static String? _attributeValue(String tag, String name) {
     final doubleQuoted = RegExp(
       '$name\\s*=\\s*"([^"]*)"',
@@ -222,24 +232,33 @@ class WeiboTextParser {
           matchedText.startsWith('https://')) {
         // Web Link / Smart Card Link (e.g. 微博智搜, 专题, 网页链接, 超话直达)
         String linkTitle = '网页链接';
-        String targetUrl = matchedText;
+        final normalizedMatchedUrl = _normalizeLinkToken(matchedText);
+        String targetUrl = normalizedMatchedUrl;
         Map<String, dynamic>? matchingStruct;
 
         if (urlStruct != null) {
           for (final u in urlStruct) {
-            final shortUrl = u['short_url']?.toString();
-            final oriUrl = u['ori_url']?.toString();
-            final longUrl = u['long_url']?.toString();
+            final shortUrl = _normalizeLinkToken(
+                u['short_url']?.toString() ?? '');
+            final oriUrl = _normalizeLinkToken(u['ori_url']?.toString() ?? '');
+            final longUrl = _normalizeLinkToken(
+                u['long_url']?.toString() ?? '');
             final title = u['url_title']?.toString();
 
-            if (matchedText == shortUrl ||
-                matchedText == oriUrl ||
-                matchedText == longUrl) {
+            if (normalizedMatchedUrl == shortUrl ||
+                normalizedMatchedUrl == oriUrl ||
+                normalizedMatchedUrl == longUrl) {
               matchingStruct = u;
               if (title != null && title.trim().isNotEmpty) {
                 linkTitle = title.trim();
               }
-              targetUrl = longUrl ?? oriUrl ?? shortUrl ?? matchedText;
+              targetUrl = longUrl.isNotEmpty
+                  ? longUrl
+                  : (oriUrl.isNotEmpty
+                      ? oriUrl
+                      : (shortUrl.isNotEmpty
+                          ? shortUrl
+                          : normalizedMatchedUrl));
               break;
             }
           }

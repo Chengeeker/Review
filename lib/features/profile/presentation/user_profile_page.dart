@@ -150,6 +150,35 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     }
   }
 
+  void _openUserAvatar() {
+    final avatarUrl = _user.avatarHd.trim().isNotEmpty
+        ? _user.avatarHd.trim()
+        : _user.avatar.trim();
+    if (avatarUrl.isEmpty) {
+      AppToast.show(context, '暂无可查看的头像图片');
+      return;
+    }
+
+    HapticFeedbackUtil.light();
+    Navigator.of(context).push(
+      PhysicsSpringGalleryRoute(
+        child: ImageGalleryPage(
+          pics: [
+            WeiboPicModel(
+              pid: 'avatar-${_user.id.isNotEmpty ? _user.id : 'profile'}',
+              thumbnail: avatarUrl,
+              large: avatarUrl,
+              original: avatarUrl,
+            ),
+          ],
+          initialIndex: 0,
+          statusId: 'avatar-${_user.id.isNotEmpty ? _user.id : 'profile'}',
+          authorName: _user.screenName,
+        ),
+      ),
+    );
+  }
+
   void _handleTabChange() {
     if (_tabController.indexIsChanging) return;
     setState(() {});
@@ -1039,6 +1068,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                             name: _user.screenName,
                             verified: _user.verified,
                             verifiedType: _user.verifiedType,
+                            onTap: _openUserAvatar,
                           ),
                           const SizedBox(width: 16),
                           Expanded(

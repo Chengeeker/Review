@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -42,8 +43,13 @@ class _InAppBrowserPageState extends ConsumerState<InAppBrowserPage> {
   Future<void> _initWebView() async {
     final storage = ref.read(storageServiceProvider);
     final fullCookie = storage.getFullCookie() ?? '';
-    final targetUri = Uri.tryParse(widget.url);
+    final effectiveUrl = LinkRoutingService.normalizeOfficialUrl(widget.url);
+    final targetUri = Uri.tryParse(effectiveUrl);
     final isWeiboTarget = _isWeiboHost(targetUri?.host);
+
+    if (effectiveUrl != widget.url && mounted) {
+      setState(() => _currentUrl = effectiveUrl);
+    }
 
     // 1. 同步 Cookie 到微博官方域名；普通外链不得携带微博会话
     if (fullCookie.isNotEmpty) {
@@ -114,6 +120,12 @@ class _InAppBrowserPageState extends ConsumerState<InAppBrowserPage> {
           },
           onNavigationRequest: (request) {
             final target = request.url;
+            final normalizedTarget =
+                LinkRoutingService.normalizeOfficialUrl(target);
+            if (normalizedTarget != target) {
+              unawaited(_controller.loadRequest(Uri.parse(normalizedTarget)));
+              return NavigationDecision.prevent;
+            }
             // 如果跳转到了微博文章/博主原生页面，尝试拦截并在原生打开
             if (LinkRoutingService.canHandleNatively(target)) {
               LinkRoutingService.openUrl(context, target, replaceCurrent: true);
@@ -124,7 +136,7 @@ class _InAppBrowserPageState extends ConsumerState<InAppBrowserPage> {
         ),
       )
       ..loadRequest(
-        Uri.parse(widget.url),
+        Uri.parse(effectiveUrl),
         headers: {
           if (fullCookie.isNotEmpty && isWeiboTarget) 'Cookie': fullCookie,
         },
@@ -148,6 +160,14 @@ class _InAppBrowserPageState extends ConsumerState<InAppBrowserPage> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: const BackButtonIcon(),
+          tooltip: '返回',
+          // The top-left app bar button is a route action. WebView history is
+          // intentionally reserved for the Android system back gesture; using
+          // it here made an HTTP->HTTPS redirect look like a refresh.
+          onPressed: () => Navigator.of(context).pop(),
+        ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -191,9 +211,17 @@ class _InAppBrowserPageState extends ConsumerState<InAppBrowserPage> {
               } else if (val == 'browser') {
                 if (!_controllerReady) return;
                 final current = (await _controller.currentUrl()) ?? _currentUrl;
-                final uri = Uri.tryParse(current);
+                final uri = Uri.tryParse(
+                  LinkRoutingService.normalizeOfficialUrl(current),
+                );
                 if (uri != null) {
-                  await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  final launched = await launchUrl(
+                    uri,
+                    mode: LaunchMode.externalApplication,
+                  );
+                  if (!launched && context.mounted) {
+                    AppToast.show(context, '未找到可用的外部浏览器');
+                  }
                 }
               }
             },

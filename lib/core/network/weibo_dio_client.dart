@@ -188,6 +188,95 @@ class WeiboDioClient {
     );
   }
 
+  /// Fetches a long-form article as official HTML.
+  ///
+  /// Long-form pages are document requests, not AJAX JSON endpoints. They
+  /// must not inherit the JSON client's `X-Requested-With` header or its
+  /// CSRF/visitor retry interceptor. Try the scoped desktop session first so
+  /// restricted articles keep working, then retry the public page without a
+  /// Cookie when a stale session returns a login/empty shell. Keep all
+  /// non-empty candidates: a stale desktop cookie can return a valid-looking
+  /// shell before the public candidate returns the actual article body.
+  Future<String> getArticleHtml(String articleId) async {
+    final candidates = await getArticleHtmlCandidates(articleId);
+    for (final html in candidates) {
+      final lower = html.toLowerCase();
+      if (lower.contains('node-type="contentbody"') ||
+          lower.contains('class="wb_editor_iframe')) {
+        return html;
+      }
+    }
+    return candidates.first;
+  }
+
+  /// Returns the official HTML responses for each available session candidate.
+  ///
+  /// The caller can parse each response and choose the first one containing
+  /// real article blocks. This matters when the persisted desktop cookie is
+  /// stale: Weibo may return a 200 HTML shell for that cookie instead of a
+  /// useful article document, while the unauthenticated public request still
+  /// contains the public article.
+  Future<List<String>> getArticleHtmlCandidates(String articleId) async {
+    final desktopCookie = storageService.getDesktopCookie();
+    final fullCookie = storageService.getFullCookie();
+    final cookies = <String?>[];
+    for (final candidate in [desktopCookie, fullCookie]) {
+      final value = candidate?.trim() ?? '';
+      if (value.isNotEmpty && !cookies.contains(value)) cookies.add(value);
+    }
+    cookies.add(null);
+
+    final documentClient = Dio(
+      BaseOptions(
+        baseUrl: ApiConstants.baseUrl,
+        connectTimeout: const Duration(seconds: 15),
+        receiveTimeout: const Duration(seconds: 15),
+        sendTimeout: const Duration(seconds: 15),
+        followRedirects: true,
+        maxRedirects: 5,
+        headers: {
+          'User-Agent': ApiConstants.defaultUserAgent,
+          'Referer': '${ApiConstants.baseUrl}/',
+          'Accept': 'text/html,application/xhtml+xml',
+        },
+      ),
+    );
+
+    String lastHtml = '';
+    Object? lastError;
+    final responses = <String>[];
+    try {
+      for (final cookie in cookies) {
+        try {
+          final response = await documentClient.get<String>(
+            '/ttarticle/p/show',
+            queryParameters: {'id': articleId},
+            options: Options(
+              responseType: ResponseType.plain,
+              headers: {
+                if (cookie != null) 'Cookie': cookie,
+              },
+            ),
+          );
+          final html = response.data?.toString() ?? '';
+          if (html.isNotEmpty) {
+            lastHtml = html;
+            if (!responses.contains(html)) responses.add(html);
+          }
+        } catch (error) {
+          lastError = error;
+        }
+      }
+    } finally {
+      documentClient.close(force: true);
+    }
+
+    if (responses.isNotEmpty) return List.unmodifiable(responses);
+    if (lastHtml.isNotEmpty) return [lastHtml];
+    if (lastError != null) throw lastError!;
+    throw StateError('微博文章请求未返回内容');
+  }
+
   static String? extractXsrfToken(String? cookie) {
     if (cookie == null || cookie.isEmpty) return null;
     final match = RegExp(

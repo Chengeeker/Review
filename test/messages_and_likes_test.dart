@@ -243,11 +243,56 @@ void main() {
     expect(firstPage.hasMore, isTrue);
     expect(secondPage.comments.single.id, 'comment-2');
     expect(secondPage.hasMore, isFalse);
+    expect(requests[0]['is_reload'], 1);
     expect(requests[0]['is_mix'], 0);
-    expect(requests[1]['is_mix'], 1);
+    expect(requests[0]['count'], 10);
+    expect(requests[1]['is_reload'], 1);
+    expect(requests[1]['is_mix'], 0);
+    expect(requests[1]['count'], 20);
     expect(requests[1]['max_id'], 'next');
-    expect(requests[1]['max_id_type'], 0);
     expect(requests[1]['fetch_level'], 0);
+    expect(requests[1].containsKey('max_id_type'), isFalse);
+    expect(requests[1].containsKey('type'), isFalse);
+  });
+
+  test('getComments treats terminal negative cursor as no more pages',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final storage = StorageService(prefs);
+    await storage.setFullCookie('SUB=test; XSRF-TOKEN=test');
+
+    final client = WeiboDioClient(storage);
+    client.dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'data': [
+                  {
+                    'idstr': 'comment-1',
+                    'text_raw': '评论',
+                    'user': {'screen_name': '评论用户'},
+                  },
+                ],
+                'max_id': -1,
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    final result = await DetailRepository(client).getComments(
+      id: 'status-1',
+      uid: 'user-1',
+    );
+
+    expect(result.maxId, '0');
+    expect(result.hasMore, isFalse);
   });
 
   testWidgets('LikesFavoritesPage has 2 tabs: 我的赞 and 我的收藏', (tester) async {
@@ -271,7 +316,9 @@ void main() {
     expect(find.text('赞和收藏'), findsOneWidget);
   });
 
-  testWidgets('ReceivedLikesPage, SentCommentsPage, ReceivedCommentsPage render clean titles', (tester) async {
+  testWidgets(
+      'ReceivedLikesPage, SentCommentsPage, ReceivedCommentsPage render clean titles',
+      (tester) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final storage = StorageService(prefs);
@@ -313,7 +360,8 @@ void main() {
     expect(find.text('收到的评论'), findsOneWidget);
   });
 
-  testWidgets('MyMessagesPage renders message center structure', (tester) async {
+  testWidgets('MyMessagesPage renders message center structure',
+      (tester) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final storage = StorageService(prefs);

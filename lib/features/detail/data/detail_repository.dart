@@ -137,7 +137,9 @@ class DetailRepository {
     final mergedQualityUrls = <String, String>{
       if (isLive) ...?status.videoQualityUrls,
     };
-    if (isLive && playback.streamUrl != null && playback.streamUrl!.isNotEmpty) {
+    if (isLive &&
+        playback.streamUrl != null &&
+        playback.streamUrl!.isNotEmpty) {
       mergedQualityUrls['直播'] = playback.streamUrl!;
     }
 
@@ -147,7 +149,8 @@ class DetailRepository {
           : playback.coverUrl,
       // status=3 is a replay and status=5 is an ended room. Neither should
       // be handed to the native player as if it were the current live feed.
-      videoStreamUrl: isLive ? (playback.streamUrl ?? status.videoStreamUrl) : '',
+      videoStreamUrl:
+          isLive ? (playback.streamUrl ?? status.videoStreamUrl) : '',
       videoTitle: status.videoTitle?.isNotEmpty == true
           ? status.videoTitle
           : playback.title,
@@ -303,28 +306,28 @@ class DetailRepository {
     required String id,
     required String uid,
     String maxId = '0',
-    int count = 15,
+    int count = 10,
     int flow = 0,
   }) async {
     try {
       final normalizedMaxId = maxId.trim().isEmpty ? '0' : maxId.trim();
       final isFirstPage = normalizedMaxId == '0';
+      // Match the current desktop web client: it keeps reload/mix stable
+      // across cursor pages and requests a larger continuation page.
+      final requestCount = isFirstPage ? count : (count < 20 ? 20 : count);
       final response = await _client.dio.get(
         ApiConstants.buildComments,
         queryParameters: {
           'id': id,
           'uid': uid,
-          'is_reload': isFirstPage ? 1 : 0,
+          'is_reload': 1,
           'is_show_bulletin': 2,
-          // The web client marks requests after the first page as mixed
-          // pagination requests.  Keeping this at 0 makes high-volume posts
-          // repeatedly return the first page or stop advancing the cursor.
-          'is_mix': isFirstPage ? 0 : 1,
-          'count': count,
+          // `is_mix=1` is not the desktop continuation mode.  On busy posts
+          // it can return only a small subset or fail to advance max_id.
+          'is_mix': 0,
+          'count': requestCount,
           'flow': flow,
-          'max_id_type': 0,
           'fetch_level': 0,
-          'type': 1,
           'locale': 'zh-CN',
           if (!isFirstPage) 'max_id': normalizedMaxId,
         },
@@ -344,9 +347,9 @@ class DetailRepository {
                 ))
             .toList();
 
-        final nextMaxId = _extractMaxId(data);
+        final nextMaxId = _normalizeMaxId(_extractMaxId(data));
         final hasMore = comments.isNotEmpty &&
-            nextMaxId != '0' &&
+            !_isTerminalMaxId(nextMaxId) &&
             nextMaxId != normalizedMaxId;
 
         return CommentResult(
@@ -560,6 +563,19 @@ class DetailRepository {
       if (value.isNotEmpty) return value;
     }
     return '0';
+  }
+
+  static String _normalizeMaxId(String? value) {
+    final normalized = value?.trim() ?? '';
+    return normalized.isEmpty ||
+            normalized == '-1' ||
+            normalized.toLowerCase() == 'null'
+        ? '0'
+        : normalized;
+  }
+
+  static bool _isTerminalMaxId(String value) {
+    return value.isEmpty || value == '0' || value == '-1';
   }
 
   /// Send a comment on a Weibo Status (发评论)

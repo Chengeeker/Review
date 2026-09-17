@@ -58,6 +58,39 @@ void main() {
           },
         ),
       ),
+      );
+  });
+
+  testWidgets(
+      'WeiboTextParser ignores zero-width suffixes on official smart links',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            const rawText =
+                '深度测评：http://t.cn/AXOxP3Ga\u200b\u200b\u200b';
+            final urlStruct = [
+              {
+                'short_url': 'http://t.cn/AXOxP3Ga',
+                'url_title': '努比亚NaviX Ultra深度测评报告',
+                'long_url':
+                    'http://weibo.com/ttarticle/p/show?id=2310475343796384104518',
+              }
+            ];
+            final spans = WeiboTextParser.parse(
+              rawText: rawText,
+              context: context,
+              urlStruct: urlStruct,
+            );
+
+            final combinedText = spans.map((s) => s.toPlainText()).join();
+            expect(combinedText.contains('努比亚NaviX Ultra深度测评报告'), isTrue);
+            expect(combinedText.contains('网页链接'), isFalse);
+            return Text.rich(TextSpan(children: spans));
+          },
+        ),
+      ),
     );
   });
 
