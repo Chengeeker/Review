@@ -109,11 +109,13 @@ class _ChaohuaCenterPageState extends ConsumerState<ChaohuaCenterPage> {
     _isLoadingMore = true;
     final nextPage = _page + 1;
     final searchRepo = ref.read(searchRepositoryProvider);
-    final nextResults = await searchRepo.searchChaohua(_currentQuery, page: nextPage);
+    final nextResults =
+        await searchRepo.searchChaohua(_currentQuery, page: nextPage);
 
     if (mounted) {
       final existingIds = _chaohuaList.map((e) => e.pageId).toSet();
-      final newItems = nextResults.where((e) => !existingIds.contains(e.pageId)).toList();
+      final newItems =
+          nextResults.where((e) => !existingIds.contains(e.pageId)).toList();
 
       setState(() {
         _page = nextPage;
@@ -132,7 +134,8 @@ class _ChaohuaCenterPageState extends ConsumerState<ChaohuaCenterPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('超话中心', style: TextStyle(fontWeight: FontWeight.bold)),
+        title:
+            const Text('超话中心', style: TextStyle(fontWeight: FontWeight.bold)),
         elevation: 0,
       ),
       body: Column(
@@ -146,20 +149,25 @@ class _ChaohuaCenterPageState extends ConsumerState<ChaohuaCenterPage> {
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
                 hintText: '搜索感兴趣的超话社区...',
-                hintStyle: TextStyle(fontSize: 14, color: colorScheme.onSurfaceVariant),
+                hintStyle: TextStyle(
+                    fontSize: 14, color: colorScheme.onSurfaceVariant),
                 prefixIcon: const Icon(Icons.search_rounded, size: 20),
                 suffixIcon: _searchController.text.isNotEmpty
                     ? IconButton(
                         icon: const Icon(Icons.clear_rounded, size: 18),
                         onPressed: () {
                           _searchController.clear();
-                          _fetchCategoryTopics(_categories[_selectedCategoryIndex]['name'] as String);
+                          _fetchCategoryTopics(
+                              _categories[_selectedCategoryIndex]['name']
+                                  as String);
                         },
                       )
                     : null,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
                 filled: true,
-                fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                fillColor:
+                    colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(24),
                   borderSide: BorderSide.none,
@@ -186,18 +194,24 @@ class _ChaohuaCenterPageState extends ConsumerState<ChaohuaCenterPage> {
                     cat['name'] as String,
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                      color: isSelected ? colorScheme.onPrimaryContainer : colorScheme.onSurface,
+                      fontWeight:
+                          isSelected ? FontWeight.bold : FontWeight.normal,
+                      color: isSelected
+                          ? colorScheme.onPrimaryContainer
+                          : colorScheme.onSurface,
                     ),
                   ),
                   selected: isSelected,
                   selectedColor: colorScheme.primaryContainer,
-                  backgroundColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                  backgroundColor: colorScheme.surfaceContainerHighest
+                      .withValues(alpha: 0.35),
                   side: BorderSide(
-                    color: isSelected ? colorScheme.primary : Colors.transparent,
+                    color:
+                        isSelected ? colorScheme.primary : Colors.transparent,
                     width: 1.0,
                   ),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18)),
                   onSelected: (selected) {
                     if (selected && _selectedCategoryIndex != index) {
                       HapticFeedbackUtil.selection();
@@ -218,18 +232,22 @@ class _ChaohuaCenterPageState extends ConsumerState<ChaohuaCenterPage> {
           Expanded(
             child: _isLoading
                 ? Center(
-                    child: CircularProgressIndicator(color: colorScheme.primary),
+                    child:
+                        CircularProgressIndicator(color: colorScheme.primary),
                   )
                 : _chaohuaList.isEmpty
                     ? Center(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.diamond_outlined, size: 56, color: colorScheme.outlineVariant),
+                            Icon(Icons.diamond_outlined,
+                                size: 56, color: colorScheme.outlineVariant),
                             const SizedBox(height: 12),
                             Text(
                               '暂未找到相关超话',
-                              style: TextStyle(fontSize: 15, color: colorScheme.onSurfaceVariant),
+                              style: TextStyle(
+                                  fontSize: 15,
+                                  color: colorScheme.onSurfaceVariant),
                             ),
                           ],
                         ),
@@ -239,23 +257,34 @@ class _ChaohuaCenterPageState extends ConsumerState<ChaohuaCenterPage> {
                           controlFinishRefresh: false,
                           controlFinishLoad: false,
                         ),
-                        onRefresh: () => _fetchCategoryTopics(
-                          _searchController.text.isNotEmpty
-                              ? _searchController.text
-                              : _categories[_selectedCategoryIndex]['name'] as String,
+                        onRefresh: () => HapticFeedbackUtil.refresh(
+                          () => _fetchCategoryTopics(
+                            _searchController.text.isNotEmpty
+                                ? _searchController.text
+                                : _categories[_selectedCategoryIndex]['name']
+                                    as String,
+                          ),
                         ),
                         onLoad: () async {
                           final hasMore = await _loadMoreTopics();
-                          return hasMore ? IndicatorResult.success : IndicatorResult.noMore;
+                          return hasMore
+                              ? IndicatorResult.success
+                              : IndicatorResult.noMore;
                         },
                         child: NotificationListener<ScrollNotification>(
                           onNotification: (notification) {
                             if (notification.metrics.maxScrollExtent > 0) {
-                              final progress = notification.metrics.pixels / notification.metrics.maxScrollExtent;
-                              final remainingDistance = notification.metrics.maxScrollExtent - notification.metrics.pixels;
+                              final progress = notification.metrics.pixels /
+                                  notification.metrics.maxScrollExtent;
+                              final remainingDistance =
+                                  notification.metrics.maxScrollExtent -
+                                      notification.metrics.pixels;
                               // 当滑动浏览达到 55%~70% 阈值，或剩余可视距离小于 1200dp 时，提前在后台无感预加载下一页
-                              if (progress >= 0.55 || remainingDistance < 1200) {
-                                if (_hasMore && !_isLoading && !_isLoadingMore) {
+                              if (progress >= 0.55 ||
+                                  remainingDistance < 1200) {
+                                if (_hasMore &&
+                                    !_isLoading &&
+                                    !_isLoadingMore) {
                                   _loadMoreTopics();
                                 }
                               }
@@ -266,16 +295,22 @@ class _ChaohuaCenterPageState extends ConsumerState<ChaohuaCenterPage> {
                             controller: _scrollController,
                             padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                             itemCount: _chaohuaList.length,
-                            separatorBuilder: (_, __) => const Divider(height: 1, indent: 64),
+                            separatorBuilder: (_, __) =>
+                                const Divider(height: 1, indent: 64),
                             itemBuilder: (context, index) {
                               // 滑动到最后 5 项时触发预加载
-                              if (index >= _chaohuaList.length - 5 && _hasMore && !_isLoading && !_isLoadingMore) {
-                                WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (index >= _chaohuaList.length - 5 &&
+                                  _hasMore &&
+                                  !_isLoading &&
+                                  !_isLoadingMore) {
+                                WidgetsBinding.instance
+                                    .addPostFrameCallback((_) {
                                   _loadMoreTopics();
                                 });
                               }
                               final item = _chaohuaList[index];
-                              return _buildChaohuaItem(context, item, colorScheme);
+                              return _buildChaohuaItem(
+                                  context, item, colorScheme);
                             },
                           ),
                         ),
@@ -286,7 +321,8 @@ class _ChaohuaCenterPageState extends ConsumerState<ChaohuaCenterPage> {
     );
   }
 
-  Widget _buildChaohuaItem(BuildContext context, SearchChaohuaItem item, ColorScheme colorScheme) {
+  Widget _buildChaohuaItem(
+      BuildContext context, SearchChaohuaItem item, ColorScheme colorScheme) {
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
       leading: AppAvatar(
@@ -301,7 +337,8 @@ class _ChaohuaCenterPageState extends ConsumerState<ChaohuaCenterPage> {
           Expanded(
             child: Text(
               item.title,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15.5),
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 15.5),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -335,7 +372,8 @@ class _ChaohuaCenterPageState extends ConsumerState<ChaohuaCenterPage> {
             ),
           );
         },
-        child: const Text('进入', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+        child: const Text('进入',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
       ),
       onTap: () {
         HapticFeedbackUtil.light();

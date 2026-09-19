@@ -1,6 +1,6 @@
 # Review 开发与技术架构文档
 
-> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-09-09；当前应用版本：`2.4.0+31`。
+> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-09-19；当前应用版本：`2.7.5+63`。
 >
 > `README.md` 是项目介绍文件，不属于本文档的同步范围。本次同步不修改 README，也不把登录 Cookie、Token、密码或其他凭据写入文档。
 
@@ -50,6 +50,7 @@ Review 是 Flutter 编写的微博网页端风格客户端。凡是涉及微博�
 - 支持微博已有的“全部关注”“特别关注”“好友圈”以及微博账号已有的个人分组和热门频道。应用不会把本地虚构分组当成微博云端分组，分组管理页对不能写入官方的本地新分组会明确提示不支持。
 - 首页首次请求遇到空响应时只做一次短延迟重试；刷新得到空响应时不覆盖已有内容，避免短暂网络问题把可用时间线替换为“暂无微博内容”。加载更多使用 `max_id` 继续向历史分页，并做去重和屏蔽用户过滤。
 - 卡片支持微博文本、富文本链接、表情、图片九宫格、视频、Live Photo、投票、超话标识、橙色热搜话题、转发微博、长文展开和操作菜单。
+- 独立微博视频链接（`h5.video.weibo.com/show/...`、`video.weibo.com/show?fid=...`、`weibo.com/tv/show/...` 以及移动端 `s/video/show` 变体）会调用微博官方视频组件接口获取签名媒体地址，再复用原生视频播放器；请求先使用不携带本地账号 Cookie 的公开接口，受限视频才回退到登录会话，不会把 H5 视频网页壳交给内置浏览器。针对当前移动端状态接口返回的 `url_objects` 视频卡片，应用会把其 `object_id`、封面、清晰度和已签名的 `weibocdn.com` 媒体地址合并到现有链接模型，并优先直接播放官方媒体地址；只有没有直接媒体地址时才回退 H5 组件解析。短链接、HTTP/HTTPS、HTML 实体和长文中的官方视频锚点也会统一规范化，避免视频短链接或 HTML `href` 被清理后又被当作普通网页打开。
 - 转发微博的原内容卡片可直接进入原微博；原微博通过 `page_info/media_info` 返回的视频，即使没有图片列表，也会在转发卡片中复用普通微博的视频预览和播放器。
 - 卡片菜单支持复制正文、收藏/取消收藏、复制链接、查看用户主页、屏蔽博主，以及在有权限时删除自己的微博。
 - 投票字段从微博状态 JSON 的 `url_objects[*].object.object.vote_object`、`card_info.vote_object` 读取，并兼容 `vote_info`/`page_info`。桌面接口缺少投票或热搜详情时，按需使用官方移动端状态接口补齐；补齐失败则保留普通微博，不阻断时间线。点击“查看结果”会优先重新读取官方移动端 `/api/statuses/show`，必要时回退网页 `/ajax/statuses/show`；只有响应包含真实的选项票数或百分比时才切换结果视图，空壳响应不会被渲染成 0 票/0%。展开后可“收起”。同一套补全逻辑也用于用户主页，所以主页卡片不会因列表接口字段不完整而漏掉投票。
@@ -72,10 +73,14 @@ Review 是 Flutter 编写的微博网页端风格客户端。凡是涉及微博�
 
 - 详情页读取长文、状态详情、转发列表、评论列表、二级评论、点赞列表、评论图片和编辑历史。
 - 评论支持发表评论、回复、删除自己有权限删除的评论；评论列表支持刷新和分页。
+- 一级评论中的楼中楼只作为首段预览渲染；当接口返回回复总数时显示“共 N 条回复”入口，点击后打开独立的回复面板。回复面板调用微博网页端的 `/ajax/statuses/buildComments`，使用 `fetch_level=1`、首请求 `max_id=0`，并严格沿用服务端返回的外层 `max_id` 分页游标和 `is_mix` 续页标记，直到没有更多回复；不会把首段通常只有两三条的 `comments` 数组当成完整楼中楼。面板底部同时提供明确的“加载更多回复”入口，避免只有少量预览行时无法触发滚动分页。
+- 回复面板中的头像、昵称、认证/博主标签、时间/IP、正文、图片和点赞数按回复数据渲染；右侧点赞数和图标使用固定操作列，避免昵称、认证标识或数字长度造成位置偏移。点击回复整行或正文都打开现有回复操作菜单，@、话题和链接仍保留各自的跳转行为。
 - 评论和楼中楼回复均使用微博返回的用户头像、昵称和认证信息；当评论/回复用户 UID 与当前微博作者 UID 一致时显示“博主”标签，不根据昵称本地猜测身份。
 - 点赞、取消点赞、收藏、取消收藏、转发入口和删除操作都以微博响应成功为准，界面中的即时变化属于乐观显示，失败时回滚或提示。
+- 消息中心的群聊按消息时间正序显示，较早消息在上、最新消息在下；首次打开定位到最新消息。群聊顶部下拉调用 `query_messages.json` 的 `max_mid` 读取更早历史，不再把固定首屏请求当成刷新，也不在上拉方向加载旧消息。私信维持原有独立会话路径。
 - 用户主页支持用户资料、背景图、认证/活动标识、微博列表、关注/取消关注、用户微博搜索和赞过的微博（按设置显示）。
-- 侧边栏包含浏览历史、收藏、关注话题、好友/关注列表、群组成员、群微博、我的消息、收到的赞、发出的评论、收到的评论、提及、超话中心和聊天 WebView 等入口。需要登录的页面在未登录时显示登录引导，不使用本地空数据假装已同步。
+- 用户主页资料卡中的“关注”和“粉丝”数量是可点击入口：当前账号进入“关注列表/我的粉丝”，其他用户进入该用户的“关注列表/粉丝列表”。关注列表使用网页端实际的 `/ajax/friendships/friends?uid=<uid>&page=<page>`，粉丝列表使用同一接口的 `relate=fans&type=fans` 查询，不附加本地排序或数量参数，两种关系不会互相回退。解析不到目标列表时区分网络失败与隐私未公开，不使用本地数量拼出假列表。关注列表中的用户可以继续进入其主页。
+- 侧边栏包含浏览历史、收藏、关注话题、关注列表、群组成员、群微博、我的消息、收到的赞、发出的评论、收到的评论、提及、超话中心和聊天 WebView 等入口。关系列表页根据查看对象固定决定分栏：当前账号显示“关注列表 / 我的粉丝 / 我的超话”，其他博主只显示“关注列表 / 粉丝列表”，不为其他博主探测或展示超话。自己的超话仍使用独立的官方超话接口，不与关注/粉丝列表共用数据；栏数在页面初始化时确定，避免异步探测导致顶栏闪烁。
 
 ## 3. 发布微博：当前闭环和入口
 
@@ -130,7 +135,7 @@ lib/
 │   ├── storage/           # SharedPreferences 与安全导出白名单
 │   ├── theme/             # Material 3、主题、字体、微博样式和图标
 │   ├── utils/             # 触感、解析、时间、弹窗、路由、表情
-│   └── widgets/           # 公共头像和内嵌浏览器
+│   └── widgets/           # 公共头像、热搜标签、分组卡片和内嵌浏览器
 └── features/
     ├── auth/              # 登录 WebView
     ├── compose/           # 发布微博、媒体上传、发布选择器
@@ -176,14 +181,17 @@ lib/
 | 关注流/热门流/分组流 | `/ajax/feed/friendstimeline`、`/ajax/feed/hottimeline`、`/ajax/feed/groupstimeline`、`/ajax/feed/allGroups` |
 | 用户微博/状态详情/长文/编辑历史 | `/ajax/statuses/mymblog`、`/ajax/statuses/show`、`/ajax/statuses/longtext`、`/ajax/statuses/editHistory` |
 | 发布/编辑/删除 | `/ajax/statuses/update`、`/ajax/statuses/modify`、`/ajax/statuses/destroy` |
-| 评论/回复/二级评论 | `/ajax/statuses/buildComments`、`/ajax/comments/create`、`/ajax/comments/reply`、`/ajax/statuses/getSecondComment`、`/ajax/statuses/destroyComment` |
+| 评论/回复/二级评论 | `/ajax/statuses/buildComments`（一级评论使用 `fetch_level=0`，楼中楼使用 `fetch_level=1`，均使用响应外层 `max_id` 分页）、`/ajax/comments/create`、`/ajax/comments/reply`、`/ajax/statuses/destroyComment` |
 | 点赞/收藏 | `/ajax/statuses/setLike`、`/ajax/statuses/cancelLike`、`/ajax/statuses/createFavorites`、`/ajax/statuses/destoryFavorites` |
 | 投票/投票结果 | `/ajax/statuses/setVote`、`m.weibo.cn/api/statuses/show`，网页结果读取回退 `/ajax/statuses/show` |
-| 关注关系 | `/ajax/friendships/create`、`/ajax/friendships/destroy`，必要时使用移动端关系接口回退 |
+| 关注关系/关系列表 | `/ajax/friendships/create`、`/ajax/friendships/destroy`、`/ajax/friendships/friends?uid=<uid>&page=<page>`；粉丝列表额外使用 `relate=fans` 和 `type=fans`，不附加 `fansSortType` 或本地数量参数，禁止把默认关注响应当成粉丝响应 |
+| 关注的超话 | `/ajax/profile/topicContent?tabid=231093_-_chaohua&page=<page>`；请求通过关注页 Referer 指定目标 UID，列表必须来自 `data.list` 等真实列表字段 |
+| 私信/群聊 | `/webim/2/direct_messages/conversation.json`、`/webim/groupchat/query_messages.json`；群聊首屏使用 `max_mid=0`，顶部历史使用当前最早消息的 `max_mid`，本地按消息时间统一升序渲染 |
 | 热搜/建议/搜索 | `/ajax/side/hotSearch`、`/ajax/statuses/hot_band`、`/ajax/side/search`、`/ajax/statuses/search` |
 | 地点/超话/电影 | `/ajax/statuses/place`、`/ajax/stopic/list`、`/ajax/movie/hot_top` 或 `/ajax/movie/hot_search` |
 | 发布配置/内容声明 | `/ajax/getSpaConfig`、`/ajax/statuses/config` |
 | 图片/视频发布媒体 | `picupload.php`、`/ajax/multimedia/mediaGroupInit`、`/ajax/multimedia/dispatch` 及分片完成校验接口 |
+| 独立微博视频播放 | 优先使用状态响应 `url_objects[*].object.object.urls` 中的官方签名 CDN 媒体地址；没有直接地址时使用 `https://h5.video.weibo.com/api/component?page=/show/{fid}`（显式 POST 表单字段 `data`，其值为包含 `Component_Play_Playinfo.oid` 的 JSON，并带 `PAGE-REFERER: /show/{fid}`；先公开请求，失败后回退登录会话） |
 
 网页 HTML 解析、移动端状态接口和网页 Ajax 接口均是兼容层。优先使用能返回当前真实状态的网页端接口；回退请求只能用于补齐同一条状态或兼容旧响应，不能把回退结果混成另一条内容。
 
@@ -192,8 +200,10 @@ lib/
 ### 7.1 Material 3 和触感
 
 - `AppTheme` 基于 Material 3，支持明暗主题、动态取色、自定义色盘、纯黑模式、字体粗细和悬浮底栏。
-- 全局 `HapticSplashFactory` 在 Ink 交互按下时提供一次通用轻触；局部控件如果需要业务触感，必须关闭默认反馈或覆盖 Splash，避免同一次操作重复震动。Live 图播放/暂停按钮使用普通水波纹并只在动作入口触发一次轻触。
-- 触感工具有约 40ms 冷却，仅过滤电气抖动，不吞掉快速双击。发布页定位按钮不再在业务方法开头重复触发轻触；成功选中地点后仅保留一次中等反馈。
+- Material 水波纹通过 `HapticSplashFactory` 提供全局一次轻触；业务回调会消费同一次手势的自动反馈，不会重复震动。取消点击不会额外触发，Live 图播放/暂停按钮使用普通水波纹并只在动作入口触发一次轻触。
+- 触感工具保留约 40ms 的硬件抖动冷却，并使用 300ms 的同手势消费窗口，避免全局反馈与业务反馈叠加；没有 Material 水波纹的 GestureDetector 仍可由业务回调独立触发。公共头像组件的点击入口会消费全局水波纹反馈，确保只触发一次轻触；所有下拉刷新入口统一通过 `HapticFeedbackUtil.refresh` 触发一次轻触，并遵守全局触感开关。发布页定位按钮不再在业务方法开头重复触发轻触；成功选中地点后仅保留一次中等反馈。
+- 公共头像点击区域至少为 48dp，并声明头像按钮语义；头像占位符按 Unicode code point 取首字符。Toast 根据安全区和键盘高度调整位置，并通过 live region 向读屏器公布内容。
+- 搜索页与热搜榜共用 `HotSearchBadge`；设置页分组共用 `AppSectionCard`。统一使用 `showAppDialog` 的确认弹窗，设置/存储路径底部菜单使用主题的圆角、背景和拖动条。
 - 时间线底栏单击支持回顶/返回上次位置，双击回顶并刷新；时间线顶栏双击支持回顶和二次刷新。
 - 用户主页顶栏也使用相同的双击判定：不在顶部时双击平滑回顶，已经在顶部时再次双击刷新当前用户微博；单击不改变原有标题、搜索和分享操作。
 - 文章详情顶栏支持双击平滑回到文章顶部，单击不改变返回键和更多操作。
@@ -244,7 +254,7 @@ lib/
 - **微博样式**：相对/绝对时间、星期/年份/时区/秒数、发布设备、卡片背景布局、正文字号、行间距、链接颜色、备注和名字、主页背景图、用户活动图标、大图片模式、图片圆角、菜单位置、IP 属地显示方式、主页赞过的微博。
 - **存储**：图片/视频保存路径和本地历史数据；当前不提供“退出时自动清理缓存”或“立即清理缓存”入口。
 - **WebDAV 备份**：配置、测试、备份和恢复，遵守上面的安全白名单。
-- **账号和关于**：登录、凭据检测、凭据导出、关于应用、退出登录。关于应用版本名直接读取 `ApiConstants.appVersion`，当前显示 `2.4.0`。
+- **账号和关于**：登录、凭据检测、凭据导出、关于应用、退出登录。关于应用版本名直接读取 `ApiConstants.appVersion`，当前显示 `2.7.5`。
 
 ## 10. 测试、构建和发布
 
@@ -292,7 +302,7 @@ D:\App\Review\Review_v<version>.apk
 - 功能更新：次版本号加 1，修订号归零，例如 `1.0.0 → 1.1.0`；即使当前是 `1.0.1`，功能更新也进入 `1.1.0`。
 - Bug 修复：修订版本号加 1，例如 `1.0.0 → 1.0.1`。
 - 每次发布都递增 Android `versionCode`。
-- 必须同步检查 `pubspec.yaml`、`lib/core/constants/api_constants.dart`、`android/app/build.gradle.kts` 和设置页关于应用。当前四处对应 `2.4.0+31`，关于页显示版本名 `2.4.0`。
+- 必须同步检查 `pubspec.yaml`、`lib/core/constants/api_constants.dart`、`android/app/build.gradle.kts` 和设置页关于应用。当前四处对应 `2.7.5+63`，关于页显示版本名 `2.7.5`。
 - APK 文件名必须是应用名加版本名，例如 `Review_v2.4.0.apk`。根目录不保留过时的交付包。
 
 ## 11. 后续开发约束

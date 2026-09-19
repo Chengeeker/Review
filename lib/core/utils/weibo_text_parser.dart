@@ -25,9 +25,40 @@ class WeiboTextParser {
   // of url_struct.short_url, so exact matching would silently lose the
   // official long_url and fall back to the generic browser route.
   static String _normalizeLinkToken(String value) {
-    return value
+    final cleaned = value
         .replaceAll(RegExp(r'[\u200B\u200C\u200D\uFEFF]'), '')
+        .replaceAll('&amp;', '&')
         .trim();
+    final uri = Uri.tryParse(cleaned);
+    if (uri != null && uri.scheme.toLowerCase() == 'http') {
+      return uri.replace(scheme: 'https').toString();
+    }
+    return cleaned;
+  }
+
+  /// Long-text responses sometimes wrap a video smart-card URL in an HTML
+  /// anchor instead of leaving the URL in the plain text. The generic HTML
+  /// cleanup below intentionally removes tags, which would otherwise discard
+  /// the only clickable target. Replace only official Weibo video anchors
+  /// with their href; ordinary topic/user anchors keep their visible text and
+  /// existing rendering path.
+  static String _preserveVideoAnchorTargets(String value) {
+    final anchorPattern = RegExp(
+      r'''<a\b[^>]*\bhref\s*=\s*(?:"([^"]+)"|'([^']+)')[^>]*>.*?</a\s*>''',
+      caseSensitive: false,
+      dotAll: true,
+    );
+
+    return value.replaceAllMapped(anchorPattern, (match) {
+      final href = match.group(1) ?? match.group(2) ?? '';
+      final normalized = _normalizeLinkToken(href);
+      final lower = normalized.toLowerCase();
+      final isVideoAnchor = lower.contains('video.weibo.com/show') ||
+          lower.contains('h5.video.weibo.com/show') ||
+          lower.contains('weibo.com/tv/show') ||
+          lower.contains('weibo.cn/s/video/show');
+      return isVideoAnchor ? normalized : match.group(0)!;
+    });
   }
 
   static String? _attributeValue(String tag, String name) {
@@ -94,6 +125,7 @@ class WeiboTextParser {
     String? htmlText,
     Function(String user)? onUserTap,
     Function(String topic)? onTopicTap,
+    VoidCallback? onPlainTextTap,
   }) {
     final theme = Theme.of(context);
     final primary = linkColor ?? theme.colorScheme.primary;
@@ -122,7 +154,7 @@ class WeiboTextParser {
     };
 
     // Clean up HTML tags while preserving image emojis (e.g. <img alt="[doge]" ...>)
-    String cleanText = rawText
+    String cleanText = _preserveVideoAnchorTargets(rawText)
         .replaceAllMapped(_imageTagRegex, (m) => _imageLabel(m.group(0)!) ?? '')
         .replaceAll(RegExp(r'<br\s*\/?>', caseSensitive: false), '\n')
         .replaceAll(RegExp(r'<[^>]*>'), '');
@@ -130,12 +162,18 @@ class WeiboTextParser {
     final spans = <InlineSpan>[];
     int lastMatchEnd = 0;
 
+    TapGestureRecognizer? plainTextRecognizer() {
+      if (onPlainTextTap == null) return null;
+      return TapGestureRecognizer()..onTap = onPlainTextTap;
+    }
+
     for (final match in _weiboRegex.allMatches(cleanText)) {
       if (match.start > lastMatchEnd) {
         spans.add(
           TextSpan(
             text: cleanText.substring(lastMatchEnd, match.start),
             style: baseStyle,
+            recognizer: plainTextRecognizer(),
           ),
         );
       }
@@ -238,27 +276,51 @@ class WeiboTextParser {
 
         if (urlStruct != null) {
           for (final u in urlStruct) {
-            final shortUrl = _normalizeLinkToken(
-                u['short_url']?.toString() ?? '');
+            final shortUrl =
+                _normalizeLinkToken(u['short_url']?.toString() ?? '');
             final oriUrl = _normalizeLinkToken(u['ori_url']?.toString() ?? '');
-            final longUrl = _normalizeLinkToken(
-                u['long_url']?.toString() ?? '');
+            final longUrl =
+                _normalizeLinkToken(u['long_url']?.toString() ?? '');
+            final h5TargetUrl =
+                _normalizeLinkToken(u['h5_target_url']?.toString() ?? '');
             final title = u['url_title']?.toString();
 
             if (normalizedMatchedUrl == shortUrl ||
                 normalizedMatchedUrl == oriUrl ||
-                normalizedMatchedUrl == longUrl) {
+                normalizedMatchedUrl == longUrl ||
+                normalizedMatchedUrl == h5TargetUrl) {
               matchingStruct = u;
               if (title != null && title.trim().isNotEmpty) {
                 linkTitle = title.trim();
               }
-              targetUrl = longUrl.isNotEmpty
-                  ? longUrl
-                  : (oriUrl.isNotEmpty
-                      ? oriUrl
-                      : (shortUrl.isNotEmpty
-                          ? shortUrl
-                          : normalizedMatchedUrl));
+              String nativeVideoTarget = '';
+              final directVideoUrl =
+                  _normalizeLinkToken(u['video_url']?.toString() ?? '');
+              for (final candidate in [
+                directVideoUrl,
+                h5TargetUrl,
+                longUrl,
+                oriUrl,
+                shortUrl,
+              ]) {
+                if (LinkRoutingService.videoObjectIdFromUrl(candidate) !=
+                        null ||
+                    LinkRoutingService.isDirectVideoMediaUrl(candidate)) {
+                  nativeVideoTarget = candidate;
+                  break;
+                }
+              }
+              targetUrl = nativeVideoTarget.isNotEmpty
+                  ? nativeVideoTarget
+                  : (longUrl.isNotEmpty
+                      ? longUrl
+                      : (oriUrl.isNotEmpty
+                          ? oriUrl
+                          : (h5TargetUrl.isNotEmpty
+                              ? h5TargetUrl
+                              : (shortUrl.isNotEmpty
+                                  ? shortUrl
+                                  : normalizedMatchedUrl))));
               break;
             }
           }
@@ -339,6 +401,7 @@ class WeiboTextParser {
               style: baseStyle.copyWith(
                 fontSize: (baseStyle.fontSize ?? 15) * 1.15,
               ),
+              recognizer: plainTextRecognizer(),
             ),
           );
         } else {
@@ -346,6 +409,7 @@ class WeiboTextParser {
             TextSpan(
               text: matchedText,
               style: baseStyle,
+              recognizer: plainTextRecognizer(),
             ),
           );
         }
@@ -359,6 +423,7 @@ class WeiboTextParser {
         TextSpan(
           text: cleanText.substring(lastMatchEnd),
           style: baseStyle,
+          recognizer: plainTextRecognizer(),
         ),
       );
     }

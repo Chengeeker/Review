@@ -1,8 +1,10 @@
 import 'package:easy_refresh/easy_refresh.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/network/weibo_dio_client.dart';
+import '../../../core/utils/haptic_feedback_util.dart';
 import '../../../core/utils/weibo_text_parser.dart';
 import '../../../core/utils/weibo_time_formatter.dart';
 import '../../../core/utils/app_toast.dart';
@@ -33,12 +35,17 @@ class ChatConversationPage extends ConsumerStatefulWidget {
 }
 
 class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
+  static const _messagePageSize = 40;
+
   final List<Map<String, dynamic>> _messages = [];
   final Map<String, Map<String, dynamic>> _userCache = {};
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
   bool _isLoading = true;
+  bool _isLoadingOlder = false;
+  bool _hasOlder = true;
+  String? _oldestMessageId;
   bool _isSending = false;
 
   @override
@@ -67,9 +74,15 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
           'https://api.weibo.com/webim/groupchat/query_messages.json',
           queryParameters: {
             'id': widget.targetId,
-            'count': 40,
+            'count': _messagePageSize,
+            'convert_emoji': 1,
+            'query_sender': 1,
+            'max_mid': 0,
             'source': '209678993',
           },
+          options: Options(
+            headers: {'Referer': 'https://api.weibo.com/chat'},
+          ),
         );
         if (res.data is Map<String, dynamic>) {
           final data = res.data as Map<String, dynamic>;
@@ -102,15 +115,151 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
       }
     } catch (_) {}
 
+    if (widget.isGroup) {
+      _sortMessagesChronologically(extracted);
+    }
+
     if (mounted) {
       setState(() {
         _messages.clear();
         _messages.addAll(extracted);
+        if (widget.isGroup) {
+          _oldestMessageId =
+              _messageId(extracted.isEmpty ? null : extracted.first);
+          _hasOlder = extracted.length >= _messagePageSize;
+        }
         _isLoading = false;
       });
+      if (widget.isGroup) _scrollToLatest();
       // 深度异步解析发言人头像与昵称
       _resolveMessageSenders(extracted);
     }
+  }
+
+  Future<void> _fetchOlderMessages() async {
+    if (!widget.isGroup ||
+        _isLoading ||
+        _isLoadingOlder ||
+        !_hasOlder ||
+        _messages.isEmpty) {
+      return;
+    }
+
+    final maxMid = _oldestMessageId;
+    if (maxMid == null || maxMid.isEmpty) {
+      if (mounted) setState(() => _hasOlder = false);
+      return;
+    }
+
+    setState(() => _isLoadingOlder = true);
+    final client = ref.read(weiboDioClientProvider);
+    final previousOldest = _messages.first;
+    final extracted = <Map<String, dynamic>>[];
+    var requestSucceeded = false;
+
+    try {
+      final res = await client.dio.get(
+        'https://api.weibo.com/webim/groupchat/query_messages.json',
+        queryParameters: {
+          'id': widget.targetId,
+          'count': _messagePageSize,
+          'convert_emoji': 1,
+          'query_sender': 1,
+          'max_mid': maxMid,
+          'source': '209678993',
+        },
+        options: Options(
+          headers: {'Referer': 'https://api.weibo.com/chat'},
+        ),
+      );
+      requestSucceeded = true;
+      if (res.data is Map<String, dynamic>) {
+        final data = res.data as Map<String, dynamic>;
+        final rawList = data['messages'] as List? ?? [];
+        for (final item in rawList) {
+          if (item is Map<String, dynamic>) extracted.add(item);
+        }
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    if (!requestSucceeded) {
+      setState(() => _isLoadingOlder = false);
+      return;
+    }
+
+    _sortMessagesChronologically(extracted);
+    final existingKeys = _messages.map(_messageKey).toSet();
+    final newMessages = extracted
+        .where((message) => existingKeys.add(_messageKey(message)))
+        .toList();
+    final pageAdvanced = extracted.isNotEmpty &&
+        _compareMessages(extracted.first, previousOldest) < 0;
+
+    setState(() {
+      _messages.insertAll(0, newMessages);
+      _oldestMessageId = _messageId(_messages.first);
+      _hasOlder = pageAdvanced && extracted.length >= _messagePageSize;
+      _isLoadingOlder = false;
+    });
+    _resolveMessageSenders(newMessages);
+  }
+
+  void _sortMessagesChronologically(List<Map<String, dynamic>> messages) {
+    messages.sort(_compareMessages);
+  }
+
+  int _compareMessages(Map<String, dynamic> a, Map<String, dynamic> b) {
+    final timeCompare = _messageTime(a).compareTo(_messageTime(b));
+    if (timeCompare != 0) return timeCompare;
+    return _numericMessageId(a).compareTo(_numericMessageId(b));
+  }
+
+  int _messageTime(Map<String, dynamic>? message) {
+    if (message == null) return 0;
+    for (final key in const ['time', 'timestamp', 'created_at', 'createdAt']) {
+      final value = message[key];
+      if (value is num) {
+        final number = value.toInt();
+        return number < 100000000000 ? number * 1000 : number;
+      }
+      final parsed = DateTime.tryParse(value?.toString() ?? '');
+      if (parsed != null) return parsed.millisecondsSinceEpoch;
+    }
+    return _numericMessageId(message);
+  }
+
+  int _numericMessageId(Map<String, dynamic>? message) =>
+      int.tryParse(message?['id']?.toString() ?? '') ?? 0;
+
+  String _messageId(Map<String, dynamic>? message) =>
+      message?['id']?.toString().trim() ?? '';
+
+  String _messageKey(Map<String, dynamic> message) {
+    final id = _messageId(message);
+    if (id.isNotEmpty) return id;
+    return [
+      message['from_uid'] ?? message['sender_id'] ?? '',
+      message['time'] ?? message['created_at'] ?? '',
+      message['content'] ?? message['text'] ?? '',
+    ].join('|');
+  }
+
+  void _scrollToLatest({bool animated = false}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final target = _scrollController.position.maxScrollExtent;
+      if (animated) {
+        _scrollController.animateTo(
+          target,
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+        );
+      } else {
+        _scrollController.jumpTo(target);
+      }
+    });
   }
 
   Future<void> _resolveMessageSenders(List<Map<String, dynamic>> msgs) async {
@@ -187,8 +336,13 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
           };
 
     setState(() {
-      _messages.insert(0, optimisticMsg);
+      if (widget.isGroup) {
+        _messages.add(optimisticMsg);
+      } else {
+        _messages.insert(0, optimisticMsg);
+      }
     });
+    if (widget.isGroup) _scrollToLatest(animated: true);
 
     // 2. 发送网络请求
     var sent = false;
@@ -333,10 +487,12 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
                         ),
                       )
                     : EasyRefresh(
-                        onRefresh: _fetchMessages,
+                        onRefresh: () => HapticFeedbackUtil.refresh(
+                          widget.isGroup ? _fetchOlderMessages : _fetchMessages,
+                        ),
                         child: ListView.builder(
                           controller: _scrollController,
-                          reverse: true,
+                          reverse: !widget.isGroup,
                           padding: const EdgeInsets.symmetric(
                               horizontal: 14, vertical: 12),
                           itemCount: _messages.length,

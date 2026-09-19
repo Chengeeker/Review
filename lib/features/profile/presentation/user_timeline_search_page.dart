@@ -18,10 +18,12 @@ class UserTimelineSearchPage extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<UserTimelineSearchPage> createState() => _UserTimelineSearchPageState();
+  ConsumerState<UserTimelineSearchPage> createState() =>
+      _UserTimelineSearchPageState();
 }
 
-class _UserTimelineSearchPageState extends ConsumerState<UserTimelineSearchPage> {
+class _UserTimelineSearchPageState
+    extends ConsumerState<UserTimelineSearchPage> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
 
@@ -166,11 +168,17 @@ class _UserTimelineSearchPageState extends ConsumerState<UserTimelineSearchPage>
         ],
       ),
       body: EasyRefresh(
-        onRefresh: _hasSearched ? () => _performSearch(isRefresh: true) : null,
+        onRefresh: _hasSearched
+            ? () => HapticFeedbackUtil.refresh(
+                  () => _performSearch(isRefresh: true),
+                )
+            : null,
         onLoad: (_hasSearched && _hasMore && !_isLoading)
             ? () async {
                 await _performSearch(isRefresh: false);
-                return _hasMore ? IndicatorResult.success : IndicatorResult.noMore;
+                return _hasMore
+                    ? IndicatorResult.success
+                    : IndicatorResult.noMore;
               }
             : null,
         child: CustomScrollView(
@@ -192,7 +200,8 @@ class _UserTimelineSearchPageState extends ConsumerState<UserTimelineSearchPage>
                       Icon(
                         Icons.manage_search_rounded,
                         size: 64,
-                        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                        color:
+                            colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                       ),
                       const SizedBox(height: 16),
                       Text(
@@ -216,7 +225,8 @@ class _UserTimelineSearchPageState extends ConsumerState<UserTimelineSearchPage>
                       Icon(
                         Icons.search_off_rounded,
                         size: 64,
-                        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                        color:
+                            colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                       ),
                       const SizedBox(height: 16),
                       Text(

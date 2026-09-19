@@ -133,7 +133,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
 
   void _toggleLivePlay() {
     // 该按钮使用普通 InkSplash，并在动作入口只触发一次轻触。
-    // 不使用全局 HapticSplashFactory，避免与 InkWell/系统默认反馈叠加。
+    // 普通水波纹不提供业务触感，动作入口只触发一次反馈。
     HapticFeedbackUtil.light();
     final controller = _liveControllers[_currentIndex];
     if (controller == null || !(_liveInitialized[_currentIndex] ?? false)) {
@@ -143,8 +143,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
       return;
     }
 
-    // 外层 InkWell 使用全局 HapticSplashFactory 提供一次按下反馈，
-    // 这里不再重复触发，避免播放/暂停 Live 图时连续震动两次。
+    // 播放/暂停只由本方法负责触感，避免同一手势重复震动。
     setState(() {
       if (controller.value.isPlaying) {
         controller.pause();
@@ -477,7 +476,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                             backgroundColor: Colors.black45),
                         icon: const Icon(Icons.arrow_back_rounded,
                             color: Colors.white),
-                        // HapticSplashFactory already provides the single tap feedback.
+                        // 返回动作不再依赖水波纹触感。
                         onPressed: () => Navigator.of(context).pop(),
                       ),
 

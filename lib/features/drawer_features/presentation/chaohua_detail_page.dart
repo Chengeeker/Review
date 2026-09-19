@@ -46,7 +46,8 @@ class ChaohuaDetailPage extends ConsumerStatefulWidget {
   ConsumerState<ChaohuaDetailPage> createState() => _ChaohuaDetailPageState();
 }
 
-class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with TickerProviderStateMixin {
+class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
+    with TickerProviderStateMixin {
   late String _currentContainerId;
   List<ChaohuaChannel> _channels = [];
   TabController? _tabController;
@@ -96,7 +97,8 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
   }
 
   Future<void> _resolveAndLoad() async {
-    final cleanTitle = widget.title.replaceAll('[超话]', '').replaceAll('超话', '').trim();
+    final cleanTitle =
+        widget.title.replaceAll('[超话]', '').replaceAll('超话', '').trim();
     final searchRepo = ref.read(searchRepositoryProvider);
     final results = await searchRepo.searchChaohua(cleanTitle);
 
@@ -107,7 +109,8 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
         setState(() {
           _headerTitle = match.title;
           _headerAvatar = match.image.isNotEmpty ? match.image : _headerAvatar;
-          _headerDesc = match.description.isNotEmpty ? match.description : _headerDesc;
+          _headerDesc =
+              match.description.isNotEmpty ? match.description : _headerDesc;
         });
       }
     } else if (_currentContainerId.isEmpty) {
@@ -122,7 +125,8 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
   void _initDefaultChannels() {
     final cid = _currentContainerId;
     _channels = [
-      ChaohuaChannel(title: '热门', flowId: '${cid}_-_recommend', channelId: 'recommend'),
+      ChaohuaChannel(
+          title: '热门', flowId: '${cid}_-_recommend', channelId: 'recommend'),
       ChaohuaChannel(title: '最新', flowId: '${cid}_-_feed', channelId: 'feed'),
       ChaohuaChannel(title: '精华', flowId: '${cid}_-_soul', channelId: 'soul'),
     ];
@@ -166,7 +170,8 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
         if (mounted) {
           setState(() {
             _isFollowed = data['is_followed'] == true;
-            _followBtnText = data['follow_btn_text']?.toString() ?? (_isFollowed ? '已关注' : '关注');
+            _followBtnText = data['follow_btn_text']?.toString() ??
+                (_isFollowed ? '已关注' : '关注');
             _isChecked = data['is_checked'] == true;
             _checkinBtnText = _isChecked ? '已签到' : '签到';
           });
@@ -175,7 +180,8 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
     } catch (_) {}
   }
 
-  Future<void> _fetchFeedForChannel(ChaohuaChannel channel, {bool refresh = false}) async {
+  Future<void> _fetchFeedForChannel(ChaohuaChannel channel,
+      {bool refresh = false}) async {
     final flowId = channel.flowId;
     if (refresh) {
       _channelPages[flowId] = 1;
@@ -217,12 +223,14 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
                 final fId = c['flowId']?.toString() ?? '';
                 final chId = c['channelId']?.toString();
                 if (title.isNotEmpty && fId.isNotEmpty) {
-                  parsedChannels.add(ChaohuaChannel(title: title, flowId: fId, channelId: chId));
+                  parsedChannels.add(ChaohuaChannel(
+                      title: title, flowId: fId, channelId: chId));
                 }
               }
             }
             if (parsedChannels.isNotEmpty &&
-                (parsedChannels.length != _channels.length || parsedChannels[0].flowId != _channels[0].flowId)) {
+                (parsedChannels.length != _channels.length ||
+                    parsedChannels[0].flowId != _channels[0].flowId)) {
               if (mounted) {
                 final curIndex = _tabController?.index ?? 0;
                 setState(() {
@@ -240,7 +248,8 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
           final hData = header['data'] as Map<String, dynamic>?;
           if (hData != null) {
             _headerTitle ??= hData['nick']?.toString();
-            _headerAvatar ??= hData['portrait']?.toString() ?? hData['avatar']?.toString();
+            _headerAvatar ??=
+                hData['portrait']?.toString() ?? hData['avatar']?.toString();
             _headerDesc ??= hData['desc']?.toString();
             final fRel = hData['follow_relation'];
             if (fRel != null) {
@@ -260,7 +269,10 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
                 final model = WeiboStatusModel.fromJson(statusMap);
                 if (model.id.isNotEmpty) nextStatuses.add(model);
               } catch (_) {}
-            } else if (it['data'] is Map && (it['data']['id'] != null || it['data']['text_raw'] != null || it['data']['text'] != null)) {
+            } else if (it['data'] is Map &&
+                (it['data']['id'] != null ||
+                    it['data']['text_raw'] != null ||
+                    it['data']['text'] != null)) {
               try {
                 final statusMap = Map<String, dynamic>.from(it['data'] as Map);
                 final model = WeiboStatusModel.fromJson(statusMap);
@@ -271,11 +283,14 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
         }
 
         if (nextStatuses.isEmpty) {
-          final rawStatuses = json['statuses'] as List? ?? json['data']?['statuses'] as List? ?? [];
+          final rawStatuses = json['statuses'] as List? ??
+              json['data']?['statuses'] as List? ??
+              [];
           for (final s in rawStatuses) {
             if (s is Map) {
               try {
-                final model = WeiboStatusModel.fromJson(Map<String, dynamic>.from(s));
+                final model =
+                    WeiboStatusModel.fromJson(Map<String, dynamic>.from(s));
                 if (model.id.isNotEmpty) nextStatuses.add(model);
               } catch (_) {}
             }
@@ -291,7 +306,8 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
         } else {
           final existing = _channelStatuses[flowId] ?? [];
           final existingIds = existing.map((e) => e.id).toSet();
-          final newUnique = nextStatuses.where((e) => !existingIds.contains(e.id)).toList();
+          final newUnique =
+              nextStatuses.where((e) => !existingIds.contains(e.id)).toList();
           existing.addAll(newUnique);
           _channelStatuses[flowId] = existing;
         }
@@ -325,10 +341,12 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
       final data = res.data is Map ? res.data as Map : {};
       final code = data['code'];
 
-      if ((_isFollowed && code == 10000) || (!_isFollowed && (code == 100000 || code == 10000))) {
+      if ((_isFollowed && code == 10000) ||
+          (!_isFollowed && (code == 100000 || code == 10000))) {
         setState(() {
           _isFollowed = !_isFollowed;
-          _followBtnText = data['follow_btn_text']?.toString() ?? (_isFollowed ? '已关注' : '关注');
+          _followBtnText = data['follow_btn_text']?.toString() ??
+              (_isFollowed ? '已关注' : '关注');
         });
         if (mounted) {
           AppToast.show(context, _isFollowed ? '已关注该超话' : '已取消关注');
@@ -438,7 +456,8 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
               scrolledUnderElevation: 1.0,
               title: Text(
                 displayTitle,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
               ),
               actions: [
                 IconButton(
@@ -459,7 +478,8 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
                 child: Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                    color: colorScheme.surfaceContainerHighest
+                        .withValues(alpha: 0.35),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
                       color: colorScheme.outlineVariant.withValues(alpha: 0.3),
@@ -485,7 +505,8 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
                                   : null,
                             ),
                             child: displayAvatar.isEmpty
-                                ? const Icon(Icons.diamond_rounded, size: 28, color: Color(0xFFFF8200))
+                                ? const Icon(Icons.diamond_rounded,
+                                    size: 28, color: Color(0xFFFF8200))
                                 : null,
                           ),
                           const SizedBox(width: 14),
@@ -495,12 +516,15 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
                               children: [
                                 Row(
                                   children: [
-                                    const Icon(Icons.diamond_rounded, size: 18, color: Color(0xFFFF8200)),
+                                    const Icon(Icons.diamond_rounded,
+                                        size: 18, color: Color(0xFFFF8200)),
                                     const SizedBox(width: 4),
                                     Expanded(
                                       child: Text(
                                         displayTitle,
-                                        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                                        style: const TextStyle(
+                                            fontSize: 17,
+                                            fontWeight: FontWeight.bold),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
@@ -511,7 +535,9 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
                                   const SizedBox(height: 4),
                                   Text(
                                     _headerFollowCount!,
-                                    style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color: colorScheme.onSurfaceVariant),
                                   ),
                                 ],
                               ],
@@ -544,12 +570,18 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: _navigateToCompose,
-                              icon: const Icon(Icons.edit_note_rounded, size: 18),
-                              label: const Text('发帖', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                              icon:
+                                  const Icon(Icons.edit_note_rounded, size: 18),
+                              label: const Text('发帖',
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold)),
                               style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 8),
                                 visualDensity: VisualDensity.compact,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
                               ),
                             ),
                           ),
@@ -559,18 +591,26 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
                             child: FilledButton.tonal(
                               onPressed: _toggleFollow,
                               style: FilledButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 8),
                                 visualDensity: VisualDensity.compact,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
                               ),
                               child: _isFollowingLoading
-                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2))
                                   : Text(
                                       _followBtnText,
                                       style: TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.bold,
-                                        color: _isFollowed ? colorScheme.onSecondaryContainer : colorScheme.primary,
+                                        color: _isFollowed
+                                            ? colorScheme.onSecondaryContainer
+                                            : colorScheme.primary,
                                       ),
                                     ),
                             ),
@@ -581,22 +621,38 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
                             child: FilledButton(
                               onPressed: _handleCheckin,
                               style: FilledButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 8),
                                 visualDensity: VisualDensity.compact,
-                                backgroundColor: _isChecked ? colorScheme.surfaceContainerHighest : colorScheme.primary,
-                                foregroundColor: _isChecked ? colorScheme.onSurfaceVariant : colorScheme.onPrimary,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                backgroundColor: _isChecked
+                                    ? colorScheme.surfaceContainerHighest
+                                    : colorScheme.primary,
+                                foregroundColor: _isChecked
+                                    ? colorScheme.onSurfaceVariant
+                                    : colorScheme.onPrimary,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
                               ),
                               child: _isCheckingIn
-                                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2, color: Colors.white))
                                   : Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
                                       children: [
-                                        if (_isChecked) const Icon(Icons.check_rounded, size: 16),
-                                        if (_isChecked) const SizedBox(width: 2),
+                                        if (_isChecked)
+                                          const Icon(Icons.check_rounded,
+                                              size: 16),
+                                        if (_isChecked)
+                                          const SizedBox(width: 2),
                                         Text(
                                           _checkinBtnText,
-                                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                                          style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold),
                                         ),
                                       ],
                                     ),
@@ -619,8 +675,10 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
                     controller: _tabController,
                     isScrollable: true,
                     tabAlignment: TabAlignment.start,
-                    labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
-                    unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal, fontSize: 14.5),
+                    labelStyle: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 14.5),
+                    unselectedLabelStyle: const TextStyle(
+                        fontWeight: FontWeight.normal, fontSize: 14.5),
                     indicatorSize: TabBarIndicatorSize.label,
                     indicatorWeight: 3,
                     indicatorColor: colorScheme.primary,
@@ -640,7 +698,8 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
                 children: _channels.map((channel) {
                   final flowId = channel.flowId;
                   final statuses = _channelStatuses[flowId];
-                  final isLoading = _channelLoading[flowId] ?? (statuses == null);
+                  final isLoading =
+                      _channelLoading[flowId] ?? (statuses == null);
                   final hasMore = _channelHasMore[flowId] ?? true;
 
                   if (isLoading && statuses == null) {
@@ -650,23 +709,31 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
                   final list = statuses ?? [];
 
                   return EasyRefresh(
-                    onRefresh: () => _fetchFeedForChannel(channel, refresh: true),
+                    onRefresh: () => HapticFeedbackUtil.refresh(
+                      () => _fetchFeedForChannel(channel, refresh: true),
+                    ),
                     onLoad: () async {
                       final curPage = _channelPages[flowId] ?? 1;
                       _channelPages[flowId] = curPage + 1;
                       await _fetchFeedForChannel(channel, refresh: false);
-                      return hasMore ? IndicatorResult.success : IndicatorResult.noMore;
+                      return hasMore
+                          ? IndicatorResult.success
+                          : IndicatorResult.noMore;
                     },
                     child: list.isEmpty
                         ? Center(
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.feed_outlined, size: 48, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5)),
+                                Icon(Icons.feed_outlined,
+                                    size: 48,
+                                    color: colorScheme.onSurfaceVariant
+                                        .withValues(alpha: 0.5)),
                                 const SizedBox(height: 12),
                                 Text(
                                   '暂无【${channel.title}】相关动态',
-                                  style: TextStyle(color: colorScheme.onSurfaceVariant),
+                                  style: TextStyle(
+                                      color: colorScheme.onSurfaceVariant),
                                 ),
                               ],
                             ),
@@ -674,13 +741,18 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage> with Tick
                         : NotificationListener<ScrollNotification>(
                             onNotification: (notification) {
                               if (notification.metrics.maxScrollExtent > 0) {
-                                final progress = notification.metrics.pixels / notification.metrics.maxScrollExtent;
-                                final remainingDistance = notification.metrics.maxScrollExtent - notification.metrics.pixels;
-                                if (progress >= 0.55 || remainingDistance < 1200) {
+                                final progress = notification.metrics.pixels /
+                                    notification.metrics.maxScrollExtent;
+                                final remainingDistance =
+                                    notification.metrics.maxScrollExtent -
+                                        notification.metrics.pixels;
+                                if (progress >= 0.55 ||
+                                    remainingDistance < 1200) {
                                   if (hasMore && !isLoading) {
                                     final curPage = _channelPages[flowId] ?? 1;
                                     _channelPages[flowId] = curPage + 1;
-                                    _fetchFeedForChannel(channel, refresh: false);
+                                    _fetchFeedForChannel(channel,
+                                        refresh: false);
                                   }
                                 }
                               }
@@ -716,7 +788,8 @@ class _ChaohuaTabHeaderDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => tabBar.preferredSize.height + 1;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
     return Container(
       color: backgroundColor,
       child: Column(
@@ -730,6 +803,7 @@ class _ChaohuaTabHeaderDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   bool shouldRebuild(covariant _ChaohuaTabHeaderDelegate oldDelegate) {
-    return oldDelegate.tabBar != tabBar || oldDelegate.backgroundColor != backgroundColor;
+    return oldDelegate.tabBar != tabBar ||
+        oldDelegate.backgroundColor != backgroundColor;
   }
 }

@@ -4,6 +4,8 @@ import '../../features/detail/presentation/status_detail_page.dart';
 import '../../features/detail/presentation/weibo_article_page.dart';
 import '../../features/drawer_features/presentation/chaohua_detail_page.dart';
 import '../../features/profile/presentation/user_profile_page.dart';
+import '../../features/feed/presentation/widgets/weibo_video_link_page.dart';
+import '../../features/feed/presentation/widgets/weibo_video_player_page.dart';
 import '../utils/haptic_feedback_util.dart';
 import '../widgets/in_app_browser_page.dart';
 
@@ -54,12 +56,76 @@ class LinkRoutingService {
     return id == null || id.isEmpty ? null : id;
   }
 
+  /// Returns the full Weibo video object id (`1034:...`) from a video
+  /// component link. The H5 and desktop variants point to the same official
+  /// component API and should therefore share one native playback route.
+  static String? videoObjectIdFromUrl(String rawUrl) {
+    final clean = normalizeOfficialUrl(rawUrl);
+    final uri = Uri.tryParse(clean);
+    if (uri == null) return null;
+
+    final host = uri.host.toLowerCase();
+    final isVideoHost = host == 'h5.video.weibo.com' ||
+        host == 'video.weibo.com' ||
+        host == 'h5.video.weibo.cn' ||
+        host == 'video.weibo.cn' ||
+        host == 'weibo.com' ||
+        host == 'www.weibo.com' ||
+        host == 'm.weibo.cn';
+    if (!isVideoHost) return null;
+
+    String? firstQueryValue(List<String> names) {
+      for (final name in names) {
+        final value = uri.queryParameters[name]?.trim();
+        if (value != null && value.isNotEmpty) return value;
+      }
+      return null;
+    }
+
+    final queryObjectId = firstQueryValue(
+      const ['fid', 'object_id', 'objectId', 'oid'],
+    );
+    final pathMatch = RegExp(r'/(?:show|tv/show|s/video/show)/([^/?#]+)',
+            caseSensitive: false)
+        .firstMatch(uri.path);
+    final rawId = queryObjectId ?? pathMatch?.group(1);
+    if (rawId == null || rawId.isEmpty) return null;
+
+    late final String objectId;
+    try {
+      objectId = Uri.decodeComponent(rawId).trim();
+    } catch (_) {
+      return null;
+    }
+    return RegExp(r'^\d+:[^/?#]+$').hasMatch(objectId) ? objectId : null;
+  }
+
+  /// Returns true for a real Weibo CDN media URL. These URLs are returned by
+  /// `url_objects` for some newer video cards when the H5 component endpoint
+  /// has no component data yet. They can be passed directly to video_player.
+  static bool isDirectVideoMediaUrl(String rawUrl) {
+    final clean = normalizeOfficialUrl(rawUrl);
+    final uri = Uri.tryParse(clean);
+    if (uri == null) return false;
+
+    final host = uri.host.toLowerCase();
+    if (!host.endsWith('.weibocdn.com')) return false;
+
+    final pathAndQuery = '${uri.path}?${uri.query}'.toLowerCase();
+    return RegExp(r'\.(?:mp4|m3u8|m3u|webm|mov|flv)(?:$|[?#])')
+        .hasMatch(pathAndQuery);
+  }
+
   /// 判断该链接是否可以直接在原生界面内打开 (无需启动浏览器)
   static bool canHandleNatively(String rawUrl) {
     final clean = normalizeOfficialUrl(rawUrl).trim();
     if (clean.isEmpty) return false;
 
     if (articleIdFromUrl(clean) != null) return true;
+
+    if (videoObjectIdFromUrl(clean) != null) return true;
+
+    if (isDirectVideoMediaUrl(clean)) return true;
 
     // 1. 微博正文/详情页匹配
     if (RegExp(r'https?://(?:m\.)?weibo\.cn/status/([0-9a-zA-Z]+)',
@@ -116,6 +182,28 @@ class LinkRoutingService {
       _navigate(
         context,
         WeiboArticlePage(articleId: articleId, title: title),
+        replace: replaceCurrent,
+      );
+      return;
+    }
+
+    // Standalone Weibo video cards point to an H5 HTML shell. Resolve the
+    // official component metadata first, then hand the signed URL to the
+    // native player instead of opening that shell in a WebView.
+    final videoObjectId = videoObjectIdFromUrl(clean);
+    if (videoObjectId != null) {
+      _navigate(
+        context,
+        WeiboVideoLinkPage(videoObjectId: videoObjectId, title: title),
+        replace: replaceCurrent,
+      );
+      return;
+    }
+
+    if (isDirectVideoMediaUrl(clean)) {
+      _navigate(
+        context,
+        WeiboVideoPlayerPage(videoUrl: clean, title: title),
         replace: replaceCurrent,
       );
       return;

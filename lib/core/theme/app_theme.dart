@@ -179,7 +179,7 @@ class AppTheme {
       ),
       tabBarTheme: TabBarThemeData(
         labelStyle: TextStyle(
-          fontWeight: adjustFontWeight(FontWeight.bold, fontWeightAdjustment),
+          fontWeight: adjustFontWeight(FontWeight.w600, fontWeightAdjustment),
           fontSize: 15,
         ),
         unselectedLabelStyle: TextStyle(
@@ -349,7 +349,7 @@ class AppTheme {
       ),
       tabBarTheme: TabBarThemeData(
         labelStyle: TextStyle(
-          fontWeight: adjustFontWeight(FontWeight.bold, fontWeightAdjustment),
+          fontWeight: adjustFontWeight(FontWeight.w600, fontWeightAdjustment),
           fontSize: 15,
         ),
         unselectedLabelStyle: TextStyle(
@@ -446,5 +446,4 @@ extension FontAdjustmentExtension on BuildContext {
     final delta = (baseBodyWeight.value - FontWeight.w400.value);
     return AppTheme.adjustFontWeight(base, delta);
   }
-
 }

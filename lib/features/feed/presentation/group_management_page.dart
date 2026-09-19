@@ -268,7 +268,7 @@ class _GroupManagementPageState extends ConsumerState<GroupManagementPage>
                 tooltip: '重命名',
                 onPressed: () {
                   final editController = TextEditingController(text: g['name']);
-                  showDialog(
+                  showAppDialog(
                     context: context,
                     builder: (ctx) => AlertDialog(
                       title: const Text('重命名分组'),

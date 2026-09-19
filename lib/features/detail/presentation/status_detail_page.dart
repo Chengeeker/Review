@@ -10,6 +10,7 @@ import '../../../core/constants/api_constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/card_display_provider.dart';
 import '../../../core/utils/app_toast.dart';
+import '../../../core/utils/app_dialog.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
 import '../../../core/utils/weibo_text_parser.dart';
 import '../../../core/utils/weibo_time_formatter.dart';
@@ -22,6 +23,7 @@ import '../data/models/weibo_comment_model.dart';
 import '../data/models/weibo_attitude_model.dart';
 import 'widgets/comment_bottom_sheet.dart';
 import 'widgets/image_gallery_page.dart';
+import 'widgets/nested_comments_sheet.dart';
 
 /// Material You Status Detail Page with Two-Level Comment Tree and Comment Posting
 class StatusDetailPage extends ConsumerStatefulWidget {
@@ -453,9 +455,8 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
     if (topLevelIndex == null) return;
 
     final position = _scrollController.position;
-    final fraction = _comments.length <= 1
-        ? 0.0
-        : topLevelIndex / (_comments.length - 1);
+    final fraction =
+        _comments.length <= 1 ? 0.0 : topLevelIndex / (_comments.length - 1);
     final offset = (position.maxScrollExtent * fraction)
         .clamp(0.0, position.maxScrollExtent);
     await _scrollController.animateTo(
@@ -651,6 +652,25 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
     );
   }
 
+  Future<void> _showNestedComments(WeiboCommentModel comment) async {
+    final totalCount = comment.subCommentsCount > 0
+        ? comment.subCommentsCount
+        : comment.subComments.length;
+    HapticFeedbackUtil.light();
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => NestedCommentsSheet(
+        parentComment: comment,
+        totalCount: totalCount,
+        statusAuthorId: _currentStatus?.user.id ?? widget.status?.user.id ?? '',
+        onCommentTap: (reply) => _showCommentOptions(context, reply),
+      ),
+    );
+  }
+
   Future<void> _confirmDeleteComment(
     BuildContext context,
     WeiboCommentModel comment, {
@@ -659,7 +679,7 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogCtx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
@@ -754,6 +774,7 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
           Expanded(
             child: EasyRefresh(
               onRefresh: () async {
+                HapticFeedbackUtil.light();
                 if (_selectedTabIndex == 0) {
                   await _fetchReposts();
                 } else if (_selectedTabIndex == 1) {
@@ -846,8 +867,7 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                               const CircularProgressIndicator(strokeWidth: 2),
                         ),
                       )
-                    else if (_comments.isEmpty &&
-                        !_showInitialCommentPreview)
+                    else if (_comments.isEmpty && !_showInitialCommentPreview)
                       SliverToBoxAdapter(
                         child: Container(
                           constraints: BoxConstraints(
@@ -1423,315 +1443,376 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-            // Avatar
-            AppAvatar(
-              url: comment.user.avatar,
-              size: 36,
-              name: comment.user.screenName,
-              verified: comment.user.verified,
-              verifiedType: comment.user.verifiedType,
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (ctx) => UserProfilePage(
-                      user: comment.user,
-                      uid: comment.user.id,
-                      screenName: comment.user.screenName,
+              // Avatar
+              AppAvatar(
+                url: comment.user.avatar,
+                size: 36,
+                name: comment.user.screenName,
+                verified: comment.user.verified,
+                verifiedType: comment.user.verifiedType,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (ctx) => UserProfilePage(
+                        user: comment.user,
+                        uid: comment.user.id,
+                        screenName: comment.user.screenName,
+                      ),
                     ),
-                  ),
-                );
-              },
-            ),
-            const SizedBox(width: 10),
+                  );
+                },
+              ),
+              const SizedBox(width: 10),
 
-            // Content
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Top Row: Username + Verified & Like Button
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Row(
-                          children: [
-                            Flexible(
-                              child: InkWell(
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (ctx) => UserProfilePage(
-                                        user: comment.user,
-                                        uid: comment.user.id,
-                                        screenName: comment.user.screenName,
+              // Content
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Top Row: Username + Verified & Like Button
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Flexible(
+                                child: InkWell(
+                                  onTap: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (ctx) => UserProfilePage(
+                                          user: comment.user,
+                                          uid: comment.user.id,
+                                          screenName: comment.user.screenName,
+                                        ),
                                       ),
+                                    );
+                                  },
+                                  child: Text(
+                                    comment.user.screenName,
+                                    style: TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight:
+                                          context.adjustWeight(FontWeight.bold),
+                                      color: colorScheme.onSurface,
                                     ),
-                                  );
-                                },
-                                child: Text(
-                                  comment.user.screenName,
-                                  style: TextStyle(
-                                    fontSize: 13.5,
-                                    fontWeight:
-                                        context.adjustWeight(FontWeight.bold),
-                                    color: colorScheme.onSurface,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              if (comment.user.verified) ...[
+                                const SizedBox(width: 4),
+                                Icon(
+                                  Icons.verified_rounded,
+                                  size: 14,
+                                  color: comment.user.verifiedType == 0
+                                      ? Colors.amber
+                                      : Colors.blue,
+                                ),
+                              ],
+                              if (_isStatusAuthor(comment.user)) ...[
+                                const SizedBox(width: 4),
+                                _buildBloggerBadge(context),
+                              ],
+                            ],
+                          ),
+                        ),
+                        // Heart Like Icon & Count
+                        SizedBox(
+                          width: 66,
+                          child: Align(
+                            alignment: Alignment.topRight,
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () {
+                                HapticFeedbackUtil.light();
+                              },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 2),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (comment.likeCount > 0) ...[
+                                      Text(
+                                        '${comment.likeCount}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: comment.liked
+                                              ? Colors.pink.shade400
+                                              : colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                    ],
+                                    Icon(
+                                      comment.liked
+                                          ? Icons.favorite_rounded
+                                          : Icons.favorite_border_rounded,
+                                      size: 16,
+                                      color: comment.liked
+                                          ? Colors.pink.shade400
+                                          : colorScheme.onSurfaceVariant,
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
-                            if (comment.user.verified) ...[
-                              const SizedBox(width: 4),
-                              Icon(
-                                Icons.verified_rounded,
-                                size: 14,
-                                color: comment.user.verifiedType == 0
-                                    ? Colors.amber
-                                    : Colors.blue,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+
+                    // Subtitle: Time + IP / AI generation label (e.g. "10分钟前 来自 湖北", "18分钟前 来自 AI生成")
+                    Text(
+                      comment.formattedIpOrSource.isNotEmpty
+                          ? '${WeiboTimeFormatter.format(
+                              rawDate: comment.createdAt,
+                              settings: ref.watch(cardDisplayProvider),
+                              language: 'zh',
+                            )}  ${comment.formattedIpOrSource}'
+                          : WeiboTimeFormatter.format(
+                              rawDate: comment.createdAt,
+                              settings: ref.watch(cardDisplayProvider),
+                              language: 'zh',
+                            ),
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+
+                    // Comment Text (Text.rich avoids scroll conflicts)
+                    if (comment.textRaw.isNotEmpty) ...[
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => _showCommentOptions(context, comment),
+                        child: SelectionArea(
+                          child: Text.rich(
+                            TextSpan(
+                              children: WeiboTextParser.parse(
+                                rawText: comment.textRaw,
+                                context: context,
+                                urlStruct: comment.urlStruct,
+                                defaultStyle: TextStyle(
+                                  fontSize: 14,
+                                  color: colorScheme.onSurface,
+                                  height: 1.4,
+                                ),
+                                onPlainTextTap: () =>
+                                    _showCommentOptions(context, comment),
                               ),
-                            ],
-                            if (_isStatusAuthor(comment.user)) ...[
-                              const SizedBox(width: 4),
-                              _buildBloggerBadge(context),
-                            ],
-                          ],
+                            ),
+                          ),
                         ),
                       ),
-                      // Heart Like Icon & Count
+                      const SizedBox(height: 6),
+                    ],
+
+                    // Comment Images if any
+                    if (comment.pics.isNotEmpty) ...[
+                      _buildCommentPics(context, comment.pics, comment.id,
+                          comment.user.screenName),
+                      const SizedBox(height: 6),
+                    ],
+
+                    // Sub-comments if any
+                    if (comment.subComments.isNotEmpty ||
+                        comment.subCommentsCount > 0) ...[
+                      const SizedBox(height: 8),
+                      if (comment.subComments.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: colorScheme.surfaceContainerHighest
+                                .withValues(alpha: 0.4),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: comment.subComments.map((sub) {
+                              return InkWell(
+                                key: _commentKeyFor(sub.id),
+                                borderRadius: BorderRadius.circular(6),
+                                enableFeedback: false,
+                                onTap: () => _showCommentOptions(context, sub),
+                                onLongPress: () =>
+                                    _showCommentOptions(context, sub),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 260),
+                                  color: _isHighlightedComment(sub.id)
+                                      ? colorScheme.primary
+                                          .withValues(alpha: 0.12)
+                                      : Colors.transparent,
+                                  child: Padding(
+                                    padding:
+                                        const EdgeInsets.symmetric(vertical: 3),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        AppAvatar(
+                                          url: sub.user.avatar,
+                                          size: 28,
+                                          name: sub.user.screenName,
+                                          verified: sub.user.verified,
+                                          verifiedType: sub.user.verifiedType,
+                                          onTap: () {
+                                            Navigator.of(context).push(
+                                              MaterialPageRoute(
+                                                builder: (ctx) =>
+                                                    UserProfilePage(
+                                                  user: sub.user,
+                                                  uid: sub.user.id,
+                                                  screenName:
+                                                      sub.user.screenName,
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Wrap(
+                                                crossAxisAlignment:
+                                                    WrapCrossAlignment.center,
+                                                spacing: 4,
+                                                runSpacing: 2,
+                                                children: [
+                                                  InkWell(
+                                                    onTap: () {
+                                                      Navigator.of(context)
+                                                          .push(
+                                                        MaterialPageRoute(
+                                                          builder: (ctx) =>
+                                                              UserProfilePage(
+                                                            user: sub.user,
+                                                            uid: sub.user.id,
+                                                            screenName: sub.user
+                                                                .screenName,
+                                                          ),
+                                                        ),
+                                                      );
+                                                    },
+                                                    child: Text(
+                                                      sub.user.screenName,
+                                                      style: TextStyle(
+                                                        fontWeight: context
+                                                            .adjustWeight(
+                                                                FontWeight
+                                                                    .bold),
+                                                        fontSize: 12.5,
+                                                        color:
+                                                            colorScheme.primary,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  if (sub.user.verified)
+                                                    Icon(
+                                                      Icons.verified_rounded,
+                                                      size: 13,
+                                                      color:
+                                                          sub.user.verifiedType ==
+                                                                  0
+                                                              ? Colors.amber
+                                                              : Colors.blue,
+                                                    ),
+                                                  if (_isStatusAuthor(sub.user))
+                                                    _buildBloggerBadge(context),
+                                                ],
+                                              ),
+                                              if (sub.textRaw.isNotEmpty) ...[
+                                                const SizedBox(height: 2),
+                                                GestureDetector(
+                                                  behavior:
+                                                      HitTestBehavior.opaque,
+                                                  onTap: () =>
+                                                      _showCommentOptions(
+                                                          context, sub),
+                                                  child: SelectionArea(
+                                                    child: Text.rich(
+                                                      TextSpan(
+                                                        children:
+                                                            WeiboTextParser
+                                                                .parse(
+                                                          rawText: sub.textRaw,
+                                                          context: context,
+                                                          urlStruct:
+                                                              sub.urlStruct,
+                                                          defaultStyle:
+                                                              TextStyle(
+                                                            fontSize: 12.5,
+                                                            color: colorScheme
+                                                                .onSurface,
+                                                          ),
+                                                          onPlainTextTap: () =>
+                                                              _showCommentOptions(
+                                                                  context, sub),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                              if (sub.pics.isNotEmpty) ...[
+                                                const SizedBox(height: 4),
+                                                _buildCommentPics(
+                                                  context,
+                                                  sub.pics,
+                                                  sub.id,
+                                                  sub.user.screenName,
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      const SizedBox(height: 4),
                       InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () {
-                          HapticFeedbackUtil.light();
-                        },
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () => _showNestedComments(comment),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 2),
+                              horizontal: 8, vertical: 4),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              if (comment.likeCount > 0) ...[
-                                Text(
-                                  '${comment.likeCount}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: comment.liked
-                                        ? Colors.pink.shade400
-                                        : colorScheme.onSurfaceVariant,
-                                  ),
+                              Text(
+                                '共${comment.subCommentsCount > 0 ? comment.subCommentsCount : comment.subComments.length}条回复',
+                                style: TextStyle(
+                                  color: colorScheme.primary,
+                                  fontSize: 12.5,
+                                  fontWeight:
+                                      context.adjustWeight(FontWeight.w600),
                                 ),
-                                const SizedBox(width: 4),
-                              ],
-                              Icon(
-                                comment.liked
-                                    ? Icons.favorite_rounded
-                                    : Icons.favorite_border_rounded,
-                                size: 16,
-                                color: comment.liked
-                                    ? Colors.pink.shade400
-                                    : colorScheme.onSurfaceVariant,
                               ),
+                              const SizedBox(width: 2),
+                              Icon(Icons.chevron_right_rounded,
+                                  size: 16, color: colorScheme.primary),
                             ],
                           ),
                         ),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 2),
-
-                  // Subtitle: Time + IP / AI generation label (e.g. "10分钟前 来自 湖北", "18分钟前 来自 AI生成")
-                  Text(
-                    comment.formattedIpOrSource.isNotEmpty
-                        ? '${WeiboTimeFormatter.format(
-                            rawDate: comment.createdAt,
-                            settings: ref.watch(cardDisplayProvider),
-                            language: 'zh',
-                          )}  ${comment.formattedIpOrSource}'
-                        : WeiboTimeFormatter.format(
-                            rawDate: comment.createdAt,
-                            settings: ref.watch(cardDisplayProvider),
-                            language: 'zh',
-                          ),
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-
-                  // Comment Text (Text.rich avoids scroll conflicts)
-                  if (comment.textRaw.isNotEmpty) ...[
-                    SelectionArea(
-                      child: Text.rich(
-                        TextSpan(
-                          children: WeiboTextParser.parse(
-                            rawText: comment.textRaw,
-                            context: context,
-                            urlStruct: comment.urlStruct,
-                            defaultStyle: TextStyle(
-                              fontSize: 14,
-                              color: colorScheme.onSurface,
-                              height: 1.4,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
                   ],
-
-                  // Comment Images if any
-                  if (comment.pics.isNotEmpty) ...[
-                    _buildCommentPics(context, comment.pics, comment.id,
-                        comment.user.screenName),
-                    const SizedBox(height: 6),
-                  ],
-
-                  // Sub-comments if any
-                  if (comment.subComments.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: colorScheme.surfaceContainerHighest
-                            .withValues(alpha: 0.4),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: comment.subComments.map((sub) {
-                          return InkWell(
-                            key: _commentKeyFor(sub.id),
-                            borderRadius: BorderRadius.circular(6),
-                            enableFeedback: false,
-                            onTap: () => _showCommentOptions(context, sub),
-                            onLongPress: () =>
-                                _showCommentOptions(context, sub),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 260),
-                              color: _isHighlightedComment(sub.id)
-                                  ? colorScheme.primary.withValues(alpha: 0.12)
-                                  : Colors.transparent,
-                              child: Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 3),
-                                child: Row(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                  AppAvatar(
-                                    url: sub.user.avatar,
-                                    size: 28,
-                                    name: sub.user.screenName,
-                                    verified: sub.user.verified,
-                                    verifiedType: sub.user.verifiedType,
-                                    onTap: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (ctx) => UserProfilePage(
-                                            user: sub.user,
-                                            uid: sub.user.id,
-                                            screenName: sub.user.screenName,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Wrap(
-                                          crossAxisAlignment:
-                                              WrapCrossAlignment.center,
-                                          spacing: 4,
-                                          runSpacing: 2,
-                                          children: [
-                                            InkWell(
-                                              onTap: () {
-                                                Navigator.of(context).push(
-                                                  MaterialPageRoute(
-                                                    builder: (ctx) =>
-                                                        UserProfilePage(
-                                                      user: sub.user,
-                                                      uid: sub.user.id,
-                                                      screenName:
-                                                          sub.user.screenName,
-                                                    ),
-                                                  ),
-                                                );
-                                              },
-                                              child: Text(
-                                                sub.user.screenName,
-                                                style: TextStyle(
-                                                  fontWeight:
-                                                      context.adjustWeight(
-                                                          FontWeight.bold),
-                                                  fontSize: 12.5,
-                                                  color: colorScheme.primary,
-                                                ),
-                                              ),
-                                            ),
-                                            if (sub.user.verified)
-                                              Icon(
-                                                Icons.verified_rounded,
-                                                size: 13,
-                                                color:
-                                                    sub.user.verifiedType == 0
-                                                        ? Colors.amber
-                                                        : Colors.blue,
-                                              ),
-                                            if (_isStatusAuthor(sub.user))
-                                              _buildBloggerBadge(context),
-                                          ],
-                                        ),
-                                        if (sub.textRaw.isNotEmpty) ...[
-                                          const SizedBox(height: 2),
-                                          SelectionArea(
-                                            child: Text.rich(
-                                              TextSpan(
-                                                children: WeiboTextParser.parse(
-                                                  rawText: sub.textRaw,
-                                                  context: context,
-                                                  urlStruct: sub.urlStruct,
-                                                  defaultStyle: TextStyle(
-                                                    fontSize: 12.5,
-                                                    color:
-                                                        colorScheme.onSurface,
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                        if (sub.pics.isNotEmpty) ...[
-                                          const SizedBox(height: 4),
-                                          _buildCommentPics(
-                                            context,
-                                            sub.pics,
-                                            sub.id,
-                                            sub.user.screenName,
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ],
-                ],
+                ),
               ),
-            ),
             ],
           ),
         ),

@@ -4,8 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/network/weibo_dio_client.dart';
 import '../../../core/utils/app_toast.dart';
+import '../../../core/utils/haptic_feedback_util.dart';
 import '../../../core/utils/weibo_text_parser.dart';
 import '../../../core/utils/weibo_time_formatter.dart';
+import '../../../core/utils/app_dialog.dart';
 import '../../../core/widgets/app_avatar.dart';
 import '../../auth/presentation/login_page.dart';
 import '../../detail/data/detail_repository.dart';
@@ -26,7 +28,8 @@ class ReceivedLikesPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('收到的赞', style: TextStyle(fontWeight: FontWeight.bold)),
+        title:
+            const Text('收到的赞', style: TextStyle(fontWeight: FontWeight.bold)),
       ),
       body: !isLoggedIn
           ? _buildNotLoggedIn(context, colorScheme)
@@ -48,11 +51,13 @@ class SentCommentsPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('发出的评论', style: TextStyle(fontWeight: FontWeight.bold)),
+        title:
+            const Text('发出的评论', style: TextStyle(fontWeight: FontWeight.bold)),
       ),
       body: !isLoggedIn
           ? _buildNotLoggedIn(context, colorScheme)
-          : const _CommentsListView(endpoint: '/ajax/message/myCmt', isOutbox: true),
+          : const _CommentsListView(
+              endpoint: '/ajax/message/myCmt', isOutbox: true),
     );
   }
 }
@@ -70,11 +75,13 @@ class ReceivedCommentsPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('收到的评论', style: TextStyle(fontWeight: FontWeight.bold)),
+        title:
+            const Text('收到的评论', style: TextStyle(fontWeight: FontWeight.bold)),
       ),
       body: !isLoggedIn
           ? _buildNotLoggedIn(context, colorScheme)
-          : const _CommentsListView(endpoint: '/ajax/message/cmt', isOutbox: false),
+          : const _CommentsListView(
+              endpoint: '/ajax/message/cmt', isOutbox: false),
     );
   }
 }
@@ -190,7 +197,9 @@ class _AttitudesListViewState extends ConsumerState<_AttitudesListView>
     final colorScheme = Theme.of(context).colorScheme;
 
     return EasyRefresh(
-      onRefresh: () => _fetchAttitudes(refresh: true),
+      onRefresh: () => HapticFeedbackUtil.refresh(
+        () => _fetchAttitudes(refresh: true),
+      ),
       onLoad: () async {
         _page++;
         await _fetchAttitudes(refresh: false);
@@ -204,11 +213,14 @@ class _AttitudesListViewState extends ConsumerState<_AttitudesListView>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.favorite_rounded,
-                          size: 54, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
+                          size: 54,
+                          color: colorScheme.onSurfaceVariant
+                              .withValues(alpha: 0.4)),
                       const SizedBox(height: 12),
                       Text(
                         '暂无收到的赞',
-                        style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
+                        style: TextStyle(
+                            color: colorScheme.onSurfaceVariant, fontSize: 14),
                       ),
                     ],
                   ),
@@ -219,17 +231,21 @@ class _AttitudesListViewState extends ConsumerState<_AttitudesListView>
                       const Divider(height: 1, indent: 64, thickness: 0.5),
                   itemBuilder: (context, index) {
                     final item = _attitudes[index];
-                    final user = item['user'] is Map ? (item['user'] as Map<String, dynamic>) : {};
+                    final user = item['user'] is Map
+                        ? (item['user'] as Map<String, dynamic>)
+                        : {};
                     final nick = user['screen_name']?.toString() ?? '微博用户';
                     final avatar = user['avatar_hd']?.toString() ??
                         user['avatar_large']?.toString() ??
                         user['profile_image_url']?.toString() ??
                         '';
                     final createdAt = item['created_at']?.toString() ?? '';
-                    final status =
-                        item['status'] is Map ? (item['status'] as Map<String, dynamic>) : null;
-                    final comment =
-                        item['comment'] is Map ? (item['comment'] as Map<String, dynamic>) : null;
+                    final status = item['status'] is Map
+                        ? (item['status'] as Map<String, dynamic>)
+                        : null;
+                    final comment = item['comment'] is Map
+                        ? (item['comment'] as Map<String, dynamic>)
+                        : null;
                     final isCommentLike = comment != null;
 
                     return ListTile(
@@ -239,13 +255,15 @@ class _AttitudesListViewState extends ConsumerState<_AttitudesListView>
                           Flexible(
                             child: Text(
                               nick,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 14),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: 6),
-                          Icon(Icons.favorite_rounded, size: 14, color: Colors.red.shade400),
+                          Icon(Icons.favorite_rounded,
+                              size: 14, color: Colors.red.shade400),
                           const SizedBox(width: 4),
                           Text(
                             isCommentLike ? '赞了你的评论' : '赞了你的微博',
@@ -264,7 +282,8 @@ class _AttitudesListViewState extends ConsumerState<_AttitudesListView>
                             const SizedBox(height: 2),
                             Text(
                               WeiboTimeFormatter.format(rawDate: createdAt),
-                              style: TextStyle(fontSize: 12, color: colorScheme.outline),
+                              style: TextStyle(
+                                  fontSize: 12, color: colorScheme.outline),
                             ),
                           ],
                           const SizedBox(height: 6),
@@ -272,13 +291,15 @@ class _AttitudesListViewState extends ConsumerState<_AttitudesListView>
                           if (status != null || comment != null)
                             Container(
                               width: double.infinity,
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 8),
                               decoration: BoxDecoration(
-                                color:
-                                    colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                                color: colorScheme.surfaceContainerHighest
+                                    .withValues(alpha: 0.45),
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
-                                  color: colorScheme.outlineVariant.withValues(alpha: 0.2),
+                                  color: colorScheme.outlineVariant
+                                      .withValues(alpha: 0.2),
                                   width: 0.8,
                                 ),
                               ),
@@ -306,7 +327,8 @@ class _AttitudesListViewState extends ConsumerState<_AttitudesListView>
                           final statusModel = WeiboStatusModel.fromJson(status);
                           Navigator.of(context).push(
                             MaterialPageRoute(
-                                builder: (ctx) => StatusDetailPage(status: statusModel)),
+                                builder: (ctx) =>
+                                    StatusDetailPage(status: statusModel)),
                           );
                         }
                       },
@@ -460,8 +482,7 @@ class _CommentsListViewState extends ConsumerState<_CommentsListView>
       'parent_cid',
       'parentCid',
     ]) {
-      final nestedChain =
-          _parentChainFromValue(map[key], depth: depth + 1);
+      final nestedChain = _parentChainFromValue(map[key], depth: depth + 1);
       for (final id in nestedChain) {
         if (_isUsableCommentId(id) && !chain.contains(id)) chain.add(id);
       }
@@ -551,12 +572,10 @@ class _CommentsListViewState extends ConsumerState<_CommentsListView>
 
     final commentId = _commentIdFromJson(comment);
     final parentId = _replyParentIdFromJson(comment);
-    final status = statusJson == null
-        ? null
-        : WeiboStatusModel.fromJson(statusJson);
-    final initialComment = commentId.isEmpty
-        ? null
-        : WeiboCommentModel.fromJson(comment);
+    final status =
+        statusJson == null ? null : WeiboStatusModel.fromJson(statusJson);
+    final initialComment =
+        commentId.isEmpty ? null : WeiboCommentModel.fromJson(comment);
 
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -581,7 +600,7 @@ class _CommentsListViewState extends ConsumerState<_CommentsListView>
       return;
     }
 
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('删除评论'),
@@ -601,9 +620,8 @@ class _CommentsListViewState extends ConsumerState<_CommentsListView>
     if (confirmed != true || !mounted) return;
 
     setState(() => _deletingCommentIds.add(commentId));
-    final result = await ref
-        .read(detailRepositoryProvider)
-        .destroyComment(cid: commentId);
+    final result =
+        await ref.read(detailRepositoryProvider).destroyComment(cid: commentId);
     if (!mounted) return;
 
     setState(() {
@@ -627,7 +645,9 @@ class _CommentsListViewState extends ConsumerState<_CommentsListView>
     final colorScheme = Theme.of(context).colorScheme;
 
     return EasyRefresh(
-      onRefresh: () => _fetchComments(refresh: true),
+      onRefresh: () => HapticFeedbackUtil.refresh(
+        () => _fetchComments(refresh: true),
+      ),
       onLoad: () async {
         _page++;
         await _fetchComments(refresh: false);
@@ -641,11 +661,14 @@ class _CommentsListViewState extends ConsumerState<_CommentsListView>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.chat_bubble_outline_rounded,
-                          size: 54, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
+                          size: 54,
+                          color: colorScheme.onSurfaceVariant
+                              .withValues(alpha: 0.4)),
                       const SizedBox(height: 12),
                       Text(
                         widget.isOutbox ? '暂无发出的评论' : '暂无收到的评论',
-                        style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
+                        style: TextStyle(
+                            color: colorScheme.onSurfaceVariant, fontSize: 14),
                       ),
                     ],
                   ),
@@ -657,7 +680,9 @@ class _CommentsListViewState extends ConsumerState<_CommentsListView>
                   itemBuilder: (context, index) {
                     final c = _comments[index];
                     final user = _mapValue(c['user']) ?? <String, dynamic>{};
-                    final text = c['text_raw']?.toString() ?? c['text']?.toString() ?? '';
+                    final text = c['text_raw']?.toString() ??
+                        c['text']?.toString() ??
+                        '';
                     final nick = user['screen_name']?.toString() ?? '微博用户';
                     final avatar = user['avatar_hd']?.toString() ??
                         user['profile_image_url']?.toString() ??
@@ -672,7 +697,8 @@ class _CommentsListViewState extends ConsumerState<_CommentsListView>
                     return ListTile(
                       leading: AppAvatar(url: avatar, size: 40, name: nick),
                       title: Text(nick,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 14)),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -680,7 +706,8 @@ class _CommentsListViewState extends ConsumerState<_CommentsListView>
                             const SizedBox(height: 2),
                             Text(
                               WeiboTimeFormatter.format(rawDate: createdAt),
-                              style: TextStyle(fontSize: 12, color: colorScheme.outline),
+                              style: TextStyle(
+                                  fontSize: 12, color: colorScheme.outline),
                             ),
                           ],
                           const SizedBox(height: 4),
@@ -699,32 +726,38 @@ class _CommentsListViewState extends ConsumerState<_CommentsListView>
                           if (replyComment != null) ...[
                             const SizedBox(height: 6),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 6),
                               decoration: BoxDecoration(
-                                color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                                color: colorScheme.surfaceContainerHighest
+                                    .withValues(alpha: 0.5),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
                                 '回复 @${replyComment['user']?['screen_name'] ?? ''}：${replyComment['text_raw'] ?? replyComment['text'] ?? ''}',
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 12.5, color: colorScheme.outline),
+                                style: TextStyle(
+                                    fontSize: 12.5, color: colorScheme.outline),
                               ),
                             ),
                           ],
                           if (rootStatus != null) ...[
                             const SizedBox(height: 6),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 6),
                               decoration: BoxDecoration(
-                                color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                                color: colorScheme.surfaceContainerHighest
+                                    .withValues(alpha: 0.3),
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
                                 '原微博：${rootStatus['text_raw'] ?? rootStatus['text'] ?? ''}',
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 12, color: colorScheme.outline),
+                                style: TextStyle(
+                                    fontSize: 12, color: colorScheme.outline),
                               ),
                             ),
                           ],
@@ -753,8 +786,7 @@ class _CommentsListViewState extends ConsumerState<_CommentsListView>
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 10,
                                 ),
-                                minimumSize: const Size(0, 40),
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                minimumSize: const Size(0, 48),
                               ),
                             )
                           : null,

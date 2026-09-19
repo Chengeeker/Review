@@ -50,7 +50,8 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
     if (index == 0) {
       final now = DateTime.now();
       if (_lastTimelineTapTime != null &&
-          now.difference(_lastTimelineTapTime!) < const Duration(milliseconds: 300)) {
+          now.difference(_lastTimelineTapTime!) <
+              const Duration(milliseconds: 300)) {
         // 双击时间线：连点两下即触发回到顶部并刷新
         _timelineSingleTapTimer?.cancel();
         _timelineSingleTapTimer = null;
@@ -82,13 +83,6 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
       selectedIndex: _currentIndex,
       elevation: 0,
       height: 68,
-      backgroundColor: colorScheme.surfaceContainer,
-      surfaceTintColor: Colors.transparent,
-      indicatorColor: isDark
-          ? colorScheme.secondaryContainer
-          : colorScheme.primaryContainer,
-      indicatorShape: const StadiumBorder(),
-      labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
       onDestinationSelected: _onNavigationItemSelected,
       destinations: const [
         NavigationDestination(
@@ -114,7 +108,7 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
       height: 64,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF222328) : colorScheme.surfaceContainerHigh,
+        color: colorScheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(32),
         boxShadow: [
           BoxShadow(
@@ -185,15 +179,9 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
     required ColorScheme colorScheme,
   }) {
     final isSelected = _currentIndex == index;
-    final activeBgColor = isDark
-        ? const Color(0xFF383A40)
-        : colorScheme.secondaryContainer;
-    final activeContentColor = isDark
-        ? Colors.white
-        : colorScheme.onSecondaryContainer;
-    final inactiveContentColor = isDark
-        ? const Color(0xFFB0B2B8)
-        : colorScheme.onSurfaceVariant;
+    final activeBgColor = colorScheme.secondaryContainer;
+    final activeContentColor = colorScheme.onSecondaryContainer;
+    final inactiveContentColor = colorScheme.onSurfaceVariant;
 
     return Expanded(
       child: Material(
@@ -234,7 +222,8 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
                   Icon(
                     isSelected ? selectedIcon : icon,
                     size: 22,
-                    color: isSelected ? activeContentColor : inactiveContentColor,
+                    color:
+                        isSelected ? activeContentColor : inactiveContentColor,
                   ),
                   const SizedBox(height: 2),
                   Text(
@@ -244,7 +233,9 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
                       fontWeight: isSelected
                           ? context.adjustWeight(FontWeight.w600)
                           : context.adjustWeight(FontWeight.w400),
-                      color: isSelected ? activeContentColor : inactiveContentColor,
+                      color: isSelected
+                          ? activeContentColor
+                          : inactiveContentColor,
                     ),
                   ),
                 ],

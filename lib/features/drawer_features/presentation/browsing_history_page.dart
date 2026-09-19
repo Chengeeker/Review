@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/storage/storage_service.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
+import '../../../core/utils/app_dialog.dart';
 import '../../feed/data/models/weibo_status_model.dart';
 import '../../feed/presentation/widgets/tweet_card.dart';
 
@@ -11,7 +12,8 @@ class BrowsingHistoryPage extends ConsumerStatefulWidget {
   const BrowsingHistoryPage({super.key});
 
   @override
-  ConsumerState<BrowsingHistoryPage> createState() => _BrowsingHistoryPageState();
+  ConsumerState<BrowsingHistoryPage> createState() =>
+      _BrowsingHistoryPageState();
 }
 
 class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
@@ -46,14 +48,18 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
 
   Future<void> _clearHistory() async {
     HapticFeedbackUtil.light();
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('清空浏览足迹'),
         content: const Text('确定要清空所有已浏览的微博历史记录吗？'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('清空')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('清空')),
         ],
       ),
     );
@@ -71,7 +77,8 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('浏览记录', style: TextStyle(fontWeight: FontWeight.bold)),
+        title:
+            const Text('浏览记录', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [
           if (_statuses.isNotEmpty)
             IconButton(
@@ -88,16 +95,23 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.history_toggle_off_rounded, size: 56, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.35)),
+                      Icon(Icons.history_toggle_off_rounded,
+                          size: 56,
+                          color: colorScheme.onSurfaceVariant
+                              .withValues(alpha: 0.35)),
                       const SizedBox(height: 12),
                       Text(
                         '暂无浏览记录',
-                        style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
+                        style: TextStyle(
+                            color: colorScheme.onSurfaceVariant, fontSize: 14),
                       ),
                       const SizedBox(height: 6),
                       Text(
                         '您在时间线或搜索中点开查看的微博将自动记录在此',
-                        style: TextStyle(color: colorScheme.onSurfaceVariant.withValues(alpha: 0.6), fontSize: 12),
+                        style: TextStyle(
+                            color: colorScheme.onSurfaceVariant
+                                .withValues(alpha: 0.6),
+                            fontSize: 12),
                       ),
                     ],
                   ),

@@ -27,6 +27,7 @@ class WeiboVideoPlayerPage extends ConsumerStatefulWidget {
   final String? title;
   final String? authorName;
   final Map<String, String>? videoQualityUrls;
+  final Map<String, String>? mediaHeaders;
   final String? liveId;
   final int? liveStatus;
 
@@ -38,6 +39,7 @@ class WeiboVideoPlayerPage extends ConsumerStatefulWidget {
     this.title,
     this.authorName,
     this.videoQualityUrls,
+    this.mediaHeaders,
     this.liveId,
     this.liveStatus,
   });
@@ -197,7 +199,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
       await _controller?.dispose();
       _controller = VideoPlayerController.networkUrl(
         Uri.parse(cleanUrl),
-        httpHeaders: ApiConstants.imageHeaders,
+        httpHeaders: widget.mediaHeaders ?? ApiConstants.imageHeaders,
       );
 
       await _controller!.initialize();
@@ -462,7 +464,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
         currentUrl,
         options: Options(
           responseType: ResponseType.bytes,
-          headers: ApiConstants.imageHeaders,
+          headers: widget.mediaHeaders ?? ApiConstants.imageHeaders,
         ),
       );
 

@@ -5,6 +5,19 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../constants/api_constants.dart';
 import '../storage/storage_service.dart';
 
+enum CookieValidationStatus {
+  idle,
+  valid,
+  needsDesktopSync,
+  expired,
+  unavailable,
+}
+
+typedef DesktopCookieVerifier = Future<bool> Function(
+  String cookie,
+  String expectedUid,
+);
+
 class AuthState {
   final bool isLoggedIn;
   final String? uid;
@@ -15,6 +28,7 @@ class AuthState {
   final String? fullCookie;
   final bool isValidating;
   final bool isCookieExpired;
+  final CookieValidationStatus cookieValidationStatus;
 
   const AuthState({
     this.isLoggedIn = false,
@@ -26,6 +40,7 @@ class AuthState {
     this.fullCookie,
     this.isValidating = false,
     this.isCookieExpired = false,
+    this.cookieValidationStatus = CookieValidationStatus.idle,
   });
 
   AuthState copyWith({
@@ -38,6 +53,7 @@ class AuthState {
     String? fullCookie,
     bool? isValidating,
     bool? isCookieExpired,
+    CookieValidationStatus? cookieValidationStatus,
   }) {
     return AuthState(
       isLoggedIn: isLoggedIn ?? this.isLoggedIn,
@@ -49,6 +65,8 @@ class AuthState {
       fullCookie: fullCookie ?? this.fullCookie,
       isValidating: isValidating ?? this.isValidating,
       isCookieExpired: isCookieExpired ?? this.isCookieExpired,
+      cookieValidationStatus:
+          cookieValidationStatus ?? this.cookieValidationStatus,
     );
   }
 }
@@ -58,9 +76,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
       MethodChannel('com.sharelite/cookies');
 
   final StorageService _storage;
+  final DesktopCookieVerifier? _desktopCookieVerifier;
   Future<bool>? _nativeSyncFuture;
 
-  AuthNotifier(this._storage) : super(const AuthState()) {
+  AuthNotifier(
+    this._storage, {
+    DesktopCookieVerifier? desktopCookieVerifier,
+  })  : _desktopCookieVerifier = desktopCookieVerifier,
+        super(const AuthState()) {
     _loadFromStorage();
   }
 
@@ -100,6 +123,76 @@ class AuthNotifier extends StateNotifier<AuthState> {
     return null;
   }
 
+  static bool isDefinitiveDesktopLogoutPayload(dynamic value) {
+    final body = _asMap(value);
+    if (body == null) return false;
+    final ok = body['ok'];
+    final redirectUrl = body['url']?.toString().toLowerCase() ?? '';
+    return (ok is num && ok.toInt() == -100) || redirectUrl.contains('login');
+  }
+
+  static String desktopSessionUid(dynamic value) {
+    final body = _asMap(value);
+    final data = _asMap(body?['data']);
+    final user = _asMap(data?['user']) ?? _asMap(body?['user']);
+    for (final value in [
+      data?['uid'],
+      data?['id'],
+      data?['idstr'],
+      user?['id'],
+      user?['idstr'],
+      user?['uid'],
+      body?['uid'],
+    ]) {
+      final uid = value?.toString().trim() ?? '';
+      if (uid.isNotEmpty && uid != '0') return uid;
+    }
+    return '';
+  }
+
+  static bool desktopConfigShowsLoggedIn(dynamic value) {
+    final body = _asMap(value);
+    final data = _asMap(body?['data']);
+    if (body == null ||
+        data == null ||
+        isDefinitiveDesktopLogoutPayload(body)) {
+      return false;
+    }
+    final user = _asMap(data['user']) ?? _asMap(body['user']);
+    final loginFlagPresent = data.containsKey('islogin') ||
+        data.containsKey('login') ||
+        body.containsKey('islogin') ||
+        body.containsKey('login');
+    final loggedIn = _isTruthy(data['islogin']) ||
+        _isTruthy(data['login']) ||
+        _isTruthy(body['islogin']) ||
+        _isTruthy(body['login']) ||
+        (!loginFlagPresent && user != null);
+    return loggedIn && desktopSessionUid(body).isNotEmpty;
+  }
+
+  static bool groupsPayloadMatchesUid(dynamic value, String expectedUid) {
+    if (expectedUid.isEmpty) return false;
+    final body = _asMap(value);
+    final groups = body?['groups'];
+    if (groups is! List) return false;
+    for (final sectionValue in groups) {
+      final section = _asMap(sectionValue);
+      final entries = section?['group'];
+      if (entries is! List) continue;
+      for (final entryValue in entries) {
+        final entry = _asMap(entryValue);
+        final uid = entry?['uid']?.toString() ?? '';
+        final gid = entry?['gid']?.toString() ?? '';
+        if (uid == expectedUid ||
+            (gid.length > expectedUid.length && gid.endsWith(expectedUid))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   void _loadFromStorage() {
     final isLoggedIn = _storage.isLoggedIn();
     final sub = _storage.getSubCookie();
@@ -115,22 +208,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (storedFull != null && full != storedFull) {
       _storage.setFullCookie(full!);
     }
-    // Older installations only stored one merged Cookie header. Keep it as a
-    // backwards-compatible fallback until a host-scoped native session sync
-    // can obtain the desktop/mobile values separately.
-    if ((_storage.getDesktopCookie() == null ||
-            _storage.getDesktopCookie()!.isEmpty) &&
-        full != null &&
-        full.isNotEmpty) {
-      _storage.setDesktopCookie(full);
-    }
-    if ((_storage.getMobileCookie() == null ||
-            _storage.getMobileCookie()!.isEmpty) &&
-        full != null &&
-        full.isNotEmpty) {
-      _storage.setMobileCookie(full);
-    }
-
     state = AuthState(
       isLoggedIn: isLoggedIn,
       subCookie: sub,
@@ -178,6 +255,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     await _storage.setFullCookie(effectiveCookie);
     await _storage.setDesktopCookie(effectiveCookie);
     await _storage.setMobileCookie(effectiveCookie);
+    await _storage.setCookieScopeSchemaVersion(
+      StorageService.currentCookieScopeSchemaVersion,
+    );
     if (sub.isNotEmpty) await _storage.setSubCookie(sub);
     if (subp.isNotEmpty) await _storage.setSubpCookie(subp);
 
@@ -199,6 +279,16 @@ class AuthNotifier extends StateNotifier<AuthState> {
     bool requireDesktopSession = false,
   }) async {
     state = state.copyWith(isValidating: true);
+    if (_storage.getCookieScopeSchemaVersion() <
+        StorageService.currentCookieScopeSchemaVersion) {
+      // Manual import/profile refresh can run before the feed controller's
+      // startup reconciliation. Remove only the old, derived scoped copies so
+      // a mobile-only verification cannot preserve a poisoned desktop slot.
+      await _storage.clearScopedCookiesForMigration();
+      await _storage.setCookieScopeSchemaVersion(
+        StorageService.currentCookieScopeSchemaVersion,
+      );
+    }
     final raw = rawInput.trim();
     final normalizedCookie = normalizeCookieHeader(raw);
     // A manually entered bare SUB token has no '=' separator and therefore
@@ -243,6 +333,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     String resolvedNickname = '';
     String resolvedAvatar = '';
     bool desktopSessionVerified = false;
+    bool mobileSessionVerified = false;
 
     try {
       final dio = Dio(
@@ -299,7 +390,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
             final mUser = mData['user'] as Map<String, dynamic>?;
             final mUid =
                 mData['uid']?.toString() ?? mUser?['id']?.toString() ?? '';
-            if (mUid.isNotEmpty) {
+            if (_isTruthy(mData['login']) && mUid.isNotEmpty) {
+              mobileSessionVerified = true;
               resolvedUid = mUid;
               if (resolvedNickname.isEmpty) {
                 resolvedNickname = mUser?['screen_name']?.toString() ?? '';
@@ -381,8 +473,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (resolvedUid.isNotEmpty &&
         (!requireDesktopSession || desktopSessionVerified)) {
       await _storage.setFullCookie(effectiveFullCookie);
-      await _storage.setDesktopCookie(effectiveFullCookie);
-      await _storage.setMobileCookie(effectiveFullCookie);
+      if (desktopSessionVerified) {
+        await _storage.setDesktopCookie(effectiveFullCookie);
+      }
+      if (mobileSessionVerified) {
+        await _storage.setMobileCookie(effectiveFullCookie);
+      }
+      await _storage.setCookieScopeSchemaVersion(
+        StorageService.currentCookieScopeSchemaVersion,
+      );
       if (sub.isNotEmpty) await _storage.setSubCookie(sub);
       if (subp.isNotEmpty) await _storage.setSubpCookie(subp);
       await _storage.setAccessToken('');
@@ -440,15 +539,26 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (!_storage.isLoggedIn() && !state.isLoggedIn) return false;
 
     try {
+      final needsScopeMigration = _storage.getCookieScopeSchemaVersion() <
+          StorageService.currentCookieScopeSchemaVersion;
+      if (needsScopeMigration) {
+        // Versions before schema 2 copied one legacy, cross-domain Cookie
+        // header into both scoped slots. Preserve the original full Cookie,
+        // but discard those unverified derivatives so they cannot permanently
+        // shadow a valid candidate after an app update.
+        await _storage.clearScopedCookiesForMigration();
+      }
+
       final raw = await _cookieChannel.invokeMethod<dynamic>(
         'getNativeCookiesByDomain',
       );
-      if (raw is! Map) return false;
 
       final scoped = <String, String>{};
-      for (final entry in raw.entries) {
-        final value = entry.value?.toString() ?? '';
-        if (value.isNotEmpty) scoped[entry.key.toString()] = value;
+      if (raw is Map) {
+        for (final entry in raw.entries) {
+          final value = entry.value?.toString() ?? '';
+          if (value.isNotEmpty) scoped[entry.key.toString()] = value;
+        }
       }
 
       final nativeDesktop = normalizeCookieHeader(scoped['desktop'] ?? '');
@@ -458,27 +568,41 @@ class AuthNotifier extends StateNotifier<AuthState> {
           normalizeCookieHeader(_storage.getDesktopCookie() ?? '');
       final storedMobile =
           normalizeCookieHeader(_storage.getMobileCookie() ?? '');
-      final existingDesktop =
-          storedDesktop.isNotEmpty ? storedDesktop : storedFull;
-      final candidateDesktop =
-          nativeDesktop.isNotEmpty ? nativeDesktop : existingDesktop;
-
-      if (_cookieValue(candidateDesktop, 'SUB').isEmpty) return false;
-
       final expectedUid =
           _storage.getString(StorageService.keyUserUid) ?? state.uid ?? '';
-      final existingSub = _cookieValue(existingDesktop, 'SUB');
-      final candidateSub = _cookieValue(candidateDesktop, 'SUB');
-
-      var canUseCandidate = !force &&
-          candidateDesktop == existingDesktop &&
-          candidateSub == existingSub;
-      if (!canUseCandidate) {
-        canUseCandidate =
-            await _verifyDesktopCookie(candidateDesktop, expectedUid);
+      final candidates = <String>[];
+      for (final candidate in [nativeDesktop, storedDesktop, storedFull]) {
+        if (candidate.isEmpty ||
+            _cookieValue(candidate, 'SUB').isEmpty ||
+            candidates.contains(candidate)) {
+          continue;
+        }
+        candidates.add(candidate);
       }
-      if (!canUseCandidate) return false;
 
+      String candidateDesktop = '';
+      for (final candidate in candidates) {
+        final canReuseVerifiedStoredCookie = !force &&
+            !needsScopeMigration &&
+            storedDesktop.isNotEmpty &&
+            candidate == storedDesktop;
+        if (canReuseVerifiedStoredCookie ||
+            await _verifyDesktopCookie(candidate, expectedUid)) {
+          candidateDesktop = candidate;
+          break;
+        }
+      }
+
+      if (candidateDesktop.isEmpty) {
+        if (needsScopeMigration) {
+          await _storage.setCookieScopeSchemaVersion(
+            StorageService.currentCookieScopeSchemaVersion,
+          );
+        }
+        return false;
+      }
+
+      final candidateSub = _cookieValue(candidateDesktop, 'SUB');
       final effectiveMobile = nativeMobile.isNotEmpty
           ? nativeMobile
           : (storedMobile.isNotEmpty ? storedMobile : storedFull);
@@ -499,6 +623,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
       if (candidateSubp.isNotEmpty) {
         await _storage.setSubpCookie(candidateSubp);
       }
+      await _storage.setCookieScopeSchemaVersion(
+        StorageService.currentCookieScopeSchemaVersion,
+      );
 
       state = state.copyWith(
         fullCookie: merged,
@@ -506,13 +633,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
         subpCookie: candidateSubp.isNotEmpty ? candidateSubp : state.subpCookie,
         isCookieExpired: false,
       );
-      return merged != storedFull || candidateDesktop != storedDesktop;
+      // A true result means that an account-matching desktop session was
+      // verified, regardless of whether persistence needed to change.
+      return true;
     } catch (_) {
       return false;
     }
   }
 
   Future<bool> _verifyDesktopCookie(String cookie, String expectedUid) async {
+    final verifier = _desktopCookieVerifier;
+    if (verifier != null) return verifier(cookie, expectedUid);
+
     try {
       final dio = Dio(
         BaseOptions(
@@ -520,8 +652,40 @@ class AuthNotifier extends StateNotifier<AuthState> {
           receiveTimeout: const Duration(seconds: 8),
         ),
       );
-      final response = await dio.get(
-        '${ApiConstants.baseUrl}/ajax/config/getconfig',
+      try {
+        final response = await dio.get(
+          '${ApiConstants.baseUrl}/ajax/config/getconfig',
+          options: Options(
+            headers: {
+              'Cookie': cookie,
+              'Referer': 'https://weibo.com/',
+              'User-Agent': ApiConstants.defaultUserAgent,
+              'Accept': 'application/json, text/plain, */*',
+              'X-Requested-With': 'XMLHttpRequest',
+            },
+            validateStatus: (status) => status != null && status < 500,
+          ),
+        );
+        if (response.statusCode == 200) {
+          final uid = desktopSessionUid(response.data);
+          if (desktopConfigShowsLoggedIn(response.data) &&
+              (expectedUid.isEmpty || uid == expectedUid)) {
+            return true;
+          }
+          if (isDefinitiveDesktopLogoutPayload(response.data)) return false;
+        }
+      } catch (_) {
+        // Continue with the independently authenticated groups endpoint.
+      }
+
+      // getconfig occasionally returns an incomplete shape even though the
+      // authenticated desktop session still works. allGroups is also an
+      // official account-scoped endpoint. The public/visitor response contains
+      // another account's default groups, so only accept it when an embedded
+      // uid exactly matches the already stored account uid.
+      if (expectedUid.isEmpty) return false;
+      final groupsResponse = await dio.get(
+        '${ApiConstants.baseUrl}/ajax/feed/allGroups',
         options: Options(
           headers: {
             'Cookie': cookie,
@@ -533,19 +697,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
           validateStatus: (status) => status != null && status < 500,
         ),
       );
-      if (response.statusCode != 200 || response.data is! Map) return false;
-      final body = _asMap(response.data);
-      final data = _asMap(body?['data']);
-      if (data == null) return false;
-      final user = _asMap(data['user']);
-      final loginFlagPresent =
-          data.containsKey('islogin') || data.containsKey('login');
-      final loggedIn = _isTruthy(data['islogin']) ||
-          _isTruthy(data['login']) ||
-          (!loginFlagPresent && user != null);
-      if (!loggedIn) return false;
-      final uid = user?['id']?.toString() ?? data['uid']?.toString() ?? '';
-      return uid.isNotEmpty && (expectedUid.isEmpty || uid == expectedUid);
+      return groupsResponse.statusCode == 200 &&
+          groupsPayloadMatchesUid(groupsResponse.data, expectedUid);
     } catch (_) {
       return false;
     }
@@ -562,7 +715,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   void notifyCookieExpired() {
     if (state.isLoggedIn && !state.isCookieExpired) {
-      state = state.copyWith(isCookieExpired: true);
+      state = state.copyWith(
+        isCookieExpired: true,
+        cookieValidationStatus: CookieValidationStatus.expired,
+      );
     }
   }
 
@@ -570,14 +726,33 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<bool> checkCookieValidity({bool silent = false}) async {
     final isLoggedIn = _storage.isLoggedIn();
     if (!isLoggedIn) {
-      state = state.copyWith(isCookieExpired: false, isValidating: false);
+      state = state.copyWith(
+        isCookieExpired: false,
+        isValidating: false,
+        cookieValidationStatus: CookieValidationStatus.unavailable,
+      );
       return false;
     }
+
+    state = state.copyWith(
+      isCookieExpired: false,
+      isValidating: !silent,
+      cookieValidationStatus: CookieValidationStatus.idle,
+    );
 
     // Refresh the host-scoped snapshot first. This prevents a stale merged
     // Cookie header from making the validity check disagree with the desktop
     // timeline request after an SSO/WebView refresh.
-    await reconcileNativeSession();
+    final desktopSessionVerified = await reconcileNativeSession(force: true);
+    if (desktopSessionVerified) {
+      state = state.copyWith(
+        isLoggedIn: true,
+        isCookieExpired: false,
+        isValidating: false,
+        cookieValidationStatus: CookieValidationStatus.valid,
+      );
+      return true;
+    }
 
     final storedFullCookie = _storage.getFullCookie();
     final storedDesktopCookie = _storage.getDesktopCookie();
@@ -587,11 +762,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
         normalizeCookieHeader(storedDesktopCookie ?? '');
     final normalizedMobileCookie =
         normalizeCookieHeader(storedMobileCookie ?? '');
-    final fullCookie = normalizeCookieHeader(
-      [normalizedDesktopCookie, normalizedMobileCookie, normalizedFullCookie]
-          .where((cookie) => cookie.isNotEmpty)
-          .join('; '),
-    );
+    final fullCookie = normalizedFullCookie.isNotEmpty
+        ? normalizedFullCookie
+        : normalizeCookieHeader(
+            [normalizedDesktopCookie, normalizedMobileCookie]
+                .where((cookie) => cookie.isNotEmpty)
+                .join('; '),
+          );
     final desktopCookie = normalizedDesktopCookie.isNotEmpty
         ? normalizedDesktopCookie
         : fullCookie;
@@ -599,17 +776,19 @@ class AuthNotifier extends StateNotifier<AuthState> {
         normalizedMobileCookie.isNotEmpty ? normalizedMobileCookie : fullCookie;
 
     if (fullCookie.isEmpty) {
-      state = state.copyWith(isCookieExpired: false, isValidating: false);
+      state = state.copyWith(
+        isCookieExpired: false,
+        isValidating: false,
+        cookieValidationStatus: CookieValidationStatus.unavailable,
+      );
       return false;
     }
 
-    if (storedFullCookie != fullCookie) {
-      await _storage.setFullCookie(fullCookie);
-    }
     state = state.copyWith(
       fullCookie: fullCookie,
       isCookieExpired: false,
       isValidating: !silent,
+      cookieValidationStatus: CookieValidationStatus.idle,
     );
 
     try {
@@ -645,7 +824,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
         );
         if (configRes.statusCode == 200 &&
             configRes.data is Map<String, dynamic>) {
-          final data = _asMap(configRes.data['data']);
+          final body = _asMap(configRes.data);
+          final data = _asMap(body?['data']);
+          if (isDefinitiveDesktopLogoutPayload(body)) {
+            sawDefinitiveInvalidResponse = true;
+          }
           if (data != null) {
             final user = _asMap(data['user']);
             final loginFlagPresent =
@@ -656,8 +839,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
             if (loginFlagPresent && !loggedIn) {
               sawDefinitiveInvalidResponse = true;
             }
-            final uid =
-                data['uid']?.toString() ?? user?['id']?.toString() ?? '';
+            final uid = desktopSessionUid(body);
             if (loggedIn && uid.isNotEmpty) {
               desktopSessionValid = true;
               resolvedUid = uid;
@@ -694,8 +876,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
             if (mData != null) {
               final mUser = _asMap(mData['user']);
               final mLogin = _isTruthy(mData['login']);
-              final mUid =
-                  mData['uid']?.toString() ?? mUser?['id']?.toString() ?? '';
+              final mUid = mData['uid']?.toString() ??
+                  mUser?['id']?.toString() ??
+                  mUser?['idstr']?.toString() ??
+                  '';
               if (mLogin && mUid.isNotEmpty) {
                 mobileSessionObserved = true;
                 resolvedUid ??= mUid;
@@ -741,9 +925,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       if (desktopSessionValid &&
           resolvedUid != null &&
           resolvedUid.isNotEmpty) {
-        if (resolvedUid != null && resolvedUid.isNotEmpty) {
-          await _storage.setString(StorageService.keyUserUid, resolvedUid);
-        }
+        await _storage.setString(StorageService.keyUserUid, resolvedUid);
         if (resolvedName != null && resolvedName.isNotEmpty) {
           await _storage.setString(
               StorageService.keyUserNickname, resolvedName);
@@ -757,7 +939,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
           isLoggedIn: true,
           isCookieExpired: false,
           isValidating: false,
-          uid: resolvedUid ?? state.uid,
+          cookieValidationStatus: CookieValidationStatus.valid,
+          uid: resolvedUid,
           nickname: resolvedName ?? state.nickname,
           avatar: resolvedAvatar ?? state.avatar,
         );
@@ -771,6 +954,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           state = state.copyWith(
             isCookieExpired: false,
             isValidating: false,
+            cookieValidationStatus: CookieValidationStatus.needsDesktopSync,
           );
           return false;
         }
@@ -782,17 +966,22 @@ class AuthNotifier extends StateNotifier<AuthState> {
           state = state.copyWith(
             isCookieExpired: false,
             isValidating: false,
+            cookieValidationStatus: CookieValidationStatus.unavailable,
           );
           return false;
         }
         state = state.copyWith(
           isCookieExpired: true,
           isValidating: false,
+          cookieValidationStatus: CookieValidationStatus.expired,
         );
         return false;
       }
     } catch (e) {
-      state = state.copyWith(isValidating: false);
+      state = state.copyWith(
+        isValidating: false,
+        cookieValidationStatus: CookieValidationStatus.unavailable,
+      );
       return false;
     }
   }

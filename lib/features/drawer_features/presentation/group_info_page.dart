@@ -99,7 +99,8 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
         },
       );
       if (membersRes.data is Map<String, dynamic>) {
-        final rawMembers = (membersRes.data as Map<String, dynamic>)['members'] as List? ?? [];
+        final rawMembers =
+            (membersRes.data as Map<String, dynamic>)['members'] as List? ?? [];
         _members.clear();
         for (final m in rawMembers) {
           if (m is Map<String, dynamic>) {
@@ -110,7 +111,9 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
 
       // 3. 补充群主、前排管理员与前排群友的真实头像与昵称
       final ownerUid = _groupInfo?['owner']?.toString();
-      final adminList = (_groupInfo?['admins'] as List? ?? []).map((e) => e.toString()).toList();
+      final adminList = (_groupInfo?['admins'] as List? ?? [])
+          .map((e) => e.toString())
+          .toList();
       final keyUids = <String>[];
       if (ownerUid != null && ownerUid.isNotEmpty) keyUids.add(ownerUid);
       keyUids.addAll(adminList);
@@ -130,11 +133,13 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
             );
             if (uRes.data is Map<String, dynamic>) {
               final uData = uRes.data as Map<String, dynamic>;
-              final existingIdx = _members.indexWhere((m) => m['uid']?.toString() == uid);
+              final existingIdx =
+                  _members.indexWhere((m) => m['uid']?.toString() == uid);
               final memberEntry = {
                 'uid': uid,
                 'nick': uData['screen_name'] ?? uData['name'] ?? '群友',
-                'avatar': uData['avatar_large'] ?? uData['profile_image_url'] ?? '',
+                'avatar':
+                    uData['avatar_large'] ?? uData['profile_image_url'] ?? '',
                 'is_owner': uid == ownerUid,
               };
               ChatConversationPage.globalUserCache[uid] = memberEntry;
@@ -159,7 +164,7 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
     final colorScheme = theme.colorScheme;
     final groupUrl = 'https://weibo.com/p/230491${widget.groupId}';
 
-    showDialog(
+    showAppDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         contentPadding: const EdgeInsets.all(20),
@@ -177,14 +182,16 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
                     children: [
                       Text(
                         groupName,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 2),
                       Text(
                         '群号: ${widget.groupId}',
-                        style: TextStyle(fontSize: 12, color: colorScheme.outline),
+                        style:
+                            TextStyle(fontSize: 12, color: colorScheme.outline),
                       ),
                     ],
                   ),
@@ -278,7 +285,8 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    final groupName = _groupInfo?['name']?.toString() ?? widget.initialGroupName ?? '群聊';
+    final groupName =
+        _groupInfo?['name']?.toString() ?? widget.initialGroupName ?? '群聊';
     final groupAvatar = _groupInfo?['round_avatar']?.toString() ??
         _groupInfo?['avatar']?.toString() ??
         widget.initialGroupAvatar ??
@@ -287,9 +295,13 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
     final memberCount = _groupInfo?['member_count'] ?? _members.length;
     final maxMember = _groupInfo?['max_member'] ?? 3000;
     final ownerUid = _groupInfo?['owner']?.toString() ?? '';
-    final adminList = (_groupInfo?['admins'] as List? ?? []).map((e) => e.toString()).toList();
+    final adminList = (_groupInfo?['admins'] as List? ?? [])
+        .map((e) => e.toString())
+        .toList();
 
-    final bulletinObj = _groupInfo?['bulletin'] is Map ? _groupInfo!['bulletin'] as Map<String, dynamic> : null;
+    final bulletinObj = _groupInfo?['bulletin'] is Map
+        ? _groupInfo!['bulletin'] as Map<String, dynamic>
+        : null;
     final bulletinContent = bulletinObj?['content']?.toString() ??
         _groupInfo?['notice']?.toString() ??
         '暂无群公告';
@@ -297,7 +309,8 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
     return Scaffold(
       backgroundColor: colorScheme.surface,
       appBar: AppBar(
-        title: const Text('群信息', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        title: const Text('群信息',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         centerTitle: false,
       ),
       body: _isLoading
@@ -306,13 +319,15 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
               children: [
                 // 1. 群基本信息卡片 (头像、群名、简介)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   color: colorScheme.surface,
                   child: Row(
                     children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(10),
-                        child: AppAvatar(url: groupAvatar, size: 56, name: groupName),
+                        child: AppAvatar(
+                            url: groupAvatar, size: 56, name: groupName),
                       ),
                       const SizedBox(width: 14),
                       Expanded(
@@ -352,7 +367,8 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
                 // 2. 群二维码 (带原生二维码展示弹窗)
                 ListTile(
                   title: const Text('群二维码', style: TextStyle(fontSize: 15)),
-                  trailing: Icon(Icons.chevron_right_rounded, color: colorScheme.outline),
+                  trailing: Icon(Icons.chevron_right_rounded,
+                      color: colorScheme.outline),
                   onTap: () => _showQRCodeDialog(groupName, groupAvatar),
                 ),
 
@@ -366,7 +382,8 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
                         builder: (ctx) => GroupMembersPage(
                           groupId: widget.groupId,
                           groupName: groupName,
-                          totalMemberCount: memberCount is int ? memberCount : 0,
+                          totalMemberCount:
+                              memberCount is int ? memberCount : 0,
                           ownerUid: ownerUid,
                           admins: adminList,
                         ),
@@ -374,7 +391,8 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
                     );
                   },
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -383,9 +401,11 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
                           children: [
                             Text(
                               '群成员($memberCount/$maxMember)',
-                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                              style: const TextStyle(
+                                  fontSize: 15, fontWeight: FontWeight.w600),
                             ),
-                            Icon(Icons.chevron_right_rounded, color: colorScheme.outline, size: 20),
+                            Icon(Icons.chevron_right_rounded,
+                                color: colorScheme.outline, size: 20),
                           ],
                         ),
                         const SizedBox(height: 14),
@@ -394,7 +414,8 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
                           child: ListView.separated(
                             scrollDirection: Axis.horizontal,
                             itemCount: 1 + _members.length,
-                            separatorBuilder: (_, __) => const SizedBox(width: 14),
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(width: 14),
                             itemBuilder: (context, index) {
                               if (index == 0) {
                                 return Column(
@@ -406,12 +427,14 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
                                       decoration: BoxDecoration(
                                         shape: BoxShape.circle,
                                         border: Border.all(
-                                          color: colorScheme.outline.withValues(alpha: 0.4),
+                                          color: colorScheme.outline
+                                              .withValues(alpha: 0.4),
                                           width: 1.2,
                                         ),
                                       ),
                                       child: Icon(Icons.add_rounded,
-                                          size: 26, color: colorScheme.onSurfaceVariant),
+                                          size: 26,
+                                          color: colorScheme.onSurfaceVariant),
                                     ),
                                     const SizedBox(height: 6),
                                     Text(
@@ -447,7 +470,8 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    AppAvatar(url: avatar, size: 48, name: nick),
+                                    AppAvatar(
+                                        url: avatar, size: 48, name: nick),
                                     const SizedBox(height: 6),
                                     SizedBox(
                                       width: 54,
@@ -479,7 +503,8 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
                 InkWell(
                   onTap: () => _showBulletinDialog(groupName, bulletinContent),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -488,9 +513,11 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
                           children: [
                             const Text(
                               '群公告',
-                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                              style: TextStyle(
+                                  fontSize: 15, fontWeight: FontWeight.w600),
                             ),
-                            Icon(Icons.chevron_right_rounded, color: colorScheme.outline, size: 20),
+                            Icon(Icons.chevron_right_rounded,
+                                color: colorScheme.outline, size: 20),
                           ],
                         ),
                         const SizedBox(height: 8),
@@ -517,14 +544,16 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
                 // 5. 群微博 (直连原生群微博动态)
                 ListTile(
                   title: const Text('群微博', style: TextStyle(fontSize: 15)),
-                  trailing: Icon(Icons.chevron_right_rounded, color: colorScheme.outline),
+                  trailing: Icon(Icons.chevron_right_rounded,
+                      color: colorScheme.outline),
                   onTap: () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (ctx) => GroupWeiboPage(
                           groupId: widget.groupId,
                           groupName: groupName,
-                          ownerUid: ownerUid.isNotEmpty ? ownerUid : '1651911632',
+                          ownerUid:
+                              ownerUid.isNotEmpty ? ownerUid : '1651911632',
                         ),
                       ),
                     );
@@ -574,7 +603,8 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
                             child: const Text('取消'),
                           ),
                           FilledButton(
-                            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                            style: FilledButton.styleFrom(
+                                backgroundColor: Colors.red),
                             onPressed: () {
                               Navigator.of(ctx).pop();
                               Navigator.of(context).pop();

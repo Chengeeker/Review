@@ -182,7 +182,7 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
               ),
             )
           : EasyRefresh(
-              onRefresh: _fetchContacts,
+              onRefresh: () => HapticFeedbackUtil.refresh(_fetchContacts),
               child: ListView(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 children: [

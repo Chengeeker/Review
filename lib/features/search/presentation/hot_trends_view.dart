@@ -5,6 +5,7 @@ import '../../../core/storage/storage_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/theme_provider.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
+import '../../../core/widgets/hot_search_badge.dart';
 import '../data/search_repository.dart';
 import 'search_results_page.dart';
 import 'search_view.dart';
@@ -97,7 +98,7 @@ class _HotTrendsViewState extends ConsumerState<HotTrendsView>
               FontWeight.normal,
               fontWeightAdjustment,
             ),
-            fontSize: 14,
+            fontSize: 15,
           ),
           tabs: _categories.map((c) => Tab(text: c['name'])).toList(),
         ),
@@ -209,7 +210,7 @@ class _HotCategoryListViewState extends ConsumerState<_HotCategoryListView>
     final double bottomNavPadding = themeState.useFloatingNavBar ? 72.0 : 16.0;
 
     return EasyRefresh(
-      onRefresh: _fetchList,
+      onRefresh: () => HapticFeedbackUtil.refresh(_fetchList),
       child: ListView.separated(
         padding: EdgeInsets.fromLTRB(16, 8, 16, bottomNavPadding),
         itemCount: _items.length,
@@ -266,7 +267,7 @@ class _HotCategoryListViewState extends ConsumerState<_HotCategoryListView>
                         if (item.labelName != null &&
                             item.labelName!.isNotEmpty) ...[
                           const SizedBox(width: 6),
-                          _buildTagBadge(item.labelName!, colorScheme),
+                          HotSearchBadge(label: item.labelName!),
                         ],
                         if (item.locationLabel != null) ...[
                           const SizedBox(width: 6),
@@ -395,38 +396,6 @@ class _HotCategoryListViewState extends ConsumerState<_HotCategoryListView>
         Icons.location_on_rounded,
         size: 14,
         color: Colors.white,
-      ),
-    );
-  }
-
-  Widget _buildTagBadge(String label, ColorScheme colorScheme) {
-    Color bg = colorScheme.primaryContainer;
-    Color fg = colorScheme.onPrimaryContainer;
-
-    if (label == '热' || label == '爆') {
-      bg = const Color(0xFFFF2442);
-      fg = Colors.white;
-    } else if (label == '新') {
-      bg = const Color(0xFF00B0FF);
-      fg = Colors.white;
-    } else if (label == '沸') {
-      bg = const Color(0xFFFF6D00);
-      fg = Colors.white;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: fg,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
       ),
     );
   }

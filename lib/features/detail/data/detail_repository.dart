@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/api_constants.dart';
@@ -16,6 +18,25 @@ class CommentResult {
     required this.comments,
     this.maxId = '0',
     this.hasMore = true,
+  });
+}
+
+/// Playback metadata returned by Weibo's official H5 video component API.
+/// The URLs are short-lived signed CDN URLs and are intentionally kept only
+/// in memory for the current player session.
+class WeiboVideoComponent {
+  final String primaryUrl;
+  final Map<String, String> qualityUrls;
+  final String? coverUrl;
+  final String? title;
+  final String? authorName;
+
+  const WeiboVideoComponent({
+    required this.primaryUrl,
+    required this.qualityUrls,
+    this.coverUrl,
+    this.title,
+    this.authorName,
   });
 }
 
@@ -118,6 +139,195 @@ class DetailRepository {
       print('[DetailRepository] getStatusDetail error: $e');
     }
     return null;
+  }
+
+  /// Resolves a standalone Weibo video component (for example
+  /// `h5.video.weibo.com/show/1034:...`) into the signed media URL that the
+  /// native video player can consume. The H5 page itself is an HTML shell and
+  /// must not be passed to video_player.
+  Future<WeiboVideoComponent?> resolveVideoComponent(String objectId) async {
+    final normalizedId = objectId.trim();
+    if (normalizedId.isEmpty || !normalizedId.contains(':')) return null;
+
+    final requestBody = 'data=${jsonEncode({
+          'Component_Play_Playinfo': {'oid': normalizedId},
+        })}';
+    final requestOptions = Options(
+      contentType: Headers.formUrlEncodedContentType,
+      headers: {
+        'Accept': 'application/json, text/plain, */*',
+        'Referer': 'https://h5.video.weibo.com/show/$normalizedId',
+        'Origin': 'https://h5.video.weibo.com',
+        'PAGE-REFERER': '/show/$normalizedId',
+      },
+    );
+
+    // This component endpoint is public for public videos.  Do not send the
+    // persisted account Cookie to it first: an expired desktop Cookie can
+    // make the H5 endpoint return an empty component even though the video
+    // itself is still playable.  A session-backed retry remains available for
+    // restricted videos.
+    final publicClient = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 12),
+        receiveTimeout: const Duration(seconds: 12),
+        sendTimeout: const Duration(seconds: 12),
+        headers: {
+          'User-Agent': ApiConstants.defaultUserAgent,
+          'Accept': 'application/json, text/plain, */*',
+        },
+      ),
+    );
+    try {
+      final response = await publicClient.post(
+        ApiConstants.videoComponent,
+        queryParameters: {'page': '/show/$normalizedId'},
+        data: requestBody,
+        options: requestOptions,
+      );
+      final parsed = _parseVideoComponentResponse(response.data);
+      if (parsed != null) return parsed;
+    } catch (_) {
+      // The authenticated retry below handles videos with access controls.
+    } finally {
+      publicClient.close(force: true);
+    }
+
+    try {
+      final response = await _client.dio.post(
+        ApiConstants.videoComponent,
+        queryParameters: {'page': '/show/$normalizedId'},
+        data: requestBody,
+        options: requestOptions,
+      );
+      return _parseVideoComponentResponse(response.data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  WeiboVideoComponent? _parseVideoComponentResponse(Object? responseData) {
+    dynamic payload = responseData;
+    if (payload is String) {
+      try {
+        payload = jsonDecode(payload);
+      } catch (_) {
+        return null;
+      }
+    }
+    final root = _asMap(payload);
+    final data = _asMap(root?['data']);
+    final playInfo = _asMap(
+      data?['Component_Play_Playinfo'] ?? root?['Component_Play_Playinfo'],
+    );
+    if (playInfo == null) return null;
+
+    final qualityUrls = <String, String>{};
+    void addUrl(String label, Object? value) {
+      final candidate = value is Map
+          ? (value['url'] ?? value['play_url'] ?? value['src'])
+          : value;
+      final normalizedUrl = _normalizeVideoMediaUrl(candidate);
+      if (normalizedUrl != null && !qualityUrls.containsValue(normalizedUrl)) {
+        qualityUrls[label] = normalizedUrl;
+      }
+    }
+
+    final rawUrls = playInfo['urls'];
+    if (rawUrls is Map) {
+      for (final entry in rawUrls.entries) {
+        addUrl(entry.key.toString(), entry.value);
+      }
+    } else if (rawUrls is List) {
+      for (final item in rawUrls) {
+        final itemMap = _asMap(item);
+        if (itemMap != null) {
+          addUrl(
+            _nonEmptyString(itemMap['label']) ?? '默认画质',
+            itemMap['url'] ?? itemMap['play_url'] ?? itemMap['play_info'],
+          );
+        }
+      }
+    }
+
+    for (final key in const [
+      'stream_url',
+      'stream_url_hd',
+      'mp4_hd_url',
+      'mp4_sd_url',
+      'h265_mp4_hd',
+      'h265_mp4_ld',
+      'play_url',
+      'media_url',
+      'url',
+    ]) {
+      addUrl(_videoQualityLabel(key), playInfo[key]);
+    }
+
+    if (qualityUrls.isEmpty) return null;
+    final coverUrl = _normalizeVideoMediaUrl(
+      playInfo['cover_image'] ?? playInfo['cover_url'] ?? playInfo['cover'],
+    );
+    return WeiboVideoComponent(
+      primaryUrl: qualityUrls.values.first,
+      qualityUrls: Map.unmodifiable(qualityUrls),
+      coverUrl: coverUrl,
+      title: _nonEmptyString(playInfo['title']),
+      authorName: _nonEmptyString(
+        playInfo['author'] ?? playInfo['nickname'],
+      ),
+    );
+  }
+
+  static Map<String, dynamic>? _asMap(Object? value) {
+    if (value is Map) return Map<String, dynamic>.from(value);
+    if (value is String) {
+      try {
+        final decoded = jsonDecode(value);
+        if (decoded is Map) return Map<String, dynamic>.from(decoded);
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  static String? _nonEmptyString(Object? value) {
+    final text = value?.toString().trim() ?? '';
+    return text.isEmpty || text == 'null' ? null : text;
+  }
+
+  static String? _normalizeVideoMediaUrl(Object? value) {
+    final raw = value?.toString().trim() ?? '';
+    if (raw.isEmpty) return null;
+    final normalized = raw.startsWith('//')
+        ? 'https:$raw'
+        : raw.startsWith('http://')
+            ? raw.replaceFirst('http://', 'https://')
+            : raw;
+    final uri = Uri.tryParse(normalized);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return null;
+    }
+    final lower = normalized.toLowerCase();
+    if (lower.contains('h5.video.weibo.com/show') ||
+        lower.contains('weibo.com/tv/show') ||
+        lower.contains('video.weibo.com/show')) {
+      return null;
+    }
+    return normalized;
+  }
+
+  static String _videoQualityLabel(String key) {
+    switch (key) {
+      case 'stream_url_hd':
+      case 'mp4_hd_url':
+      case 'h265_mp4_hd':
+        return '高清';
+      case 'mp4_sd_url':
+      case 'h265_mp4_ld':
+        return '标清';
+      default:
+        return '默认画质';
+    }
   }
 
   /// Resolves a live post's room page into the current official playback
@@ -485,17 +695,31 @@ class DetailRepository {
   /// Second-level nested subcomments (楼中楼)
   Future<CommentResult> getSecondComments({
     required String commentId,
+    String uid = '',
     String maxId = '0',
     int count = 20,
+    int flow = 0,
   }) async {
     try {
+      final normalizedMaxId = _normalizeMaxId(maxId);
       final response = await _client.dio.get(
-        ApiConstants.secondComment,
+        // The desktop web client does not use the old
+        // `/ajax/statuses/getSecondComment` endpoint for the complete
+        // thread. It uses the same official cursor endpoint as top-level
+        // comments, with fetch_level=1. The legacy endpoint commonly
+        // returned only the inline preview (usually two or three rows).
+        ApiConstants.buildComments,
         queryParameters: {
           'id': commentId,
-          'flow': 0,
+          if (uid.trim().isNotEmpty) 'uid': uid.trim(),
+          'is_reload': 1,
+          'is_show_bulletin': 2,
+          'is_mix': normalizedMaxId == '0' ? 0 : 1,
+          'fetch_level': 1,
+          'flow': flow,
           'count': count,
-          if (maxId != '0') 'max_id': maxId,
+          'max_id': normalizedMaxId,
+          'locale': 'zh-CN',
         },
       );
 
@@ -507,11 +731,13 @@ class DetailRepository {
             .map((c) => WeiboCommentModel.fromJson(c))
             .toList();
 
-        final nextMaxId = _extractMaxId(data);
+        final nextMaxId = _normalizeMaxId(_extractMaxId(data));
         return CommentResult(
           comments: comments,
           maxId: nextMaxId,
-          hasMore: comments.isNotEmpty && nextMaxId != '0',
+          hasMore: comments.isNotEmpty &&
+              !_isTerminalMaxId(nextMaxId) &&
+              nextMaxId != normalizedMaxId,
         );
       }
     } catch (_) {}
@@ -545,7 +771,15 @@ class DetailRepository {
   static String _extractMaxId(Object? payload, {int depth = 0}) {
     if (depth > 4 || payload is! Map) return '0';
 
-    // Prefer the pagination value in the nested official data envelope.
+    // The fetch_level=1 response puts the cursor on its outer envelope. Do
+    // not descend into `data` first: nested comment objects can themselves
+    // carry a max_id and that is not the cursor for the current page.
+    for (final key in const ['max_id', 'maxId']) {
+      final value = payload[key]?.toString().trim() ?? '';
+      if (value.isNotEmpty) return value;
+    }
+
+    // Keep compatibility with older/nested response envelopes.
     for (final key in const ['data', 'meta', 'pagination']) {
       final nested = payload[key];
       if (nested is Map) {
@@ -558,10 +792,6 @@ class DetailRepository {
       }
     }
 
-    for (final key in const ['max_id', 'maxId']) {
-      final value = payload[key]?.toString().trim() ?? '';
-      if (value.isNotEmpty) return value;
-    }
     return '0';
   }
 

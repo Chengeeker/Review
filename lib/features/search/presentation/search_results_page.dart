@@ -28,7 +28,8 @@ class SearchResultsPage extends ConsumerStatefulWidget {
   ConsumerState<SearchResultsPage> createState() => _SearchResultsPageState();
 }
 
-class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with SingleTickerProviderStateMixin {
+class _SearchResultsPageState extends ConsumerState<SearchResultsPage>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late TextEditingController _searchController;
   late String _currentKeyword;
@@ -93,7 +94,9 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
 
     // 并发拉取：匹配博主、匹配超话、全景多维搜索结果
     final results = await Future.wait([
-      repo.getSearchSuggestions(cleanKeyword).catchError((_) => const SearchSuggestResult()),
+      repo
+          .getSearchSuggestions(cleanKeyword)
+          .catchError((_) => const SearchSuggestResult()),
       repo.searchChaohua(cleanKeyword).catchError((_) => <SearchChaohuaItem>[]),
       repo.searchStatusesWithDetails(keyword: cleanKeyword, page: 1),
     ]);
@@ -149,7 +152,8 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
     if (!_hasMore) return false;
     final repo = ref.read(searchRepositoryProvider);
     final nextPage = _page + 1;
-    final list = await repo.searchStatuses(keyword: _currentKeyword.trim(), page: nextPage);
+    final list = await repo.searchStatuses(
+        keyword: _currentKeyword.trim(), page: nextPage);
 
     if (mounted) {
       setState(() {
@@ -170,8 +174,18 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
       final parts = str.split(' ');
       if (parts.length >= 6) {
         const months = {
-          'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
-          'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12,
+          'Jan': 1,
+          'Feb': 2,
+          'Mar': 3,
+          'Apr': 4,
+          'May': 5,
+          'Jun': 6,
+          'Jul': 7,
+          'Aug': 8,
+          'Sep': 9,
+          'Oct': 10,
+          'Nov': 11,
+          'Dec': 12,
         };
         final month = months[parts[1]] ?? 1;
         final day = int.tryParse(parts[2]) ?? 1;
@@ -215,13 +229,15 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
             decoration: InputDecoration(
               isDense: true,
               border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
               prefixIcon: Icon(
                 Icons.search_rounded,
                 size: 20,
                 color: colorScheme.onSurfaceVariant,
               ),
-              prefixIconConstraints: const BoxConstraints(minWidth: 38, minHeight: 40),
+              prefixIconConstraints:
+                  const BoxConstraints(minWidth: 38, minHeight: 40),
               suffixIcon: _searchController.text.isNotEmpty
                   ? GestureDetector(
                       behavior: HitTestBehavior.opaque,
@@ -240,7 +256,8 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
                       ),
                     )
                   : null,
-              suffixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 40),
+              suffixIconConstraints:
+                  const BoxConstraints(minWidth: 36, minHeight: 40),
               hintText: '搜索微博、超话、用户...',
               hintStyle: TextStyle(
                 fontSize: 14,
@@ -261,7 +278,8 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
                 borderRadius: BorderRadius.circular(8),
                 onTap: () => _reSearch(_searchController.text),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   child: Text(
                     '搜索',
                     style: TextStyle(
@@ -277,13 +295,14 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
         ],
       ),
       body: EasyRefresh(
-        onRefresh: _fetchSearch,
+        onRefresh: () => HapticFeedbackUtil.refresh(_fetchSearch),
         onLoad: () async {
           final hasMore = await _loadMore();
           return hasMore ? IndicatorResult.success : IndicatorResult.noMore;
         },
         child: _isLoading
-            ? Center(child: CircularProgressIndicator(color: colorScheme.primary))
+            ? Center(
+                child: CircularProgressIndicator(color: colorScheme.primary))
             : CustomScrollView(
                 slivers: [
                   // 0. 微博官方词条介绍卡片 (严格位于搜索栏和顶栏分栏中间)
@@ -293,15 +312,20 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
                     ),
 
                   // 1. 最顶层：相关博主直达卡片
-                  if (_primaryMatchedUser != null && _tabController.index == 0 && _topicHeader?.hostUid != _primaryMatchedUser!.id)
+                  if (_primaryMatchedUser != null &&
+                      _tabController.index == 0 &&
+                      _topicHeader?.hostUid != _primaryMatchedUser!.id)
                     SliverToBoxAdapter(
-                      child: _buildMatchedUserCard(context, _primaryMatchedUser!, colorScheme, isDark),
+                      child: _buildMatchedUserCard(
+                          context, _primaryMatchedUser!, colorScheme, isDark),
                     ),
 
                   // 2. 超话直达卡片 (在综合页置顶展示匹配到的核心超话实体)
-                  if (_primaryMatchedChaohua != null && _tabController.index == 0)
+                  if (_primaryMatchedChaohua != null &&
+                      _tabController.index == 0)
                     SliverToBoxAdapter(
-                      child: _buildMatchedChaohuaCard(context, _primaryMatchedChaohua!, colorScheme, isDark),
+                      child: _buildMatchedChaohuaCard(context,
+                          _primaryMatchedChaohua!, colorScheme, isDark),
                     ),
 
                   // 3. 中间层：12 大分类顶栏（综合、实时、用户、超话、图片、视频、关注、热门、评论、话题、地点、商品）
@@ -317,9 +341,12 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
                               isScrollable: true,
                               tabAlignment: TabAlignment.start,
                               indicatorSize: TabBarIndicatorSize.label,
-                              labelPadding: const EdgeInsets.symmetric(horizontal: 14),
-                              labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
-                              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.normal, fontSize: 14),
+                              labelPadding:
+                                  const EdgeInsets.symmetric(horizontal: 14),
+                              labelStyle: const TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 14.5),
+                              unselectedLabelStyle: const TextStyle(
+                                  fontWeight: FontWeight.normal, fontSize: 14),
                               tabs: _tabs.map((t) => Tab(text: t)).toList(),
                             ),
                             Divider(
@@ -352,7 +379,9 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
       margin: const EdgeInsets.fromLTRB(14, 10, 14, 4),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E1F24) : colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
+        color: isDark
+            ? const Color(0xFF1E1F24)
+            : colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -415,15 +444,20 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
                         Icon(
                           Icons.verified,
                           size: 15,
-                          color: user.verifiedType == 0 ? const Color(0xFFFFB300) : const Color(0xFF00B0FF),
+                          color: user.verifiedType == 0
+                              ? const Color(0xFFFFB300)
+                              : const Color(0xFF00B0FF),
                         ),
                       ],
                     ],
                   ),
                   const SizedBox(height: 2),
-                  if (user.verifiedReason.isNotEmpty || user.description.isNotEmpty)
+                  if (user.verifiedReason.isNotEmpty ||
+                      user.description.isNotEmpty)
                     Text(
-                      user.verifiedReason.isNotEmpty ? user.verifiedReason : user.description,
+                      user.verifiedReason.isNotEmpty
+                          ? user.verifiedReason
+                          : user.description,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -500,7 +534,9 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
       margin: const EdgeInsets.fromLTRB(14, 6, 14, 8),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E1F24) : colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
+        color: isDark
+            ? const Color(0xFF1E1F24)
+            : colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
@@ -544,14 +580,16 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
                         width: 50,
                         height: 50,
                         color: colorScheme.primaryContainer,
-                        child: Icon(Icons.diamond_rounded, color: colorScheme.onPrimaryContainer, size: 26),
+                        child: Icon(Icons.diamond_rounded,
+                            color: colorScheme.onPrimaryContainer, size: 26),
                       ),
                     )
                   : Container(
                       width: 50,
                       height: 50,
                       color: colorScheme.primaryContainer,
-                      child: Icon(Icons.diamond_rounded, color: colorScheme.onPrimaryContainer, size: 26),
+                      child: Icon(Icons.diamond_rounded,
+                          color: colorScheme.onPrimaryContainer, size: 26),
                     ),
             ),
             const SizedBox(width: 14),
@@ -565,7 +603,9 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
                     children: [
                       Flexible(
                         child: Text(
-                          chaohua.title.endsWith('超话') ? chaohua.title : '${chaohua.title}超话',
+                          chaohua.title.endsWith('超话')
+                              ? chaohua.title
+                              : '${chaohua.title}超话',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
@@ -575,7 +615,8 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
                         ),
                       ),
                       const SizedBox(width: 4),
-                      Icon(Icons.diamond_rounded, size: 15, color: colorScheme.primary),
+                      Icon(Icons.diamond_rounded,
+                          size: 15, color: colorScheme.primary),
                     ],
                   ),
                   const SizedBox(height: 3),
@@ -650,13 +691,17 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
                 verified: u.verified,
                 verifiedType: u.verifiedType,
               ),
-              title: Text(u.screenName, style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text(u.verifiedReason.isNotEmpty ? u.verifiedReason : '粉丝 ${u.followersCountStr}'),
+              title: Text(u.screenName,
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Text(u.verifiedReason.isNotEmpty
+                  ? u.verifiedReason
+                  : '粉丝 ${u.followersCountStr}'),
               trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
               onTap: () {
                 Navigator.of(context).push(
                   MaterialPageRoute(
-                    builder: (ctx) => UserProfilePage(user: u, uid: u.id, screenName: u.screenName),
+                    builder: (ctx) => UserProfilePage(
+                        user: u, uid: u.id, screenName: u.screenName),
                   ),
                 );
               },
@@ -676,11 +721,14 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.diamond_outlined, size: 54, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
+                Icon(Icons.diamond_outlined,
+                    size: 54,
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
                 const SizedBox(height: 12),
                 Text(
                   '暂无"$_currentKeyword"相关超话',
-                  style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
+                  style: TextStyle(
+                      color: colorScheme.onSurfaceVariant, fontSize: 14),
                 ),
               ],
             ),
@@ -692,7 +740,8 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
           (context, index) {
             final ch = _matchedChaohuas[index];
             return ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               leading: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: ch.image.isNotEmpty
@@ -705,14 +754,16 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
                           width: 48,
                           height: 48,
                           color: colorScheme.primaryContainer,
-                          child: Icon(Icons.diamond_rounded, color: colorScheme.onPrimaryContainer),
+                          child: Icon(Icons.diamond_rounded,
+                              color: colorScheme.onPrimaryContainer),
                         ),
                       )
                     : Container(
                         width: 48,
                         height: 48,
                         color: colorScheme.primaryContainer,
-                        child: Icon(Icons.diamond_rounded, color: colorScheme.onPrimaryContainer),
+                        child: Icon(Icons.diamond_rounded,
+                            color: colorScheme.onPrimaryContainer),
                       ),
               ),
               title: Row(
@@ -720,13 +771,15 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
                   Flexible(
                     child: Text(
                       ch.title.endsWith('超话') ? ch.title : '${ch.title}超话',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 16),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   const SizedBox(width: 4),
-                  Icon(Icons.diamond_rounded, size: 16, color: colorScheme.primary),
+                  Icon(Icons.diamond_rounded,
+                      size: 16, color: colorScheme.primary),
                 ],
               ),
               subtitle: ch.description.isNotEmpty
@@ -734,7 +787,8 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
                       ch.description,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12.5, color: colorScheme.onSurfaceVariant),
+                      style: TextStyle(
+                          fontSize: 12.5, color: colorScheme.onSurfaceVariant),
                     )
                   : null,
               trailing: FilledButton.tonal(
@@ -752,10 +806,13 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
                   );
                 },
                 style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                   visualDensity: VisualDensity.compact,
                 ),
-                child: const Text('进入超话', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                child: const Text('进入超话',
+                    style:
+                        TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
               ),
               onTap: () {
                 HapticFeedbackUtil.light();
@@ -782,7 +839,12 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
       final allPics = <Map<String, dynamic>>[];
       for (final s in _statuses) {
         for (final p in s.pics) {
-          allPics.add({'pic': p, 'statusId': s.id, 'pics': s.pics, 'authorName': s.user.screenName});
+          allPics.add({
+            'pic': p,
+            'statusId': s.id,
+            'pics': s.pics,
+            'authorName': s.user.screenName
+          });
         }
       }
 
@@ -848,11 +910,14 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.search_off_rounded, size: 54, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
+              Icon(Icons.search_off_rounded,
+                  size: 54,
+                  color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
               const SizedBox(height: 12),
               Text(
                 '暂无"$currentTab"相关内容',
-                style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
+                style: TextStyle(
+                    color: colorScheme.onSurfaceVariant, fontSize: 14),
               ),
             ],
           ),
@@ -867,7 +932,8 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
       // 3. 官方搜索流内容按官方返回顺序逐条呈现 (若列表中包含置顶博文则去重，避免重复展示)
       final feedStatuses = List<WeiboStatusModel>.from(_statuses);
       if (_toppingStatus != null) {
-        feedStatuses.removeWhere((s) => s.id == _toppingStatus!.id || s.mid == _toppingStatus!.mid);
+        feedStatuses.removeWhere(
+            (s) => s.id == _toppingStatus!.id || s.mid == _toppingStatus!.mid);
       }
 
       final hasTopping = _toppingStatus != null;
@@ -896,11 +962,17 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage> with Sing
 
     List<WeiboStatusModel> displayList = _statuses;
     if (currentTab == '实时') {
-      displayList = List.from(_statuses)..sort((a, b) => _parseWeiboDate(b.createdAt).compareTo(_parseWeiboDate(a.createdAt)));
+      displayList = List.from(_statuses)
+        ..sort((a, b) => _parseWeiboDate(b.createdAt)
+            .compareTo(_parseWeiboDate(a.createdAt)));
     } else if (currentTab == '热门') {
-      displayList = List.from(_statuses)..sort((a, b) => (b.repostsCount + b.attitudesCount).compareTo(a.repostsCount + a.attitudesCount));
+      displayList = List.from(_statuses)
+        ..sort((a, b) => (b.repostsCount + b.attitudesCount)
+            .compareTo(a.repostsCount + a.attitudesCount));
     } else if (currentTab == '视频') {
-      displayList = _statuses.where((s) => s.textRaw.contains('视频') || s.textRaw.contains('http')).toList();
+      displayList = _statuses
+          .where((s) => s.textRaw.contains('视频') || s.textRaw.contains('http'))
+          .toList();
       if (displayList.isEmpty) displayList = _statuses;
     } else if (currentTab == '话题') {
       displayList = _statuses.where((s) => s.textRaw.contains('#')).toList();
@@ -934,7 +1006,8 @@ class _TabBarHeaderDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => 49.0;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
     return child;
   }
 

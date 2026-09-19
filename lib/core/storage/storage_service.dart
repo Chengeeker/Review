@@ -10,6 +10,9 @@ class StorageService {
   // (weibo.cn) and desktop (weibo.com) sessions can briefly differ during SSO.
   static const String keyDesktopCookie = 'weibo_desktop_cookie';
   static const String keyMobileCookie = 'weibo_mobile_cookie';
+  static const String keyCookieScopeSchemaVersion =
+      'weibo_cookie_scope_schema_version';
+  static const int currentCookieScopeSchemaVersion = 2;
   static const String keyAccessToken = 'weibo_access_token';
   static const String keyIsLoggedIn = 'is_logged_in';
   static const String keyUserUid = 'user_uid';
@@ -107,6 +110,15 @@ class StorageService {
   String? getMobileCookie() => _prefs.getString(keyMobileCookie);
   Future<bool> setMobileCookie(String value) =>
       _prefs.setString(keyMobileCookie, value);
+
+  int getCookieScopeSchemaVersion() =>
+      _prefs.getInt(keyCookieScopeSchemaVersion) ?? 0;
+  Future<bool> setCookieScopeSchemaVersion(int value) =>
+      _prefs.setInt(keyCookieScopeSchemaVersion, value);
+  Future<void> clearScopedCookiesForMigration() async {
+    await _prefs.remove(keyDesktopCookie);
+    await _prefs.remove(keyMobileCookie);
+  }
 
   String? getAccessToken() => _prefs.getString(keyAccessToken);
   Future<bool> setAccessToken(String value) =>
@@ -443,6 +455,7 @@ class StorageService {
     await _prefs.remove(keyFullCookie);
     await _prefs.remove(keyDesktopCookie);
     await _prefs.remove(keyMobileCookie);
+    await _prefs.remove(keyCookieScopeSchemaVersion);
     await _prefs.remove(keyAccessToken);
     await _prefs.remove(keyIsLoggedIn);
     await _prefs.remove(keyUserUid);

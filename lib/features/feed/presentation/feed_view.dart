@@ -22,7 +22,8 @@ class FeedView extends ConsumerStatefulWidget {
   ConsumerState<FeedView> createState() => _FeedViewState();
 }
 
-class _FeedViewState extends ConsumerState<FeedView> with SingleTickerProviderStateMixin {
+class _FeedViewState extends ConsumerState<FeedView>
+    with SingleTickerProviderStateMixin {
   bool _isDropdownOpen = false;
   late final AnimationController _animationController;
   late final Animation<double> _expandAnimation;
@@ -43,7 +44,9 @@ class _FeedViewState extends ConsumerState<FeedView> with SingleTickerProviderSt
       curve: Curves.easeInOutCubic,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(timelineScrollProvider.notifier).attachController(_scrollController);
+      ref
+          .read(timelineScrollProvider.notifier)
+          .attachController(_scrollController);
     });
   }
 
@@ -99,7 +102,8 @@ class _FeedViewState extends ConsumerState<FeedView> with SingleTickerProviderSt
           onTap: () {
             final now = DateTime.now();
             if (_lastTopBarTapTime != null &&
-                now.difference(_lastTopBarTapTime!) < const Duration(milliseconds: 300)) {
+                now.difference(_lastTopBarTapTime!) <
+                    const Duration(milliseconds: 300)) {
               // 连续点击两次：触发双击回顶/刷新
               _topBarSingleTapTimer?.cancel();
               _topBarSingleTapTimer = null;
@@ -108,7 +112,8 @@ class _FeedViewState extends ConsumerState<FeedView> with SingleTickerProviderSt
             } else {
               _lastTopBarTapTime = now;
               _topBarSingleTapTimer?.cancel();
-              _topBarSingleTapTimer = Timer(const Duration(milliseconds: 300), () {
+              _topBarSingleTapTimer =
+                  Timer(const Duration(milliseconds: 300), () {
                 _lastTopBarTapTime = null;
               });
             }
@@ -124,7 +129,10 @@ class _FeedViewState extends ConsumerState<FeedView> with SingleTickerProviderSt
                   borderRadius: BorderRadius.circular(20),
                   onTap: () {
                     _closeDropdown();
-                    ref.read(mainScaffoldKeyProvider).currentState?.openDrawer();
+                    ref
+                        .read(mainScaffoldKeyProvider)
+                        .currentState
+                        ?.openDrawer();
                   },
                   child: AppAvatar(
                     url: authState.avatar,
@@ -145,13 +153,15 @@ class _FeedViewState extends ConsumerState<FeedView> with SingleTickerProviderSt
                   children: [
                     Text(
                       feedState.currentCategoryTitle,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 18),
                     ),
                     const SizedBox(width: 4),
                     AnimatedRotation(
                       turns: _isDropdownOpen ? 0.5 : 0.0,
                       duration: const Duration(milliseconds: 200),
-                      child: const Icon(Icons.arrow_drop_down_rounded, size: 24),
+                      child:
+                          const Icon(Icons.arrow_drop_down_rounded, size: 24),
                     ),
                   ],
                 ),
@@ -166,7 +176,8 @@ class _FeedViewState extends ConsumerState<FeedView> with SingleTickerProviderSt
                   HapticFeedbackUtil.light();
                   _closeDropdown();
                   Navigator.of(context).push(
-                    MaterialPageRoute(builder: (ctx) => const ComposeTweetPage()),
+                    MaterialPageRoute(
+                        builder: (ctx) => const ComposeTweetPage()),
                   );
                 },
               ),
@@ -200,17 +211,21 @@ class _FeedViewState extends ConsumerState<FeedView> with SingleTickerProviderSt
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.people_outline_rounded, size: 56, color: colorScheme.primary),
+                            Icon(Icons.people_outline_rounded,
+                                size: 56, color: colorScheme.primary),
                             const SizedBox(height: 16),
                             const Text(
                               '关注流需要登录',
-                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                              style: TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold),
                             ),
                             const SizedBox(height: 8),
                             Text(
                               '登录或导入微博账号凭据后，即可同步查看你关注的好友与特别关注动态',
                               textAlign: TextAlign.center,
-                              style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13),
+                              style: TextStyle(
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontSize: 13),
                             ),
                             const SizedBox(height: 20),
                             FilledButton.icon(
@@ -218,7 +233,8 @@ class _FeedViewState extends ConsumerState<FeedView> with SingleTickerProviderSt
                               label: const Text('去登录 / 导入凭据'),
                               onPressed: () {
                                 Navigator.of(context).push(
-                                  MaterialPageRoute(builder: (ctx) => const LoginPage()),
+                                  MaterialPageRoute(
+                                      builder: (ctx) => const LoginPage()),
                                 );
                               },
                             ),
@@ -230,22 +246,34 @@ class _FeedViewState extends ConsumerState<FeedView> with SingleTickerProviderSt
                 )
               : EasyRefresh(
                   onRefresh: () async {
+                    HapticFeedbackUtil.light();
                     _closeDropdown();
-                    await ref.read(feedControllerProvider.notifier).refreshFeed();
+                    await ref
+                        .read(feedControllerProvider.notifier)
+                        .refreshFeed();
                   },
                   onLoad: () async {
-                    final hasMore = await ref.read(feedControllerProvider.notifier).loadMore();
-                    return hasMore ? IndicatorResult.success : IndicatorResult.noMore;
+                    final hasMore = await ref
+                        .read(feedControllerProvider.notifier)
+                        .loadMore();
+                    return hasMore
+                        ? IndicatorResult.success
+                        : IndicatorResult.noMore;
                   },
                   child: NotificationListener<ScrollNotification>(
                     onNotification: (notification) {
                       if (notification.metrics.maxScrollExtent > 0) {
-                        final progress = notification.metrics.pixels / notification.metrics.maxScrollExtent;
-                        final remainingDistance = notification.metrics.maxScrollExtent - notification.metrics.pixels;
+                        final progress = notification.metrics.pixels /
+                            notification.metrics.maxScrollExtent;
+                        final remainingDistance =
+                            notification.metrics.maxScrollExtent -
+                                notification.metrics.pixels;
                         // 当滑动浏览达到 60% 阈值，或剩余可视距离小于 1500dp 时，提前在后台无感预加载下一页
                         if (progress >= 0.60 || remainingDistance < 1500) {
                           if (feedState.hasMore && !feedState.isLoading) {
-                            ref.read(feedControllerProvider.notifier).loadMore();
+                            ref
+                                .read(feedControllerProvider.notifier)
+                                .loadMore();
                           }
                         }
                       }
@@ -270,19 +298,24 @@ class _FeedViewState extends ConsumerState<FeedView> with SingleTickerProviderSt
                                     Icon(
                                       Icons.inbox_rounded,
                                       size: 56,
-                                      color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                                      color: colorScheme.onSurfaceVariant
+                                          .withValues(alpha: 0.5),
                                     ),
                                     const SizedBox(height: 16),
                                     Text(
                                       feedState.errorMessage ?? '暂无微博内容',
-                                      style: TextStyle(color: colorScheme.onSurfaceVariant),
+                                      style: TextStyle(
+                                          color: colorScheme.onSurfaceVariant),
                                       textAlign: TextAlign.center,
                                     ),
                                     const SizedBox(height: 16),
                                     OutlinedButton.icon(
-                                      icon: const Icon(Icons.refresh_rounded, size: 16),
+                                      icon: const Icon(Icons.refresh_rounded,
+                                          size: 16),
                                       label: const Text('重新加载'),
-                                      onPressed: () => ref.read(feedControllerProvider.notifier).refreshFeed(),
+                                      onPressed: () => ref
+                                          .read(feedControllerProvider.notifier)
+                                          .refreshFeed(),
                                     ),
                                   ],
                                 ),
@@ -293,7 +326,9 @@ class _FeedViewState extends ConsumerState<FeedView> with SingleTickerProviderSt
                           SliverPadding(
                             padding: EdgeInsets.only(
                               top: 4,
-                              bottom: ref.watch(themeProvider).useFloatingNavBar ? 72.0 : 16.0,
+                              bottom: ref.watch(themeProvider).useFloatingNavBar
+                                  ? 72.0
+                                  : 16.0,
                             ),
                             sliver: SliverList(
                               delegate: SliverChildBuilderDelegate(
@@ -302,8 +337,11 @@ class _FeedViewState extends ConsumerState<FeedView> with SingleTickerProviderSt
                                   if (index >= feedState.statuses.length - 8 &&
                                       feedState.hasMore &&
                                       !feedState.isLoading) {
-                                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                                      ref.read(feedControllerProvider.notifier).loadMore();
+                                    WidgetsBinding.instance
+                                        .addPostFrameCallback((_) {
+                                      ref
+                                          .read(feedControllerProvider.notifier)
+                                          .loadMore();
                                     });
                                   }
                                   final status = feedState.statuses[index];
@@ -345,7 +383,9 @@ class _FeedViewState extends ConsumerState<FeedView> with SingleTickerProviderSt
                 customHotGroups: feedState.customHotGroups,
                 onSelectGroup: (id, name) {
                   _closeDropdown();
-                  ref.read(feedControllerProvider.notifier).setCategory(id, name);
+                  ref
+                      .read(feedControllerProvider.notifier)
+                      .setCategory(id, name);
                 },
                 onClose: _closeDropdown,
               ),

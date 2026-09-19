@@ -2,6 +2,7 @@ import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/weibo_dio_client.dart';
+import '../../../core/utils/haptic_feedback_util.dart';
 import '../../feed/data/models/weibo_status_model.dart';
 import '../../feed/presentation/widgets/tweet_card.dart';
 
@@ -91,7 +92,8 @@ class _GroupWeiboPageState extends ConsumerState<GroupWeiboPage> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('群微博', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+            const Text('群微博',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
             Text(
               widget.groupName,
               style: TextStyle(fontSize: 12, color: colorScheme.outline),
@@ -100,14 +102,17 @@ class _GroupWeiboPageState extends ConsumerState<GroupWeiboPage> {
         ),
       ),
       body: EasyRefresh(
-        onRefresh: () => _fetchGroupTimeline(refresh: true),
+        onRefresh: () => HapticFeedbackUtil.refresh(
+          () => _fetchGroupTimeline(refresh: true),
+        ),
         onLoad: () async {
           _page++;
           await _fetchGroupTimeline(refresh: false);
           return _hasMore ? IndicatorResult.success : IndicatorResult.noMore;
         },
         child: _isLoading
-            ? Center(child: CircularProgressIndicator(color: colorScheme.primary))
+            ? Center(
+                child: CircularProgressIndicator(color: colorScheme.primary))
             : _statuses.isEmpty
                 ? Center(
                     child: Column(
@@ -115,11 +120,14 @@ class _GroupWeiboPageState extends ConsumerState<GroupWeiboPage> {
                       children: [
                         Icon(Icons.feed_outlined,
                             size: 54,
-                            color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
+                            color: colorScheme.onSurfaceVariant
+                                .withValues(alpha: 0.4)),
                         const SizedBox(height: 12),
                         Text(
                           '暂无群微博动态',
-                          style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
+                          style: TextStyle(
+                              color: colorScheme.onSurfaceVariant,
+                              fontSize: 14),
                         ),
                       ],
                     ),

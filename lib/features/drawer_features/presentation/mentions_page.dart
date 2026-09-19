@@ -2,6 +2,7 @@ import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/weibo_dio_client.dart';
+import '../../../core/utils/haptic_feedback_util.dart';
 import '../../../core/utils/weibo_text_parser.dart';
 import '../../../core/utils/weibo_time_formatter.dart';
 import '../../../core/widgets/app_avatar.dart';
@@ -22,13 +23,15 @@ class MentionsPage extends StatefulWidget {
   State<MentionsPage> createState() => _MentionsPageState();
 }
 
-class _MentionsPageState extends State<MentionsPage> with SingleTickerProviderStateMixin {
+class _MentionsPageState extends State<MentionsPage>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this, initialIndex: widget.initialTabIndex);
+    _tabController = TabController(
+        length: 2, vsync: this, initialIndex: widget.initialTabIndex);
   }
 
   @override
@@ -45,7 +48,8 @@ class _MentionsPageState extends State<MentionsPage> with SingleTickerProviderSt
         bottom: TabBar(
           controller: _tabController,
           indicatorSize: TabBarIndicatorSize.label,
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
+          labelStyle:
+              const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
           tabs: const [
             Tab(text: '@我的微博'),
             Tab(text: '@我的评论'),
@@ -67,10 +71,12 @@ class _MentionsStatusesListView extends ConsumerStatefulWidget {
   const _MentionsStatusesListView();
 
   @override
-  ConsumerState<_MentionsStatusesListView> createState() => _MentionsStatusesListViewState();
+  ConsumerState<_MentionsStatusesListView> createState() =>
+      _MentionsStatusesListViewState();
 }
 
-class _MentionsStatusesListViewState extends ConsumerState<_MentionsStatusesListView>
+class _MentionsStatusesListViewState
+    extends ConsumerState<_MentionsStatusesListView>
     with AutomaticKeepAliveClientMixin {
   final List<WeiboStatusModel> _statuses = [];
   bool _isLoading = true;
@@ -132,7 +138,9 @@ class _MentionsStatusesListViewState extends ConsumerState<_MentionsStatusesList
     final colorScheme = Theme.of(context).colorScheme;
 
     return EasyRefresh(
-      onRefresh: () => _fetchMentions(refresh: true),
+      onRefresh: () => HapticFeedbackUtil.refresh(
+        () => _fetchMentions(refresh: true),
+      ),
       onLoad: () async {
         _page++;
         await _fetchMentions(refresh: false);
@@ -146,11 +154,14 @@ class _MentionsStatusesListViewState extends ConsumerState<_MentionsStatusesList
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.alternate_email_rounded,
-                          size: 54, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
+                          size: 54,
+                          color: colorScheme.onSurfaceVariant
+                              .withValues(alpha: 0.4)),
                       const SizedBox(height: 12),
                       Text(
                         '暂无@你的微博',
-                        style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
+                        style: TextStyle(
+                            color: colorScheme.onSurfaceVariant, fontSize: 14),
                       ),
                     ],
                   ),
@@ -172,10 +183,12 @@ class _MentionsCommentsListView extends ConsumerStatefulWidget {
   const _MentionsCommentsListView();
 
   @override
-  ConsumerState<_MentionsCommentsListView> createState() => _MentionsCommentsListViewState();
+  ConsumerState<_MentionsCommentsListView> createState() =>
+      _MentionsCommentsListViewState();
 }
 
-class _MentionsCommentsListViewState extends ConsumerState<_MentionsCommentsListView>
+class _MentionsCommentsListViewState
+    extends ConsumerState<_MentionsCommentsListView>
     with AutomaticKeepAliveClientMixin {
   final List<Map<String, dynamic>> _comments = [];
   bool _isLoading = true;
@@ -233,7 +246,9 @@ class _MentionsCommentsListViewState extends ConsumerState<_MentionsCommentsList
     final colorScheme = Theme.of(context).colorScheme;
 
     return EasyRefresh(
-      onRefresh: () => _fetchComments(refresh: true),
+      onRefresh: () => HapticFeedbackUtil.refresh(
+        () => _fetchComments(refresh: true),
+      ),
       onLoad: () async {
         _page++;
         await _fetchComments(refresh: false);
@@ -247,22 +262,30 @@ class _MentionsCommentsListViewState extends ConsumerState<_MentionsCommentsList
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.chat_bubble_outline_rounded,
-                          size: 54, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
+                          size: 54,
+                          color: colorScheme.onSurfaceVariant
+                              .withValues(alpha: 0.4)),
                       const SizedBox(height: 12),
                       Text(
                         '暂无@你的评论',
-                        style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
+                        style: TextStyle(
+                            color: colorScheme.onSurfaceVariant, fontSize: 14),
                       ),
                     ],
                   ),
                 )
               : ListView.separated(
                   itemCount: _comments.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1, indent: 64, thickness: 0.5),
+                  separatorBuilder: (_, __) =>
+                      const Divider(height: 1, indent: 64, thickness: 0.5),
                   itemBuilder: (context, index) {
                     final c = _comments[index];
-                    final user = c['user'] is Map ? (c['user'] as Map<String, dynamic>) : {};
-                    final text = c['text_raw']?.toString() ?? c['text']?.toString() ?? '';
+                    final user = c['user'] is Map
+                        ? (c['user'] as Map<String, dynamic>)
+                        : {};
+                    final text = c['text_raw']?.toString() ??
+                        c['text']?.toString() ??
+                        '';
                     final nick = user['screen_name']?.toString() ?? '微博用户';
                     final avatar = user['avatar_hd']?.toString() ??
                         user['profile_image_url']?.toString() ??
@@ -271,7 +294,9 @@ class _MentionsCommentsListViewState extends ConsumerState<_MentionsCommentsList
 
                     return ListTile(
                       leading: AppAvatar(url: avatar, size: 40, name: nick),
-                      title: Text(nick, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                      title: Text(nick,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 14)),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -279,7 +304,8 @@ class _MentionsCommentsListViewState extends ConsumerState<_MentionsCommentsList
                             const SizedBox(height: 2),
                             Text(
                               WeiboTimeFormatter.format(rawDate: createdAt),
-                              style: TextStyle(fontSize: 12, color: colorScheme.outline),
+                              style: TextStyle(
+                                  fontSize: 12, color: colorScheme.outline),
                             ),
                           ],
                           const SizedBox(height: 4),
@@ -302,7 +328,9 @@ class _MentionsCommentsListViewState extends ConsumerState<_MentionsCommentsList
                         if (status is Map<String, dynamic>) {
                           final statusModel = WeiboStatusModel.fromJson(status);
                           Navigator.of(context).push(
-                            MaterialPageRoute(builder: (ctx) => StatusDetailPage(status: statusModel)),
+                            MaterialPageRoute(
+                                builder: (ctx) =>
+                                    StatusDetailPage(status: statusModel)),
                           );
                         }
                       },

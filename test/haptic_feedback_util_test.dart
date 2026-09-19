@@ -24,8 +24,8 @@ void main() {
     HapticFeedbackUtil.resetForTesting();
   });
 
-  test('manual tap feedback is consumed after a Material splash', () async {
-    HapticFeedbackUtil.light(fromSplash: true);
+  test('manual feedback remains a single event for an action', () async {
+    HapticFeedbackUtil.light();
     HapticFeedbackUtil.light();
 
     await Future<void>.delayed(Duration.zero);
@@ -34,8 +34,8 @@ void main() {
     expect(calls.single.arguments, 'HapticFeedbackType.lightImpact');
   });
 
-  test('selection feedback is also consumed after a Material splash', () async {
-    HapticFeedbackUtil.light(fromSplash: true);
+  test('rapid feedback across types is throttled', () async {
+    HapticFeedbackUtil.light();
     HapticFeedbackUtil.selection();
 
     await Future<void>.delayed(Duration.zero);
@@ -46,6 +46,40 @@ void main() {
 
   test('standalone manual feedback still works', () async {
     HapticFeedbackUtil.light();
+
+    await Future<void>.delayed(Duration.zero);
+
+    expect(calls, hasLength(1));
+    expect(calls.single.arguments, 'HapticFeedbackType.lightImpact');
+  });
+
+  test('refresh feedback fires once before the refresh action', () async {
+    var actionStarted = false;
+
+    await HapticFeedbackUtil.refresh(() async {
+      actionStarted = true;
+    });
+    await Future<void>.delayed(Duration.zero);
+
+    expect(actionStarted, isTrue);
+    expect(calls, hasLength(1));
+    expect(calls.single.arguments, 'HapticFeedbackType.lightImpact');
+  });
+
+  test('global splash feedback is consumed by a light callback', () async {
+    HapticFeedbackUtil.light(fromSplash: true);
+    HapticFeedbackUtil.light();
+
+    await Future<void>.delayed(Duration.zero);
+
+    expect(calls, hasLength(1));
+  });
+
+  test('global splash feedback is consumed by medium and selection callbacks',
+      () async {
+    HapticFeedbackUtil.light(fromSplash: true);
+    HapticFeedbackUtil.medium();
+    HapticFeedbackUtil.selection();
 
     await Future<void>.delayed(Duration.zero);
 

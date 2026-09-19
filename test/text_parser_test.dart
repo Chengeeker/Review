@@ -58,7 +58,7 @@ void main() {
           },
         ),
       ),
-      );
+    );
   });
 
   testWidgets(
@@ -68,8 +68,7 @@ void main() {
       MaterialApp(
         home: Builder(
           builder: (context) {
-            const rawText =
-                '深度测评：http://t.cn/AXOxP3Ga\u200b\u200b\u200b';
+            const rawText = '深度测评：http://t.cn/AXOxP3Ga\u200b\u200b\u200b';
             final urlStruct = [
               {
                 'short_url': 'http://t.cn/AXOxP3Ga',
@@ -87,6 +86,94 @@ void main() {
             final combinedText = spans.map((s) => s.toPlainText()).join();
             expect(combinedText.contains('努比亚NaviX Ultra深度测评报告'), isTrue);
             expect(combinedText.contains('网页链接'), isFalse);
+            return Text.rich(TextSpan(children: spans));
+          },
+        ),
+      ),
+    );
+  });
+
+  testWidgets('WeiboTextParser prefers any official video target in urlStruct',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            final spans = WeiboTextParser.parse(
+              rawText: '视频：http://t.cn/A6video',
+              context: context,
+              urlStruct: [
+                {
+                  'short_url': 'http://t.cn/A6video',
+                  'url_title': 'ColorOS陈希的微博视频',
+                  'long_url': 'https://weibo.com/tv/show/1034:video-1',
+                },
+              ],
+            );
+
+            final combinedText = spans.map((span) => span.toPlainText()).join();
+            expect(combinedText, contains('ColorOS陈希的微博视频'));
+            return Text.rich(TextSpan(children: spans));
+          },
+        ),
+      ),
+    );
+  });
+
+  testWidgets('WeiboTextParser routes a signed url_objects media URL natively',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            final spans = WeiboTextParser.parse(
+              rawText: '视频：http://t.cn/AXOaa3q8',
+              context: context,
+              urlStruct: [
+                {
+                  'short_url': 'http://t.cn/AXOaa3q8',
+                  'url_title': 'ColorOS陈希的微博视频',
+                  'h5_target_url':
+                      'https://video.weibo.com/show?fid=1034:5344173386039366',
+                  'video_url': 'https://f.video.weibocdn.com/video.mp4?sig=1',
+                },
+              ],
+            );
+
+            final combinedText = spans.map((span) => span.toPlainText()).join();
+            expect(combinedText, contains('ColorOS陈希的微博视频'));
+            expect(combinedText, isNot(contains('网页链接')));
+            return Text.rich(TextSpan(children: spans));
+          },
+        ),
+      ),
+    );
+  });
+
+  testWidgets('WeiboTextParser keeps video targets from long-text anchors',
+      (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            final spans = WeiboTextParser.parse(
+              rawText:
+                  '''正文 <a href="https://video.weibo.com/show?fid=1034:video-1"><span class="surl-text">ColorOS陈希的微博视频</span></a>''',
+              context: context,
+              urlStruct: [
+                {
+                  'short_url': 'http://t.cn/A6video',
+                  'url_title': 'ColorOS陈希的微博视频',
+                  'h5_target_url':
+                      'https://video.weibo.com/show?fid=1034:video-1',
+                  'video_url': 'https://f.video.weibocdn.com/video.mp4?sig=1',
+                },
+              ],
+            );
+
+            final combinedText = spans.map((span) => span.toPlainText()).join();
+            expect(combinedText, contains('ColorOS陈希的微博视频'));
+            expect(combinedText, isNot(contains('网页链接')));
             return Text.rich(TextSpan(children: spans));
           },
         ),

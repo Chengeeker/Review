@@ -1,5 +1,19 @@
 import 'weibo_engagement_models.dart';
 
+int _intFromValue(Object? value) {
+  if (value is num) return value.toInt();
+  final text = value?.toString().trim().replaceAll(',', '') ?? '';
+  if (text.isEmpty) return 0;
+  final direct = int.tryParse(text);
+  if (direct != null) return direct;
+
+  final wanMatch = RegExp(r'^([0-9]+(?:\.[0-9]+)?)万$').firstMatch(text);
+  if (wanMatch != null) {
+    return ((double.tryParse(wanMatch.group(1)!) ?? 0) * 10000).round();
+  }
+  return 0;
+}
+
 int? _visibilityCodeFromValue(Object? value) {
   if (value is num) return value.toInt();
   final text = value?.toString().trim() ?? '';
@@ -90,6 +104,154 @@ String? _normalizeMediaUrl(Object? value) {
     return null;
   }
   return normalized;
+}
+
+Map<String, dynamic>? _asDynamicMap(Object? value) {
+  if (value is Map) return Map<String, dynamic>.from(value);
+  return null;
+}
+
+String? _firstNonEmptyValue(Iterable<Object?> values) {
+  for (final value in values) {
+    final text = value?.toString().trim() ?? '';
+    if (text.isNotEmpty && text != 'null') return text;
+  }
+  return null;
+}
+
+String? _normalizedMediaValue(Object? value) {
+  final normalized = _normalizeMediaUrl(value);
+  return normalized == null || normalized.isEmpty ? null : normalized;
+}
+
+/// Normalizes both the legacy `url_struct` shape and the newer official
+/// `url_objects` shape into the fields consumed by the rich-text renderer.
+/// The latter also carries signed CDN URLs for some video cards, which are
+/// more reliable than resolving their H5 shell a second time.
+List<Map<String, dynamic>> _parseUrlStructs(Map<String, dynamic> json) {
+  final result = <Map<String, dynamic>>[];
+  final indexByShortUrl = <String, int>{};
+
+  void addEntry(Map<String, dynamic> entry) {
+    final shortUrl = _firstNonEmptyValue([
+      entry['short_url'],
+      entry['url_ori'],
+    ]);
+    if (shortUrl == null) {
+      result.add(entry);
+      return;
+    }
+
+    final existingIndex = indexByShortUrl[shortUrl];
+    if (existingIndex == null) {
+      indexByShortUrl[shortUrl] = result.length;
+      result.add(entry);
+      return;
+    }
+
+    final existing = result[existingIndex];
+    for (final item in entry.entries) {
+      final oldValue = existing[item.key];
+      final oldText = oldValue?.toString().trim() ?? '';
+      final newText = item.value?.toString().trim() ?? '';
+      if (oldText.isEmpty || oldText == 'null') {
+        if (newText.isNotEmpty && newText != 'null') {
+          existing[item.key] = item.value;
+        }
+      }
+    }
+  }
+
+  final legacy = json['url_struct'];
+  if (legacy is List) {
+    for (final raw in legacy) {
+      final entry = _asDynamicMap(raw);
+      if (entry != null) addEntry(entry);
+    }
+  }
+
+  final objects = json['url_objects'];
+  if (objects is! List) return result;
+
+  for (final raw in objects) {
+    final source = _asDynamicMap(raw);
+    if (source == null) continue;
+
+    final info = _asDynamicMap(source['info']);
+    final object = _asDynamicMap(source['object']);
+    final media = _asDynamicMap(object?['object']);
+    final mediaUrls = _asDynamicMap(media?['urls']);
+    final stream = _asDynamicMap(media?['stream']);
+
+    final shortUrl = _firstNonEmptyValue([
+      source['url_ori'],
+      info?['url_short'],
+    ]);
+    final targetUrl = _firstNonEmptyValue([
+      object?['target_url'],
+      media?['target_url'],
+      media?['url'],
+      info?['url_long'],
+    ]);
+    final objectId = _firstNonEmptyValue([
+      source['object_id'],
+      source['returned_object_id'],
+      object?['object_id'],
+      media?['object_id'],
+    ]);
+
+    final qualityUrls = <String, String>{};
+    void addQuality(String label, Object? value) {
+      final url = _normalizedMediaValue(value);
+      if (url != null && !qualityUrls.containsValue(url)) {
+        qualityUrls[label] = url;
+      }
+    }
+
+    if (mediaUrls != null) {
+      for (final item in mediaUrls.entries) {
+        addQuality(item.key, item.value);
+      }
+    }
+    addQuality('高清', stream?['hd_url']);
+    addQuality('默认画质', stream?['url']);
+    addQuality('原画', media?['original_url']);
+
+    final coverUrl = _firstNonEmptyValue([
+      _asDynamicMap(media?['screenshots'])?['1'],
+      _asDynamicMap(media?['image'])?['url'],
+      media?['cover_image'],
+    ]);
+    final title = _firstNonEmptyValue([
+      info?['title'],
+      media?['display_name'],
+      media?['title'],
+      object?['display_name'],
+    ]);
+    final duration = _firstNonEmptyValue([
+      media?['duration'],
+      media?['duration_time'],
+    ]);
+
+    final normalized = <String, dynamic>{
+      if (shortUrl != null) 'short_url': shortUrl,
+      if (targetUrl != null) ...{
+        'ori_url': targetUrl,
+        'long_url': targetUrl,
+        'h5_target_url': targetUrl,
+      },
+      if (title != null) 'url_title': title,
+      if (objectId != null) 'object_id': objectId,
+      if (info?['type'] != null) 'url_type': info?['type'],
+      if (qualityUrls.isNotEmpty) 'video_quality_urls': qualityUrls,
+      if (qualityUrls.isNotEmpty) 'video_url': qualityUrls.values.first,
+      if (coverUrl != null) 'video_cover_url': coverUrl,
+      if (duration != null) 'video_duration': duration,
+    };
+    if (normalized.isNotEmpty) addEntry(normalized);
+  }
+
+  return result;
 }
 
 String? _liveIdFromString(String value) {
@@ -368,13 +530,15 @@ class WeiboUserModel {
       description: json['description']?.toString() ??
           json['verified_reason']?.toString() ??
           '',
-      followersCount: json['followers_count'] is int
-          ? json['followers_count'] as int
-          : (json['followers_count_str'] != null ? 0 : 0),
-      friendsCount:
-          json['friends_count'] is int ? json['friends_count'] as int : 0,
-      statusesCount:
-          json['statuses_count'] is int ? json['statuses_count'] as int : 0,
+      followersCount: _intFromValue(
+        json['followers_count'] ?? json['followers_count_str'],
+      ),
+      friendsCount: _intFromValue(
+        json['friends_count'] ?? json['friends_count_str'],
+      ),
+      statusesCount: _intFromValue(
+        json['statuses_count'] ?? json['statuses_count_str'],
+      ),
       following: json['following'] == true,
       followMe: json['follow_me'] == true,
       gender: json['gender']?.toString() ?? 'm',
@@ -439,6 +603,7 @@ class WeiboStatusModel {
   /// different from a Live Photo URL and is resolved through Weibo's live
   /// room endpoint before playback.
   final String? liveId;
+
   /// Official live-room status: 0 not started, 1 live, 3 replay, 5 ended.
   final int? liveStatus;
   final String? chaohuaTitle;
@@ -495,7 +660,10 @@ class WeiboStatusModel {
   bool get isLiveNow => isLiveBroadcast && liveStatus == 1;
   bool get isLiveNotStarted => isLiveBroadcast && liveStatus == 0;
   bool get isLiveEnded =>
-      isLiveBroadcast && liveStatus != null && liveStatus != 0 && liveStatus != 1;
+      isLiveBroadcast &&
+      liveStatus != null &&
+      liveStatus != 0 &&
+      liveStatus != 1;
   bool get hasVideo => hasPlayableVideoStream || isLiveBroadcast;
   String get effectiveText =>
       (fullTextRaw != null && fullTextRaw!.isNotEmpty) ? fullTextRaw! : textRaw;
@@ -787,11 +955,7 @@ class WeiboStatusModel {
     String? videoTitle;
     final Map<String, String> videoQualityMap = {};
 
-    final rawUrlStructList = json['url_struct'] as List? ?? [];
-    final typedUrlStruct = rawUrlStructList
-        .whereType<Map>()
-        .map((m) => Map<String, dynamic>.from(m))
-        .toList();
+    final typedUrlStruct = _parseUrlStructs(json);
     final liveId = _extractLiveId({
       'live_id': json['live_id'],
       'liveId': json['liveId'],
@@ -1010,6 +1174,37 @@ class WeiboStatusModel {
       videoCover = vMap['cover_url']?.toString() ??
           vMap['cover']?.toString() ??
           vMap['poster']?.toString();
+    }
+
+    // Some current mobile status responses expose a video only through
+    // `url_objects`: there is no page_info or pic_infos entry at all. The
+    // mapped object still contains the official signed CDN URL and cover, so
+    // use it as a fallback without promoting a retweeted video's attachment
+    // onto the wrapper status.
+    if (retweeted == null) {
+      for (final urlEntry in typedUrlStruct) {
+        final directUrl = _normalizeMediaUrl(urlEntry['video_url']);
+        if (directUrl == null) continue;
+
+        videoStream ??= directUrl;
+        videoQualityMap['默认画质'] ??= directUrl;
+        videoCover ??= _normalizeMediaUrl(urlEntry['video_cover_url']);
+        videoTitle ??= urlEntry['url_title']?.toString();
+        final rawQualityUrls = urlEntry['video_quality_urls'];
+        if (rawQualityUrls is Map) {
+          for (final item in rawQualityUrls.entries) {
+            final qualityUrl = _normalizeMediaUrl(item.value);
+            if (qualityUrl != null) {
+              videoQualityMap[item.key.toString()] ??= qualityUrl;
+            }
+          }
+        }
+        final rawDuration = urlEntry['video_duration'];
+        if (videoDuration == null && rawDuration != null) {
+          videoDuration = rawDuration.toString();
+        }
+        break;
+      }
     }
 
     final isLongText = json['isLongText'] == true ||

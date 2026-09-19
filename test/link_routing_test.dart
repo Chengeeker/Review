@@ -84,6 +84,58 @@ void main() {
           isTrue);
     });
 
+    test('Recognizes standalone Weibo video component URLs', () {
+      const objectId = '1034:4998303113478152';
+      expect(
+        LinkRoutingService.videoObjectIdFromUrl(
+          'https://h5.video.weibo.com/show/$objectId',
+        ),
+        objectId,
+      );
+      expect(
+        LinkRoutingService.videoObjectIdFromUrl(
+          'https://video.weibo.com/show?fid=$objectId',
+        ),
+        objectId,
+      );
+      expect(
+        LinkRoutingService.videoObjectIdFromUrl(
+          'https://weibo.com/tv/show/$objectId',
+        ),
+        objectId,
+      );
+      expect(
+        LinkRoutingService.videoObjectIdFromUrl(
+          'https://m.weibo.cn/s/video/show?object_id=$objectId',
+        ),
+        objectId,
+      );
+      expect(
+        LinkRoutingService.videoObjectIdFromUrl(
+          'https://video.weibo.com/show?oid=$objectId',
+        ),
+        objectId,
+      );
+      expect(
+        LinkRoutingService.canHandleNatively(
+          'https://h5.video.weibo.com/show/$objectId',
+        ),
+        isTrue,
+      );
+      expect(
+        LinkRoutingService.isDirectVideoMediaUrl(
+          'http://f.video.weibocdn.com/video.mp4?sig=1',
+        ),
+        isTrue,
+      );
+      expect(
+        LinkRoutingService.canHandleNatively(
+          'https://f.video.weibocdn.com/video.mp4?sig=1',
+        ),
+        isTrue,
+      );
+    });
+
     test('Treats general websites and shortlinks as non-native web links', () {
       expect(LinkRoutingService.canHandleNatively('https://t.cn/A6xyz123'),
           isFalse);
@@ -125,6 +177,24 @@ void main() {
       expect(document.blocks[1].value, 'https://wx1.sinaimg.cn/wap720/pic.jpg');
       expect(document.blocks[1].type, WeiboArticleBlockType.image);
       expect(document.blocks[2].type, WeiboArticleBlockType.heading);
+    });
+
+    test('Preserves article links for native routing', () {
+      final document = WeiboArticleParser.parse('''
+        <html><body>
+          <div node-type="contentBody">
+            <p>文章末尾：<a href="https://h5.video.weibo.com/show/1034:12345">ColorOS陈希的微博视频</a></p>
+          </div>
+        </body></html>
+      ''');
+
+      expect(document.blocks, hasLength(1));
+      expect(document.blocks.single.inlines, hasLength(2));
+      expect(document.blocks.single.inlines.last.text, 'ColorOS陈希的微博视频');
+      expect(
+        document.blocks.single.inlines.last.url,
+        'https://h5.video.weibo.com/show/1034:12345',
+      );
     });
   });
 

@@ -20,6 +20,7 @@ import '../../feed/data/feed_repository.dart';
 import '../../feed/data/models/weibo_status_model.dart';
 import '../../feed/presentation/widgets/tweet_card.dart';
 import '../../feed/presentation/widgets/weibo_video_player_page.dart';
+import '../../drawer_features/presentation/my_follows_page.dart';
 import 'user_timeline_search_page.dart';
 
 /// Comprehensive User Profile Page with Follow State, Dynamic Tabs (微博/相册/视频), Album Photo Wall, Video Waterfall Cards & Pinned Posts
@@ -1032,6 +1033,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       ),
       body: EasyRefresh(
         onRefresh: () async {
+          HapticFeedbackUtil.light();
           if (_user.id.isEmpty) {
             await _fetchUserProfileAndTimeline();
           } else {
@@ -1169,10 +1171,25 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                       const SizedBox(height: 14),
                       Row(
                         children: [
-                          _buildStatItem('关注', _user.friendsCount, colorScheme),
+                          _buildStatItem(
+                            '关注',
+                            _user.friendsCount,
+                            colorScheme,
+                            onTap: () => _openRelations(
+                              index: 0,
+                              expectedCount: _user.friendsCount,
+                            ),
+                          ),
                           const SizedBox(width: 24),
                           _buildStatItem(
-                              '粉丝', _user.followersCount, colorScheme),
+                            '粉丝',
+                            _user.followersCount,
+                            colorScheme,
+                            onTap: () => _openRelations(
+                              index: 1,
+                              expectedCount: _user.followersCount,
+                            ),
+                          ),
                           const SizedBox(width: 24),
                           _buildStatItem(
                               '微博',
@@ -1703,10 +1720,32 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     );
   }
 
-  Widget _buildStatItem(String label, int count, ColorScheme colorScheme) {
+  void _openRelations({required int index, required int expectedCount}) {
+    final uid = _user.id.trim();
+    if (uid.isEmpty) return;
+    HapticFeedbackUtil.light();
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (ctx) => MyFollowsPage(
+          ownerUid: uid,
+          ownerName: _user.screenName,
+          initialIndex: index,
+          followingCount: _user.friendsCount,
+          followersCount: _user.followersCount,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatItem(
+    String label,
+    int count,
+    ColorScheme colorScheme, {
+    VoidCallback? onTap,
+  }) {
     final countStr =
         count > 10000 ? '${(count / 10000).toStringAsFixed(1)}万' : '$count';
-    return Row(
+    final content = Row(
       children: [
         Text(countStr,
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
@@ -1715,6 +1754,20 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             style:
                 TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 12)),
       ],
+    );
+    if (onTap == null) return content;
+
+    return Semantics(
+      button: true,
+      label: '$label列表',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: content,
+        ),
+      ),
     );
   }
 }

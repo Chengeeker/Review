@@ -1,7 +1,7 @@
 name: review
 description: "A modern, lightweight Weibo third-party client built with Flutter and Material You (MD3)."
 publish_to: 'none'
-version: 2.6.1+49
+version: 2.7.5+63
 
 environment:
   sdk: ^3.5.0

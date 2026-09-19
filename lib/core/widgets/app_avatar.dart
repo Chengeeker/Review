@@ -1,6 +1,7 @@
 import 'package:extended_image/extended_image.dart';
 import 'package:flutter/material.dart';
 import '../constants/api_constants.dart';
+import '../utils/haptic_feedback_util.dart';
 
 /// Material You Avatar Widget with Graceful Error Fallback and Verified Badges
 class AppAvatar extends StatelessWidget {
@@ -26,7 +27,8 @@ class AppAvatar extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    final hasValidUrl = url != null && url!.isNotEmpty && url!.startsWith('http');
+    final hasValidUrl =
+        url != null && url!.isNotEmpty && url!.startsWith('http');
 
     Widget avatarImage;
     if (hasValidUrl) {
@@ -82,10 +84,29 @@ class AppAvatar extends StatelessWidget {
     );
 
     if (onTap != null) {
-      return InkWell(
-        onTap: onTap,
-        customBorder: const CircleBorder(),
-        child: content,
+      final label = name.trim().isEmpty ? '头像' : '$name的头像';
+      return Semantics(
+        button: true,
+        label: label,
+        child: Tooltip(
+          message: label,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            child: Center(
+              child: InkWell(
+                onTap: () {
+                  // InkWell's global splash already records the pointer-down
+                  // feedback; the utility consumes that event so this remains
+                  // a single vibration instead of a second business callback.
+                  HapticFeedbackUtil.light();
+                  onTap!();
+                },
+                customBorder: const CircleBorder(),
+                child: content,
+              ),
+            ),
+          ),
+        ),
       );
     }
 
@@ -101,9 +122,9 @@ class AppAvatar extends StatelessWidget {
         shape: BoxShape.circle,
       ),
       child: Center(
-        child: name.isNotEmpty
+        child: name.trim().isNotEmpty
             ? Text(
-                name.substring(0, 1).toUpperCase(),
+                String.fromCharCodes(name.trim().runes.take(1)).toUpperCase(),
                 style: TextStyle(
                   color: colorScheme.onPrimaryContainer,
                   fontWeight: FontWeight.bold,

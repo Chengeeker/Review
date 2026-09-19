@@ -9,6 +9,7 @@ import 'package:review/features/detail/data/detail_repository.dart';
 import 'package:review/features/detail/data/models/weibo_attitude_model.dart';
 import 'package:review/features/detail/data/models/weibo_comment_model.dart';
 import 'package:review/features/detail/presentation/status_detail_page.dart';
+import 'package:review/features/detail/presentation/widgets/nested_comments_sheet.dart';
 import 'package:review/features/drawer_features/presentation/likes_comments_page.dart';
 import 'package:review/features/drawer_features/presentation/likes_favorites_page.dart';
 import 'package:review/features/drawer_features/presentation/my_messages_page.dart';
@@ -52,8 +53,10 @@ class _RecordingDetailRepository extends Fake implements DetailRepository {
   @override
   Future<CommentResult> getSecondComments({
     required String commentId,
+    String uid = '',
     String maxId = '0',
     int count = 20,
+    int flow = 0,
   }) async {
     final requestKey = '$commentId|$maxId';
     secondCommentRequests.add(requestKey);
@@ -84,6 +87,60 @@ class _RecordingDetailRepository extends Fake implements DetailRepository {
 }
 
 void main() {
+  testWidgets('NestedCommentsSheet opens reply options when text is tapped',
+      (tester) async {
+    final reply = WeiboCommentModel.fromJson({
+      'id': 'nested-reply-1',
+      'text_raw': '可以点击这段文字回复',
+      'created_at': '刚刚',
+      'user': {'id': 'reply-user', 'screen_name': '回复用户'},
+    });
+    final parent = WeiboCommentModel.fromJson({
+      'id': 'nested-root-1',
+      'text_raw': '主评论',
+      'total_number': 11,
+      'user': {'id': 'root-user', 'screen_name': '主评论用户'},
+      'comments': [
+        {
+          'id': reply.id,
+          'text_raw': reply.textRaw,
+          'created_at': reply.createdAt,
+          'user': {'id': reply.user.id, 'screen_name': reply.user.screenName},
+        },
+      ],
+    });
+    WeiboCommentModel? tappedReply;
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final storage = StorageService(prefs);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          storageServiceProvider.overrideWithValue(storage),
+          detailRepositoryProvider
+              .overrideWithValue(_RecordingDetailRepository()),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: NestedCommentsSheet(
+              parentComment: parent,
+              totalCount: parent.subCommentsCount,
+              statusAuthorId: 'root-user',
+              onCommentTap: (comment) => tappedReply = comment,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('共11条回复'), findsOneWidget);
+    await tester.tap(find.text('可以点击这段文字回复'));
+    expect(tappedReply?.id, equals('nested-reply-1'));
+  });
+
   test('destroyComment uses the official delete endpoint and comment id',
       () async {
     SharedPreferences.setMockInitialValues({});
@@ -127,9 +184,11 @@ void main() {
     await storage.setFullCookie('SUB=test; XSRF-TOKEN=test');
 
     final client = WeiboDioClient(storage);
+    final requests = <Map<String, dynamic>>[];
     client.dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
+          requests.add(Map<String, dynamic>.from(options.queryParameters));
           final isNextPage = options.queryParameters['max_id'] == 'next';
           handler.resolve(
             Response(
@@ -167,9 +226,13 @@ void main() {
     );
 
     final repository = DetailRepository(client);
-    final firstPage = await repository.getSecondComments(commentId: 'root-1');
+    final firstPage = await repository.getSecondComments(
+      commentId: 'root-1',
+      uid: 'status-author-1',
+    );
     final secondPage = await repository.getSecondComments(
       commentId: 'root-1',
+      uid: 'status-author-1',
       maxId: firstPage.maxId,
     );
 
@@ -178,6 +241,62 @@ void main() {
     expect(firstPage.hasMore, isTrue);
     expect(secondPage.comments.single.id, 'reply-2');
     expect(secondPage.hasMore, isFalse);
+    expect(requests[0]['id'], 'root-1');
+    expect(requests[0]['uid'], 'status-author-1');
+    expect(requests[0]['fetch_level'], 1);
+    expect(requests[0]['is_mix'], 0);
+    expect(requests[0]['max_id'], '0');
+    expect(requests[1]['fetch_level'], 1);
+    expect(requests[1]['is_mix'], 1);
+    expect(requests[1]['max_id'], 'next');
+  });
+
+  test('resolveVideoComponent extracts native playback URLs from H5 response',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final storage = StorageService(prefs);
+    await storage.setFullCookie('SUB=test; XSRF-TOKEN=test');
+
+    final client = WeiboDioClient(storage);
+    client.dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          expect(options.uri.toString(), contains('h5.video.weibo.com'));
+          expect(options.queryParameters['page'], '/show/1034:video-1');
+          expect(options.data.toString(), startsWith('data='));
+          expect(options.data.toString(), contains('Component_Play_Playinfo'));
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'code': '100000',
+                'data': {
+                  'Component_Play_Playinfo': {
+                    'title': '测试视频',
+                    'author': '测试作者',
+                    'cover_image': '//wx1.sinaimg.cn/cover.jpg',
+                    'urls': {
+                      '高清': '//f.video.weibocdn.com/video.mp4',
+                    },
+                  },
+                },
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    final result =
+        await DetailRepository(client).resolveVideoComponent('1034:video-1');
+
+    expect(result, isNotNull);
+    expect(result!.primaryUrl, 'https://f.video.weibocdn.com/video.mp4');
+    expect(result.coverUrl, 'https://wx1.sinaimg.cn/cover.jpg');
+    expect(result.title, '测试视频');
+    expect(result.authorName, '测试作者');
   });
 
   test('getComments uses web continuation parameters and nested pagination',

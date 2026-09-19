@@ -2,8 +2,8 @@
 class ApiConstants {
   ApiConstants._();
 
-  static const String appVersion = '2.6.1';
-  static const int appVersionCode = 49;
+  static const String appVersion = '2.7.5';
+  static const int appVersionCode = 63;
 
   static const String baseUrl = 'https://weibo.com';
   static const String passportUrl = 'https://passport.weibo.com';
@@ -29,6 +29,12 @@ class ApiConstants {
   static const String modifyStatus = '/ajax/statuses/modify';
   static const String destroyStatus = '/ajax/statuses/destroy';
   static const String buildComments = '/ajax/statuses/buildComments';
+
+  /// Official H5 video component endpoint. It returns signed playback URLs
+  /// for `h5.video.weibo.com/show/{fid}` without opening the H5 page itself.
+  static const String videoComponent =
+      'https://h5.video.weibo.com/api/component';
+  @Deprecated('Nested replies use buildComments with fetch_level=1')
   static const String secondComment = '/ajax/statuses/getSecondComment';
   static const String createComment = '/ajax/comments/create';
   static const String replyComment = '/ajax/comments/reply';
@@ -86,6 +92,14 @@ class ApiConstants {
 
   static const Map<String, String> imageHeaders = {
     'Referer': 'https://weibo.com/',
+    'User-Agent': defaultUserAgent,
+  };
+
+  /// The H5 component signs media for this origin. Keep this separate from
+  /// ordinary Weibo media headers so existing timeline playback is unchanged.
+  static const Map<String, String> h5VideoHeaders = {
+    'Referer': 'https://h5.video.weibo.com/',
+    'Origin': 'https://h5.video.weibo.com',
     'User-Agent': defaultUserAgent,
   };
 }

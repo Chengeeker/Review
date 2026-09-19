@@ -292,6 +292,26 @@ class WeiboCommentModel {
       }
     }
 
+    int parseCount(Object? value) {
+      if (value is int) return value;
+      return int.tryParse(value?.toString().trim() ?? '') ?? 0;
+    }
+
+    // The desktop comments endpoint normally puts the total number of
+    // nested replies in `total_number`, while a few response variants use a
+    // reply-specific count field.  The inline `comments` array is only a
+    // preview (often three items), so never use its length as the only source
+    // of the total.
+    final declaredSubCommentsCount = [
+      json['total_number'],
+      json['sub_comments_count'],
+      json['comments_count'],
+      json['reply_count'],
+      json['reply_num'],
+    ].map(parseCount).fold<int>(0, (current, value) {
+      return value > current ? value : current;
+    });
+
     return WeiboCommentModel(
       id: commentId,
       mid: commentMid,
@@ -306,9 +326,9 @@ class WeiboCommentModel {
       pics: picsList,
       urlStruct: rawUrlStruct,
       subComments: subList,
-      subCommentsCount: json['total_number'] is int
-          ? json['total_number'] as int
-          : (json['comments_count'] is int ? json['comments_count'] as int : subList.length),
+      subCommentsCount: declaredSubCommentsCount > subList.length
+          ? declaredSubCommentsCount
+          : subList.length,
     );
   }
 }

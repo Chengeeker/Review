@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/storage/storage_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
+import '../../../core/utils/app_dialog.dart';
 import '../../../core/widgets/app_avatar.dart';
+import '../../../core/widgets/hot_search_badge.dart';
 import '../../feed/data/models/weibo_status_model.dart';
 import '../../profile/presentation/user_profile_page.dart';
 import '../data/search_repository.dart';
@@ -165,7 +167,7 @@ class _SearchViewState extends ConsumerState<SearchView> {
 
   Future<void> _confirmClearHistory() async {
     HapticFeedbackUtil.light();
-    final confirmed = await showDialog<bool>(
+    final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('清空搜索历史'),
@@ -815,7 +817,7 @@ class _SearchViewState extends ConsumerState<SearchView> {
             // 标签 (爆/热/新/沸)
             if (item.labelName != null && item.labelName!.isNotEmpty) ...[
               const SizedBox(width: 4),
-              _buildTagBadge(item.labelName!, colorScheme),
+              HotSearchBadge(label: item.labelName!, compact: true),
             ],
           ],
         ),
@@ -859,38 +861,6 @@ class _SearchViewState extends ConsumerState<SearchView> {
             Icon(Icons.arrow_forward_ios_rounded,
                 size: 11, color: colorScheme.primary),
           ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTagBadge(String label, ColorScheme colorScheme) {
-    Color bg = colorScheme.primaryContainer;
-    Color fg = colorScheme.onPrimaryContainer;
-
-    if (label == '热' || label == '爆') {
-      bg = const Color(0xFFFF2442);
-      fg = Colors.white;
-    } else if (label == '新') {
-      bg = const Color(0xFF00B0FF);
-      fg = Colors.white;
-    } else if (label == '沸') {
-      bg = const Color(0xFFFF6D00);
-      fg = Colors.white;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(3),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: fg,
-          fontSize: 9,
-          fontWeight: context.adjustWeight(FontWeight.bold),
         ),
       ),
     );

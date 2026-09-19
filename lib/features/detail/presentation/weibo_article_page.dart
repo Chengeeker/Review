@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:extended_image/extended_image.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:html/dom.dart' as dom;
@@ -11,12 +12,20 @@ import '../../../core/constants/api_constants.dart';
 import '../../../core/network/weibo_dio_client.dart';
 import '../../../core/utils/app_toast.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
+import '../../../core/services/link_routing_service.dart';
 import '../../../core/utils/spring_page_route.dart';
 import '../../../core/widgets/app_avatar.dart';
 import '../../feed/data/models/weibo_status_model.dart';
 import 'widgets/image_gallery_page.dart';
 
 enum WeiboArticleBlockType { text, heading, image }
+
+class WeiboArticleInline {
+  final String text;
+  final String? url;
+
+  const WeiboArticleInline(this.text, {this.url});
+}
 
 /// A small, source-faithful representation of the official article HTML.
 ///
@@ -28,22 +37,33 @@ class WeiboArticleBlock {
   final String value;
   final String? caption;
   final double aspectRatio;
+  final List<WeiboArticleInline> inlines;
 
   const WeiboArticleBlock.text(this.value,
       {this.type = WeiboArticleBlockType.text})
       : caption = null,
+        aspectRatio = 1.5,
+        inlines = const [];
+
+  const WeiboArticleBlock.richText(
+    this.value,
+    this.inlines, {
+    this.type = WeiboArticleBlockType.text,
+  })  : caption = null,
         aspectRatio = 1.5;
 
   const WeiboArticleBlock.heading(this.value)
       : type = WeiboArticleBlockType.heading,
         caption = null,
-        aspectRatio = 1.5;
+        aspectRatio = 1.5,
+        inlines = const [];
 
   const WeiboArticleBlock.image(
     this.value, {
     this.caption,
     this.aspectRatio = 1.5,
-  }) : type = WeiboArticleBlockType.image;
+  })  : type = WeiboArticleBlockType.image,
+        inlines = const [];
 }
 
 class WeiboArticleDocument {
@@ -146,6 +166,26 @@ class WeiboArticleParser {
       return;
     }
 
+    if (tag == 'a') {
+      final text = _cleanText(element.text);
+      final url = _resolveUrl(
+        element.attributes['href'] ??
+            element.attributes['data-href'] ??
+            element.attributes['data-url'],
+      );
+      if (text.isNotEmpty) {
+        blocks.add(
+          url == null
+              ? WeiboArticleBlock.text(text)
+              : WeiboArticleBlock.richText(
+                  text,
+                  [WeiboArticleInline(text, url: url)],
+                ),
+        );
+      }
+      return;
+    }
+
     final isTextBlock = const {
       'p',
       'h1',
@@ -163,11 +203,13 @@ class WeiboArticleParser {
       if (text.isNotEmpty) {
         final isHeading = tag.startsWith('h') ||
             (element.querySelector('strong') != null && text.length <= 80);
-        blocks.add(
-          isHeading
-              ? WeiboArticleBlock.heading(text)
-              : WeiboArticleBlock.text(text),
-        );
+        final inlines = _extractInlines(element);
+        final hasLink = inlines.any((inline) => inline.url != null);
+        blocks.add(isHeading
+            ? WeiboArticleBlock.heading(text)
+            : hasLink
+                ? WeiboArticleBlock.richText(text, inlines)
+                : WeiboArticleBlock.text(text));
       }
       for (final image in images) {
         _appendImage(image, blocks);
@@ -230,6 +272,51 @@ class WeiboArticleParser {
     );
   }
 
+  static List<WeiboArticleInline> _extractInlines(dom.Element element) {
+    final inlines = <WeiboArticleInline>[];
+
+    void appendText(String raw, String? url) {
+      final text = raw.replaceAll(RegExp(r'\s+'), ' ');
+      if (text.isEmpty) return;
+      if (inlines.isNotEmpty && inlines.last.url == url) {
+        final previous = inlines.removeLast();
+        inlines.add(WeiboArticleInline('${previous.text}$text', url: url));
+      } else {
+        inlines.add(WeiboArticleInline(text, url: url));
+      }
+    }
+
+    void walk(dom.Node node, String? activeUrl) {
+      if (node is dom.Text) {
+        appendText(node.data, activeUrl);
+        return;
+      }
+      if (node is! dom.Element) return;
+
+      final tag = (node.localName ?? '').toLowerCase();
+      final nextUrl = tag == 'a'
+          ? _resolveUrl(
+                node.attributes['href'] ??
+                    node.attributes['data-href'] ??
+                    node.attributes['data-url'],
+              ) ??
+              activeUrl
+          : activeUrl;
+      if (tag == 'br') {
+        appendText('\n', activeUrl);
+        return;
+      }
+      for (final child in node.nodes) {
+        walk(child, nextUrl);
+      }
+    }
+
+    for (final child in element.nodes) {
+      walk(child, null);
+    }
+    return List.unmodifiable(inlines);
+  }
+
   static String? _imageUrl(dom.Element? image) {
     if (image == null) return null;
     final srcSet = image.attributes['srcset'];
@@ -274,7 +361,11 @@ class WeiboArticleParser {
   static String? _resolveUrl(String? raw) {
     final value = raw?.trim() ?? '';
     if (value.isEmpty || value.startsWith('data:')) return null;
-    final normalized = value.startsWith('//') ? 'https:$value' : value;
+    final normalized = value.startsWith('//')
+        ? 'https:$value'
+        : value.startsWith('/')
+            ? 'https://weibo.com$value'
+            : value;
     final uri = Uri.tryParse(normalized);
     if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
       return null;
@@ -427,7 +518,7 @@ class _WeiboArticlePageState extends ConsumerState<WeiboArticlePage> {
           : document == null
               ? _buildErrorState(colorScheme)
               : RefreshIndicator(
-                  onRefresh: _loadArticle,
+                  onRefresh: () => HapticFeedbackUtil.refresh(_loadArticle),
                   child: SelectionArea(
                     child: CustomScrollView(
                       physics: const AlwaysScrollableScrollPhysics(),
@@ -449,7 +540,7 @@ class _WeiboArticlePageState extends ConsumerState<WeiboArticlePage> {
 
   Widget _buildErrorState(ColorScheme colorScheme) {
     return RefreshIndicator(
-      onRefresh: _loadArticle,
+      onRefresh: () => HapticFeedbackUtil.refresh(_loadArticle),
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 120),
@@ -546,13 +637,7 @@ class _WeiboArticlePageState extends ConsumerState<WeiboArticlePage> {
           widgets.add(
             Padding(
               padding: const EdgeInsets.only(bottom: 14),
-              child: Text(
-                block.value,
-                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                      fontSize: 17,
-                      height: 1.75,
-                    ),
-              ),
+              child: _buildArticleText(block, colorScheme),
             ),
           );
         case WeiboArticleBlockType.image:
@@ -576,6 +661,41 @@ class _WeiboArticlePageState extends ConsumerState<WeiboArticlePage> {
       }
     }
     return widgets;
+  }
+
+  Widget _buildArticleText(
+    WeiboArticleBlock block,
+    ColorScheme colorScheme,
+  ) {
+    final style = Theme.of(context).textTheme.bodyLarge?.copyWith(
+          fontSize: 17,
+          height: 1.75,
+        );
+    if (block.inlines.isEmpty) {
+      return Text(block.value, style: style);
+    }
+
+    return Text.rich(
+      TextSpan(
+        children: block.inlines.map((inline) {
+          final url = inline.url;
+          return TextSpan(
+            text: inline.text,
+            style: url == null
+                ? style
+                : style?.copyWith(color: colorScheme.primary),
+            recognizer: url == null
+                ? null
+                : (TapGestureRecognizer()
+                  ..onTap = () => LinkRoutingService.openUrl(
+                        context,
+                        url,
+                        title: inline.text.trim(),
+                      )),
+          );
+        }).toList(),
+      ),
+    );
   }
 
   Widget _buildArticleImage(String url, int index, double aspectRatio) {

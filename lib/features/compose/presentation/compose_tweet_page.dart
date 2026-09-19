@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../core/network/weibo_dio_client.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/utils/app_toast.dart';
+import '../../../core/utils/app_dialog.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
 import '../../feed/presentation/feed_controller.dart';
 import '../../search/data/search_repository.dart';
@@ -746,7 +746,7 @@ class _ComposeTweetPageState extends ConsumerState<ComposeTweetPage> {
   }
 
   Future<void> _showScheduleInfo() async {
-    await showDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('定时微博'),
@@ -917,8 +917,10 @@ class _ComposeTweetPageState extends ConsumerState<ComposeTweetPage> {
         label: Text(label),
         tooltip: tooltip,
         onPressed: onPressed,
-        visualDensity: VisualDensity.compact,
-        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        // 保留工具栏的紧凑视觉，但使用 Material 标准触控高度，
+        // 避免发布设置胶囊难以点按或被读屏器漏掉。
+        visualDensity: VisualDensity.standard,
+        materialTapTargetSize: MaterialTapTargetSize.padded,
         padding: const EdgeInsets.symmetric(horizontal: 7),
         labelStyle: TextStyle(
           fontSize: 11,

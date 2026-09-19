@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/network/weibo_dio_client.dart';
+import '../../../core/utils/haptic_feedback_util.dart';
 import '../../auth/presentation/login_page.dart';
 import '../../feed/data/models/weibo_status_model.dart';
 import '../../feed/presentation/widgets/tweet_card.dart';
@@ -49,11 +50,13 @@ class _LikesFavoritesPageState extends ConsumerState<LikesFavoritesPage>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('赞和收藏', style: TextStyle(fontWeight: FontWeight.bold)),
+        title:
+            const Text('赞和收藏', style: TextStyle(fontWeight: FontWeight.bold)),
         bottom: TabBar(
           controller: _tabController,
           indicatorSize: TabBarIndicatorSize.label,
-          labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+          labelStyle:
+              const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
           tabs: const [
             Tab(text: '我的赞'),
             Tab(text: '我的收藏'),
@@ -66,10 +69,12 @@ class _LikesFavoritesPageState extends ConsumerState<LikesFavoritesPage>
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(Icons.favorite_rounded,
-                      size: 60, color: colorScheme.primary.withValues(alpha: 0.6)),
+                      size: 60,
+                      color: colorScheme.primary.withValues(alpha: 0.6)),
                   const SizedBox(height: 16),
                   const Text('登录后即可同步查看您点赞与收藏的微博',
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                      style:
+                          TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 16),
                   FilledButton.icon(
                     onPressed: () {
@@ -151,13 +156,18 @@ class _LikesListViewState extends ConsumerState<_LikesListView>
         if (rawData is List) {
           rawList = rawData;
         } else if (rawData is Map) {
-          rawList = (rawData['list'] as List?) ?? (rawData['statuses'] as List?) ?? [];
+          rawList = (rawData['list'] as List?) ??
+              (rawData['statuses'] as List?) ??
+              [];
         } else {
-          rawList = (data['list'] as List?) ?? (data['statuses'] as List?) ?? [];
+          rawList =
+              (data['list'] as List?) ?? (data['statuses'] as List?) ?? [];
         }
         for (final item in rawList) {
           if (item is Map<String, dynamic>) {
-            final statusData = item['status'] is Map ? item['status'] as Map<String, dynamic> : item;
+            final statusData = item['status'] is Map
+                ? item['status'] as Map<String, dynamic>
+                : item;
             final status = WeiboStatusModel.fromJson(statusData);
             extracted.add(status.copyWith(liked: true));
           }
@@ -182,13 +192,18 @@ class _LikesListViewState extends ConsumerState<_LikesListView>
           if (rawData is List) {
             rawList = rawData;
           } else if (rawData is Map) {
-            rawList = (rawData['list'] as List?) ?? (rawData['statuses'] as List?) ?? [];
+            rawList = (rawData['list'] as List?) ??
+                (rawData['statuses'] as List?) ??
+                [];
           } else {
-            rawList = (data['list'] as List?) ?? (data['statuses'] as List?) ?? [];
+            rawList =
+                (data['list'] as List?) ?? (data['statuses'] as List?) ?? [];
           }
           for (final item in rawList) {
             if (item is Map<String, dynamic>) {
-              final statusData = item['status'] is Map ? item['status'] as Map<String, dynamic> : item;
+              final statusData = item['status'] is Map
+                  ? item['status'] as Map<String, dynamic>
+                  : item;
               final status = WeiboStatusModel.fromJson(statusData);
               extracted.add(status.copyWith(liked: true));
             }
@@ -215,7 +230,9 @@ class _LikesListViewState extends ConsumerState<_LikesListView>
     final colorScheme = Theme.of(context).colorScheme;
 
     return EasyRefresh(
-      onRefresh: () => _fetchLikes(refresh: true),
+      onRefresh: () => HapticFeedbackUtil.refresh(
+        () => _fetchLikes(refresh: true),
+      ),
       onLoad: () async {
         _page++;
         await _fetchLikes(refresh: false);
@@ -229,11 +246,14 @@ class _LikesListViewState extends ConsumerState<_LikesListView>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.favorite_border_rounded,
-                          size: 54, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
+                          size: 54,
+                          color: colorScheme.onSurfaceVariant
+                              .withValues(alpha: 0.4)),
                       const SizedBox(height: 12),
                       Text(
                         '暂无点赞内容',
-                        style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
+                        style: TextStyle(
+                            color: colorScheme.onSurfaceVariant, fontSize: 14),
                       ),
                     ],
                   ),
@@ -298,13 +318,18 @@ class _FavoritesListViewState extends ConsumerState<_FavoritesListView>
         if (rawData is List) {
           rawList = rawData;
         } else if (rawData is Map) {
-          rawList = (rawData['list'] as List?) ?? (rawData['statuses'] as List?) ?? [];
+          rawList = (rawData['list'] as List?) ??
+              (rawData['statuses'] as List?) ??
+              [];
         } else {
-          rawList = (data['list'] as List?) ?? (data['statuses'] as List?) ?? [];
+          rawList =
+              (data['list'] as List?) ?? (data['statuses'] as List?) ?? [];
         }
         for (final item in rawList) {
           if (item is Map<String, dynamic>) {
-            final statusData = item['status'] is Map ? item['status'] as Map<String, dynamic> : item;
+            final statusData = item['status'] is Map
+                ? item['status'] as Map<String, dynamic>
+                : item;
             final status = WeiboStatusModel.fromJson(statusData);
             extracted.add(status.copyWith(favorited: true));
           }
@@ -330,7 +355,9 @@ class _FavoritesListViewState extends ConsumerState<_FavoritesListView>
     final colorScheme = Theme.of(context).colorScheme;
 
     return EasyRefresh(
-      onRefresh: () => _fetchFavorites(refresh: true),
+      onRefresh: () => HapticFeedbackUtil.refresh(
+        () => _fetchFavorites(refresh: true),
+      ),
       onLoad: () async {
         _page++;
         await _fetchFavorites(refresh: false);
@@ -344,11 +371,14 @@ class _FavoritesListViewState extends ConsumerState<_FavoritesListView>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.star_border_rounded,
-                          size: 54, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
+                          size: 54,
+                          color: colorScheme.onSurfaceVariant
+                              .withValues(alpha: 0.4)),
                       const SizedBox(height: 12),
                       Text(
                         '暂无收藏内容',
-                        style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
+                        style: TextStyle(
+                            color: colorScheme.onSurfaceVariant, fontSize: 14),
                       ),
                     ],
                   ),

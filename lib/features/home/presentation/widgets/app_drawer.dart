@@ -12,7 +12,7 @@ import '../../../drawer_features/presentation/my_messages_page.dart';
 import '../../../feed/presentation/group_management_page.dart';
 import '../../../profile/presentation/user_profile_page.dart';
 
-/// 微博主界面侧边栏 Drawer (精简纯净版：赞和评论、我的收藏、我的微博、我的分组、我的关注、超话中心、浏览记录)
+/// 微博主界面侧边栏 Drawer (精简纯净版：赞和评论、我的收藏、我的微博、我的分组、关注列表、超话中心、浏览记录)
 class AppDrawer extends ConsumerStatefulWidget {
   const AppDrawer({super.key});
 
@@ -27,7 +27,10 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
     // 打开侧边栏时自动静默刷新当前登录用户的最新 UID、昵称与头像
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final auth = ref.read(authProvider);
-      if (auth.isLoggedIn && (auth.uid == null || auth.nickname == '已登录用户' || auth.avatar == null)) {
+      if (auth.isLoggedIn &&
+          (auth.uid == null ||
+              auth.nickname == '已登录用户' ||
+              auth.avatar == null)) {
         ref.read(authProvider.notifier).refreshUserProfile();
       }
     });
@@ -45,7 +48,8 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
 
     return Drawer(
       width: 280,
-      backgroundColor: isDark ? const Color(0xFF1B1B1E) : theme.scaffoldBackgroundColor,
+      backgroundColor:
+          isDark ? const Color(0xFF1B1B1E) : theme.scaffoldBackgroundColor,
       child: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -72,7 +76,8 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                         );
                       } else {
                         Navigator.of(context).push(
-                          MaterialPageRoute(builder: (ctx) => const LoginPage()),
+                          MaterialPageRoute(
+                              builder: (ctx) => const LoginPage()),
                         );
                       }
                     },
@@ -101,12 +106,14 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                         );
                       } else {
                         Navigator.of(context).push(
-                          MaterialPageRoute(builder: (ctx) => const LoginPage()),
+                          MaterialPageRoute(
+                              builder: (ctx) => const LoginPage()),
                         );
                       }
                     },
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 4, horizontal: 2),
                       child: Text(
                         nickname,
                         maxLines: 1,
@@ -136,11 +143,11 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                     title: '赞和收藏',
                     onTap: () {
                       Navigator.of(context).push(
-                        MaterialPageRoute(builder: (ctx) => const LikesFavoritesPage()),
+                        MaterialPageRoute(
+                            builder: (ctx) => const LikesFavoritesPage()),
                       );
                     },
                   ),
-
 
                   // 4. 我的分组
                   _buildDrawerItem(
@@ -149,19 +156,21 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                     title: '我的分组',
                     onTap: () {
                       Navigator.of(context).push(
-                        MaterialPageRoute(builder: (ctx) => const GroupManagementPage()),
+                        MaterialPageRoute(
+                            builder: (ctx) => const GroupManagementPage()),
                       );
                     },
                   ),
 
-                  // 5. 我的关注 (双顶栏：关注的人 / 关注的超话)
+                  // 5. 关注列表 (本人：关注列表 / 我的粉丝 / 我的超话；他人：关注列表 / 粉丝列表)
                   _buildDrawerItem(
                     context,
                     icon: Icons.people_alt_rounded,
-                    title: '我的关注',
+                    title: '关注列表',
                     onTap: () {
                       Navigator.of(context).push(
-                        MaterialPageRoute(builder: (ctx) => const MyFollowsPage()),
+                        MaterialPageRoute(
+                            builder: (ctx) => const MyFollowsPage()),
                       );
                     },
                   ),
@@ -173,7 +182,8 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                     title: '我的消息',
                     onTap: () {
                       Navigator.of(context).push(
-                        MaterialPageRoute(builder: (ctx) => const MyMessagesPage()),
+                        MaterialPageRoute(
+                            builder: (ctx) => const MyMessagesPage()),
                       );
                     },
                   ),
@@ -185,7 +195,8 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                     title: '超话中心',
                     onTap: () {
                       Navigator.of(context).push(
-                        MaterialPageRoute(builder: (ctx) => const ChaohuaCenterPage()),
+                        MaterialPageRoute(
+                            builder: (ctx) => const ChaohuaCenterPage()),
                       );
                     },
                   ),
@@ -197,7 +208,8 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                     title: '浏览记录',
                     onTap: () {
                       Navigator.of(context).push(
-                        MaterialPageRoute(builder: (ctx) => const BrowsingHistoryPage()),
+                        MaterialPageRoute(
+                            builder: (ctx) => const BrowsingHistoryPage()),
                       );
                     },
                   ),

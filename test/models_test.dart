@@ -84,6 +84,25 @@ void main() {
       expect(comment.subComments[0].user.screenName, equals('楼中楼用户B'));
     });
 
+    test('WeiboCommentModel keeps the official total nested reply count', () {
+      final comment = WeiboCommentModel.fromJson({
+        'id': 'reply-root',
+        'text_raw': '主评论',
+        'total_number': '11',
+        'user': {'id': '1', 'screen_name': '评论用户'},
+        'comments': [
+          {
+            'id': 'reply-preview-1',
+            'text_raw': '预览回复',
+            'user': {'id': '2', 'screen_name': '回复用户'},
+          },
+        ],
+      });
+
+      expect(comment.subComments.length, equals(1));
+      expect(comment.subCommentsCount, equals(11));
+    });
+
     test('WeiboCommentModel removes parent images repeated in text replies',
         () {
       final parentPic = {
@@ -252,6 +271,21 @@ void main() {
       expect(user.followMe, isTrue);
       expect(user.gender, equals('f'));
       expect(user.ipLocation, equals('北京'));
+    });
+
+    test('WeiboUserModel keeps relation counts when the API returns strings',
+        () {
+      final user = WeiboUserModel.fromJson({
+        'id': '700001',
+        'screen_name': '字符串计数用户',
+        'followers_count': '12,345',
+        'friends_count': '61',
+        'statuses_count': '394',
+      });
+
+      expect(user.followersCount, equals(12345));
+      expect(user.friendsCount, equals(61));
+      expect(user.statusesCount, equals(394));
     });
 
     test('WeiboStatusModel parses titleText and isTop banner correctly', () {
@@ -524,6 +558,57 @@ void main() {
       expect(status.poll!.participantCount, equals(41));
       expect(status.hotTopic?.word, equals('iPhone18Pro售价曝光'));
       expect(status.hotTopic?.discussionText, equals('6977新讨论'));
+    });
+
+    test('WeiboStatusModel maps url_objects video cards to native media fields',
+        () {
+      final status = WeiboStatusModel.fromJson({
+        'id': '5344176566701858',
+        'mid': '5344176566701858',
+        'text_raw': '视频 http://t.cn/AXOaa3q8',
+        'created_at': '刚刚',
+        'user': {'id': '1645677583', 'screen_name': 'ColorOS陈希'},
+        'url_objects': [
+          {
+            'url_ori': 'http://t.cn/AXOaa3q8',
+            'object_id': '1034:5344173386039366',
+            'info': {
+              'url_short': 'http://t.cn/AXOaa3q8',
+              'url_long':
+                  'https://video.weibo.com/show?fid=1034:5344173386039366',
+              'type': 39,
+            },
+            'object': {
+              'target_url':
+                  'https://video.weibo.com/show?fid=1034:5344173386039366',
+              'object': {
+                'display_name': 'ColorOS陈希的微博视频',
+                'screenshots': {
+                  '1': 'https://wx3.sinaimg.cn/sq480/video-cover.jpg',
+                },
+                'urls': {
+                  'mp4_720p_mp4':
+                      'http://f.video.weibocdn.com/video-720.mp4?sig=1',
+                  'mp4_hd_mp4':
+                      'http://f.video.weibocdn.com/video-hd.mp4?sig=2',
+                },
+                'duration': 33.646,
+              },
+            },
+          },
+        ],
+      });
+
+      expect(status.urlStruct, isNotNull);
+      expect(status.urlStruct, hasLength(1));
+      expect(status.urlStruct!.single['h5_target_url'],
+          contains('1034:5344173386039366'));
+      expect(status.urlStruct!.single['url_title'], equals('ColorOS陈希的微博视频'));
+      expect(status.hasVideo, isTrue);
+      expect(status.videoStreamUrl,
+          equals('https://f.video.weibocdn.com/video-720.mp4?sig=1'));
+      expect(status.videoCoverUrl,
+          equals('https://wx3.sinaimg.cn/sq480/video-cover.jpg'));
     });
 
     test('WeiboStatusModel parses nested timeline hot topic and visibility',

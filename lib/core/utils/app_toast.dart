@@ -26,12 +26,16 @@ class AppToast {
     }
 
     final overlayState = context != null
-        ? (Navigator.maybeOf(context)?.overlay ?? Overlay.maybeOf(context) ?? rootNavigatorKey.currentState?.overlay)
+        ? (Navigator.maybeOf(context)?.overlay ??
+            Overlay.maybeOf(context) ??
+            rootNavigatorKey.currentState?.overlay)
         : rootNavigatorKey.currentState?.overlay;
 
     if (overlayState == null) return;
 
-    final isDark = (context != null ? Theme.of(context).brightness : Brightness.light) == Brightness.dark;
+    final isDark =
+        (context != null ? Theme.of(context).brightness : Brightness.light) ==
+            Brightness.dark;
 
     final key = GlobalKey<_ToastWidgetState>();
     _currentKey = key;
@@ -82,7 +86,8 @@ class _ToastWidget extends StatefulWidget {
   State<_ToastWidget> createState() => _ToastWidgetState();
 }
 
-class _ToastWidgetState extends State<_ToastWidget> with SingleTickerProviderStateMixin {
+class _ToastWidgetState extends State<_ToastWidget>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _opacity;
 
@@ -111,52 +116,64 @@ class _ToastWidgetState extends State<_ToastWidget> with SingleTickerProviderSta
 
   @override
   Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.maybeOf(context);
+    final bottomInset = mediaQuery == null
+        ? 0.0
+        : mediaQuery.padding.bottom > mediaQuery.viewInsets.bottom
+            ? mediaQuery.padding.bottom
+            : mediaQuery.viewInsets.bottom;
     return Positioned(
       left: 24,
       right: 24,
-      bottom: 84, // 固定在悬浮底栏上方，位置绝对静止稳定
-      child: Center(
-        child: Material(
-          color: Colors.transparent,
-          child: FadeTransition(
-            opacity: _opacity,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-              constraints: const BoxConstraints(maxWidth: 340),
-              decoration: BoxDecoration(
-                color: widget.isDark
-                    ? const Color(0xFF2C2D35).withValues(alpha: 0.96)
-                    : const Color(0xFF1E1E24).withValues(alpha: 0.94),
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.3),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (widget.icon != null) ...[
-                    Icon(widget.icon, size: 16, color: Colors.white),
-                    const SizedBox(width: 8),
-                  ],
-                  Flexible(
-                    child: Text(
-                      widget.message,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w500,
-                        height: 1.25,
-                      ),
-                      textAlign: TextAlign.center,
+      bottom: 84 + bottomInset,
+      child: Semantics(
+        liveRegion: true,
+        label: widget.message,
+        container: true,
+        child: Center(
+          child: Material(
+            color: Colors.transparent,
+            child: FadeTransition(
+              opacity: _opacity,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                constraints: const BoxConstraints(maxWidth: 340),
+                decoration: BoxDecoration(
+                  color: widget.isDark
+                      ? const Color(0xFF2C2D35).withValues(alpha: 0.96)
+                      : const Color(0xFF1E1E24).withValues(alpha: 0.94),
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (widget.icon != null) ...[
+                      Icon(widget.icon, size: 16, color: Colors.white),
+                      const SizedBox(width: 8),
+                    ],
+                    Flexible(
+                      child: Text(
+                        widget.message,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w500,
+                          height: 1.25,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

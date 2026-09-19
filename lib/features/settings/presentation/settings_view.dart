@@ -16,6 +16,7 @@ import '../../profile/presentation/weibo_style_settings_page.dart';
 import 'storage_settings_page.dart';
 import 'webdav_backup_page.dart';
 import '../../../core/theme/custom_app_icon_provider.dart';
+import '../../../core/widgets/app_section_card.dart';
 
 /// 纯粹的系统设置大厅 (底栏第 3 个 Tab)
 class SettingsView extends ConsumerWidget {
@@ -26,8 +27,7 @@ class SettingsView extends ConsumerWidget {
     final authState = ref.watch(authProvider);
     final storageService = ref.watch(storageServiceProvider);
     final themeState = ref.watch(themeProvider);
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
     final isLoggedIn = authState.isLoggedIn;
 
     // 当开启悬浮胶囊底栏时，预留适度紧凑的底部边距，防止遮挡退出登录与底部设置项
@@ -41,17 +41,7 @@ class SettingsView extends ConsumerWidget {
         padding: EdgeInsets.fromLTRB(16, 12, 16, bottomNavPadding),
         children: [
           // 1. 个性化与样式管理
-          Card(
-            elevation: 0,
-            clipBehavior: Clip.antiAlias,
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.dividerColor.withValues(alpha: 0.1),
-                width: 0.8,
-              ),
-            ),
+          AppSectionCard(
             child: Column(
               children: [
                 // 个性化 (明暗、颜色、导航、触感)
@@ -96,17 +86,7 @@ class SettingsView extends ConsumerWidget {
           const SizedBox(height: 14),
 
           // 2. 存储设置与 WebDAV 备份
-          Card(
-            elevation: 0,
-            clipBehavior: Clip.antiAlias,
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.dividerColor.withValues(alpha: 0.1),
-                width: 0.8,
-              ),
-            ),
+          AppSectionCard(
             child: Column(
               children: [
                 // 存储设置 (图片与视频存储路径)
@@ -152,17 +132,7 @@ class SettingsView extends ConsumerWidget {
           const SizedBox(height: 14),
 
           // 3. 账号管理与关于
-          Card(
-            elevation: 0,
-            clipBehavior: Clip.antiAlias,
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.dividerColor.withValues(alpha: 0.1),
-                width: 0.8,
-              ),
-            ),
+          AppSectionCard(
             child: Column(
               children: [
                 if (!isLoggedIn)
@@ -234,6 +204,24 @@ class SettingsView extends ConsumerWidget {
                                 FilledButton(
                                   onPressed: () => Navigator.pop(ctx),
                                   child: const Text('确定'),
+                                ),
+                              ],
+                            ),
+                          );
+                        } else if (currentAuth.cookieValidationStatus ==
+                            CookieValidationStatus.needsDesktopSync) {
+                          showAppDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              icon: const Icon(Icons.sync_problem_rounded,
+                                  color: Colors.amber, size: 36),
+                              title: const Text('桌面会话待同步'),
+                              content: const Text(
+                                  '当前账号的移动端凭据仍然有效，但微博桌面时间线会话尚未恢复。应用已经保留登录凭据并尝试自动修复，请返回时间线后下拉刷新；如果仍无法加载，再重新登录一次。'),
+                              actions: [
+                                FilledButton(
+                                  onPressed: () => Navigator.pop(ctx),
+                                  child: const Text('知道了'),
                                 ),
                               ],
                             ),
@@ -384,33 +372,17 @@ class SettingsView extends ConsumerWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+      showDragHandle: true,
       builder: (ctx) {
         final colorScheme = Theme.of(ctx).colorScheme;
 
-        return Container(
-          decoration: BoxDecoration(
-            color: colorScheme.surface,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          child: SafeArea(
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color:
-                          colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
                 Row(
                   children: [
                     const Text('导出账号凭据 / Cookie',
