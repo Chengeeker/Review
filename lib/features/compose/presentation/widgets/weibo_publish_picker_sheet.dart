@@ -69,7 +69,6 @@ class _WeiboPublishPickerSheetState extends State<WeiboPublishPickerSheet> {
   bool _loading = false;
   String? _error;
 
-  bool get _isTopic => widget.mode == WeiboPublishPickerMode.topic;
   bool get _isSuperTopic => widget.mode == WeiboPublishPickerMode.superTopic;
   bool get _isMention => widget.mode == WeiboPublishPickerMode.mention;
   bool get _isReview => widget.mode == WeiboPublishPickerMode.review;

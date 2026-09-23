@@ -15,6 +15,7 @@ import '../../profile/presentation/theme_settings_page.dart';
 import '../../profile/presentation/weibo_style_settings_page.dart';
 import 'storage_settings_page.dart';
 import 'webdav_backup_page.dart';
+import 'message_notification_settings_page.dart';
 import '../../../core/theme/custom_app_icon_provider.dart';
 import '../../../core/widgets/app_section_card.dart';
 
@@ -81,6 +82,27 @@ class SettingsView extends ConsumerWidget {
                   },
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          AppSectionCard(
+            child: ListTile(
+              leading: Icon(Icons.notifications_active_outlined,
+                  color: colorScheme.primary),
+              title: const Text('订阅消息提醒',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: const Text('后台提醒 @、点赞、回复和私信',
+                  style: TextStyle(fontSize: 12.5)),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () {
+                HapticFeedbackUtil.light();
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (ctx) => const MessageNotificationSettingsPage(),
+                  ),
+                );
+              },
             ),
           ),
           const SizedBox(height: 14),

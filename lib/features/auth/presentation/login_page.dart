@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/utils/app_dialog.dart';
 import '../../../core/utils/app_toast.dart';
@@ -15,13 +18,33 @@ import '../../feed/presentation/feed_controller.dart';
 bool shouldProbeCookiesForUrl(String url) {
   final parsed = Uri.tryParse(url);
   final host = parsed?.host.toLowerCase() ?? '';
-  if (url.contains('crossdomain')) return true;
-  if (parsed?.queryParameters.containsKey('ticket') == true) return true;
-
   return host == 'm.weibo.cn' ||
       host == 'weibo.cn' ||
       host == 'm.weibo.com' ||
       host == 'weibo.com';
+}
+
+/// Checks if the URL indicates a post-login credential exchange in progress
+/// (e.g. Sina SSO ticket redirect or landing page).
+bool isLoginSuccessTransitionUrl(String url) {
+  final lower = url.toLowerCase();
+  return lower.contains('ticket=') ||
+      lower.contains('crossdomain') ||
+      shouldProbeCookiesForUrl(url);
+}
+
+const String weiboWebLoginUrl =
+    'https://passport.weibo.com/sso/signin?entry=wapsso&source=wapssowb&url=https%3A%2F%2Fm.weibo.cn%2F';
+
+String cookieNamesForDiagnostics(String? raw) {
+  final names = <String>[];
+  for (final segment in (raw ?? '').split(';')) {
+    final separator = segment.indexOf('=');
+    if (separator <= 0) continue;
+    final name = segment.substring(0, separator).trim();
+    if (name.isNotEmpty && !names.contains(name)) names.add(name);
+  }
+  return names.isEmpty ? '无' : names.join(',');
 }
 
 /// Official Weibo Login with Automatic Cookie/Token Extraction
@@ -38,11 +61,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   late final WebViewController _controller;
   double _progress = 0.0;
   bool _isChecking = false;
-  bool _checkQueued = false;
+  bool _manualCheckQueued = false;
   bool _hasSuccessfullyLogged = false;
-
-  static const String _defaultLoginUrl =
-      'https://passport.weibo.com/sso/signin?entry=wapsso&source=wapssowb&url=https%3A%2F%2Fm.weibo.cn%2F';
+  bool _isAutoLoggingIn = false;
+  Timer? _cookieCheckTimer;
+  Timer? _autoLoginPollingTimer;
+  final Set<CancelToken> _activeVerificationTokens = {};
 
   @override
   void initState() {
@@ -51,6 +75,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setUserAgent(
         'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+      )
+      ..addJavaScriptChannel(
+        'ReviewLoginBridge',
+        onMessageReceived: (JavaScriptMessage message) {
+          if (message.message == 'login_triggered') {
+            _startAutoLoginFlow(immediateOverlay: false);
+          }
+        },
       )
       ..setNavigationDelegate(
         NavigationDelegate(
@@ -63,46 +95,94 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             if (!url.startsWith('http://') && !url.startsWith('https://')) {
               return NavigationDecision.prevent;
             }
-            if (url.contains('crossdomain')) {
-              Future.delayed(const Duration(milliseconds: 350), () {
-                if (mounted && !_hasSuccessfullyLogged) {
-                  _checkAndSaveCookies(silent: true);
-                }
-              });
+            if (isLoginSuccessTransitionUrl(url)) {
+              _startAutoLoginFlow(immediateOverlay: true);
             }
             return NavigationDecision.navigate;
           },
-          onUrlChange: (UrlChange change) async {
+          onPageStarted: (url) {
+            if (isLoginSuccessTransitionUrl(url)) {
+              _startAutoLoginFlow(immediateOverlay: true);
+            }
+          },
+          onUrlChange: (UrlChange change) {
             final url = change.url ?? '';
-            if (shouldProbeCookiesForUrl(url)) {
-              await _checkAndSaveCookies(silent: true);
+            if (isLoginSuccessTransitionUrl(url)) {
+              _startAutoLoginFlow(immediateOverlay: true);
             }
           },
-          onWebResourceError: (WebResourceError error) async {
-            // Resource errors are common on the login page. Only probe when
-            // the failed resource belongs to a post-login URL.
-            if (shouldProbeCookiesForUrl(error.url ?? '')) {
-              await _checkAndSaveCookies(silent: true);
+          onWebResourceError: (WebResourceError error) {
+            final failedUrl = error.url ?? '';
+            if (isLoginSuccessTransitionUrl(failedUrl)) {
+              _startAutoLoginFlow(immediateOverlay: false);
             }
           },
-          onPageFinished: (url) async {
-            if (shouldProbeCookiesForUrl(url)) {
-              await _checkAndSaveCookies(silent: true);
+          onPageFinished: (url) {
+            if (isLoginSuccessTransitionUrl(url)) {
+              _startAutoLoginFlow(immediateOverlay: true);
             }
+            _injectLoginListener();
           },
         ),
-      )
-      ..loadRequest(Uri.parse(_defaultLoginUrl));
+      );
+    _configureWebViewAndLoad();
+  }
+
+  Future<void> _configureWebViewAndLoad() async {
+    try {
+      final cookieManager = WebViewCookieManager().platform;
+      final platformController = _controller.platform;
+      if (cookieManager is AndroidWebViewCookieManager &&
+          platformController is AndroidWebViewController) {
+        // Weibo's passport -> login.sina.com.cn -> m.weibo.cn callback uses
+        // a third-party SSO cookie. Android WebView defaults this to false.
+        await cookieManager.setAcceptThirdPartyCookies(
+          platformController,
+          true,
+        );
+      }
+    } catch (_) {
+      // Other platforms and older WebView implementations do not expose the
+      // Android-only setting; the normal cookie bridge remains available.
+    }
+    if (mounted && !_hasSuccessfullyLogged) {
+      await _controller.loadRequest(Uri.parse(weiboWebLoginUrl));
+    }
+  }
+
+  void _scheduleCookieCheck({
+    Duration delay = const Duration(milliseconds: 700),
+    bool silent = true,
+  }) {
+    if (_hasSuccessfullyLogged) return;
+    _cookieCheckTimer?.cancel();
+    _cookieCheckTimer = Timer(delay, () {
+      _cookieCheckTimer = null;
+      if (mounted && !_hasSuccessfullyLogged) {
+        _checkAndSaveCookies(silent: silent);
+      }
+    });
   }
 
   Future<void> _checkAndSaveCookies({bool silent = false}) async {
     if (_hasSuccessfullyLogged) return;
+    _cookieCheckTimer?.cancel();
+    _cookieCheckTimer = null;
     if (_isChecking) {
-      _checkQueued = true;
+      if (!silent && !_manualCheckQueued) {
+        _manualCheckQueued = true;
+        if (mounted) {
+          setState(() {});
+          AppToast.show(context, '当前检测尚未结束，已排队重新读取凭据');
+        }
+      }
       return;
     }
+    // Any real check reads a fresh Cookie snapshot, so it can satisfy a
+    // manually queued retry even if a navigation callback starts it first.
+    _manualCheckQueued = false;
     _isChecking = true;
-    if (!silent && mounted) setState(() => _isChecking = true);
+    if (mounted) setState(() => _isChecking = true);
 
     try {
       // 1. Primary: Extract directly from Android's Native CookieManager via Platform Channel
@@ -112,10 +192,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             await _cookieChannel.invokeMethod<String>('getNativeCookies');
       } catch (_) {}
 
-      // Prefer the CookieManager's desktop host jar. The legacy combined
-      // bridge starts with m.weibo.cn and can otherwise select a mobile-only
-      // SUB value before the desktop SSO cookie has settled.
+      // Read host-scoped jars separately. The legacy combined bridge can
+      // contain duplicate SUB values from different domains.
       String? desktopCookies;
+      String? mobileCookies;
+      String? ssoCookies;
       try {
         final scoped = await _cookieChannel.invokeMethod<dynamic>(
           'getNativeCookiesByDomain',
@@ -123,6 +204,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         if (scoped is Map) {
           final value = scoped['desktop']?.toString() ?? '';
           if (value.isNotEmpty) desktopCookies = value;
+          final mobileValue = scoped['mobile']?.toString() ?? '';
+          if (mobileValue.isNotEmpty) mobileCookies = mobileValue;
+          final ssoValue = scoped['sso']?.toString() ?? '';
+          if (ssoValue.isNotEmpty) ssoCookies = ssoValue;
         }
       } catch (_) {}
 
@@ -136,29 +221,64 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         jsCookies = s;
       } catch (_) {}
 
-      final effectiveCookie =
-          (desktopCookies != null && desktopCookies.isNotEmpty)
-              ? desktopCookies
-              : (jsCookies != null && jsCookies.isNotEmpty)
-                  ? jsCookies
-                  : (nativeCookies ?? '');
+      final candidates = <String>[];
+      void addCandidate(String? raw) {
+        final value = raw?.trim() ?? '';
+        if (value.isEmpty ||
+            (!RegExp(r'(?:^|;\s*)SUB=', caseSensitive: false).hasMatch(value) &&
+                !value.contains('_2A'))) {
+          return;
+        }
+        if (!candidates.contains(value)) candidates.add(value);
+      }
 
-      if (effectiveCookie.isNotEmpty &&
-          (effectiveCookie.contains('SUB=') ||
-              effectiveCookie.contains('_2A'))) {
-        final success =
-            await ref.read(authProvider.notifier).setAndVerifyCookie(
-                  effectiveCookie,
-                  requireDesktopSession: true,
-                );
+      // The WebView login flow lands on m.weibo.cn. Prioritize mobile and desktop
+      // cookies, followed by SSO, JS, and combined native jars.
+      addCandidate(mobileCookies);
+      addCandidate(desktopCookies);
+      addCandidate(ssoCookies);
+      addCandidate(jsCookies);
+      addCandidate(nativeCookies);
+
+      final checkDeadline = DateTime.now().add(const Duration(seconds: 30));
+      for (final effectiveCookie in candidates) {
+        if (!mounted || _hasSuccessfullyLogged) break;
+        final remaining = checkDeadline.difference(DateTime.now());
+        if (remaining <= Duration.zero) break;
+        final attemptTimeout = remaining < const Duration(seconds: 25)
+            ? remaining
+            : const Duration(seconds: 25);
+        final cancelToken = CancelToken();
+        _activeVerificationTokens.add(cancelToken);
+        bool success;
+        try {
+          success = await ref.read(authProvider.notifier).setAndVerifyCookie(
+                effectiveCookie,
+                requireDesktopSession: false,
+                cancelToken: cancelToken,
+                verificationTimeout: attemptTimeout,
+              );
+        } finally {
+          _activeVerificationTokens.remove(cancelToken);
+        }
         if (success && mounted) {
           if (_hasSuccessfullyLogged) return;
           _hasSuccessfullyLogged = true;
 
-          // Complete the host-scoped Cookie snapshot before the feed starts.
-          await ref.read(authProvider.notifier).reconcileNativeSession();
-          ref.read(feedControllerProvider.notifier).setCategory('friends');
-          AppToast.show(context, '🎉 微博账号登录成功！已为您同步真实关注流');
+          // Keep mobile login completion immediate, but wait for the desktop
+          // cookie reconciliation before starting the account feed request.
+          final authNotifier = ref.read(authProvider.notifier);
+          final feedController = ref.read(feedControllerProvider.notifier);
+          final loggedInUid = ref.read(authProvider).uid;
+          unawaited(() async {
+            try {
+              await authNotifier.reconcileNativeSession();
+            } catch (_) {}
+            if (authNotifier.isLoggedInAs(loggedInUid)) {
+              await feedController.setCategory('friends');
+            }
+          }());
+          AppToast.show(context, '🎉 微博账号登录成功，正在加载关注流');
           if (mounted && Navigator.of(context).canPop()) {
             Navigator.of(context).pop(true);
           }
@@ -167,7 +287,19 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       }
 
       if (!silent && mounted) {
-        AppToast.show(context, '未检测到有效登录凭据，请在页面完成手机验证码或密码登录后再次点击');
+        final currentUrl = await _controller.currentUrl() ?? '未知页面';
+        if (!mounted) return;
+        final cookieSummary = <String>[
+          '移动:${cookieNamesForDiagnostics(mobileCookies)}',
+          '桌面:${cookieNamesForDiagnostics(desktopCookies)}',
+          'SSO:${cookieNamesForDiagnostics(ssoCookies)}',
+        ].join('；');
+        final reason =
+            candidates.isEmpty ? '微博域尚未写入登录 Cookie' : '已读取 Cookie，但微博接口未确认登录';
+        AppToast.show(
+          context,
+          '$reason\n$cookieSummary\n页面:$currentUrl',
+        );
       }
     } catch (e) {
       if (!silent && mounted) {
@@ -175,16 +307,86 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       }
     } finally {
       _isChecking = false;
-      if (mounted && !silent) setState(() => _isChecking = false);
-      if (_checkQueued && mounted && !_hasSuccessfullyLogged) {
-        _checkQueued = false;
-        Future<void>.delayed(const Duration(milliseconds: 150), () {
-          if (mounted && !_hasSuccessfullyLogged) {
-            _checkAndSaveCookies(silent: true);
-          }
-        });
+      if (mounted) setState(() {});
+      final retryManually = _manualCheckQueued;
+      if (retryManually && mounted && !_hasSuccessfullyLogged) {
+        _scheduleCookieCheck(
+          delay: const Duration(milliseconds: 250),
+          silent: false,
+        );
+      } else {
+        _manualCheckQueued = false;
       }
     }
+  }
+
+  void _injectLoginListener() {
+    const js = '''
+(function() {
+  if (window.__review_login_attached) return;
+  window.__review_login_attached = true;
+  function notify() {
+    try {
+      if (window.ReviewLoginBridge) {
+        window.ReviewLoginBridge.postMessage('login_triggered');
+      }
+    } catch(e) {}
+  }
+  document.addEventListener('click', function(e) {
+    var el = e.target;
+    while (el && el !== document.body) {
+      var text = (el.innerText || el.value || '').trim();
+      if (text.indexOf('登录') !== -1 || text.indexOf('Log In') !== -1) {
+        notify();
+        break;
+      }
+      el = el.parentElement;
+    }
+  }, true);
+  document.addEventListener('submit', function(e) {
+    notify();
+  }, true);
+})();
+''';
+    _controller.runJavaScript(js).catchError((_) {});
+  }
+
+  void _startAutoLoginFlow({bool immediateOverlay = true}) {
+    if (_hasSuccessfullyLogged) return;
+    if (immediateOverlay && !_isAutoLoggingIn && mounted) {
+      setState(() => _isAutoLoggingIn = true);
+    }
+    _autoLoginPollingTimer?.cancel();
+    int attempts = 0;
+    _autoLoginPollingTimer = Timer.periodic(
+      const Duration(milliseconds: 600),
+      (timer) async {
+        if (_hasSuccessfullyLogged || !mounted) {
+          timer.cancel();
+          return;
+        }
+        attempts++;
+        if (attempts > 35) {
+          timer.cancel();
+          if (mounted && _isAutoLoggingIn) {
+            setState(() => _isAutoLoggingIn = false);
+          }
+          return;
+        }
+        await _checkAndSaveCookies(silent: true);
+      },
+    );
+    _checkAndSaveCookies(silent: true);
+  }
+
+  @override
+  void dispose() {
+    _cookieCheckTimer?.cancel();
+    _autoLoginPollingTimer?.cancel();
+    for (final token in _activeVerificationTokens) {
+      token.cancel('Login page disposed');
+    }
+    super.dispose();
   }
 
   void _showManualCookieDialog() {
@@ -263,7 +465,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               try {
                 await _cookieChannel.invokeMethod('clearNativeCookies');
                 await WebViewCookieManager().clearCookies();
-                _controller.loadRequest(Uri.parse(_defaultLoginUrl));
+                _controller.loadRequest(Uri.parse(weiboWebLoginUrl));
                 if (context.mounted) {
                   AppToast.show(context, '已清除旧登录会话并重置页面');
                 }
@@ -286,7 +488,48 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       ),
       body: Column(
         children: [
-          Expanded(child: WebViewWidget(controller: _controller)),
+          Expanded(
+            child: Stack(
+              children: [
+                WebViewWidget(controller: _controller),
+                if (_isAutoLoggingIn && !_hasSuccessfullyLogged)
+                  Container(
+                    color: colorScheme.surface,
+                    width: double.infinity,
+                    height: double.infinity,
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 38,
+                            height: 38,
+                            child: CircularProgressIndicator(strokeWidth: 3),
+                          ),
+                          const SizedBox(height: 20),
+                          Text(
+                            '正在完成登录并同步凭据...',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: colorScheme.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '已检测到登录操作，正在为您自动同步，无需手动操作',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
@@ -323,10 +566,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                             )
                           : const Icon(Icons.check_circle_outline_rounded,
                               size: 18),
-                      label: Text(_isChecking ? '正在检测凭据...' : '完成登录 / 同步凭据'),
-                      onPressed: _isChecking
-                          ? null
-                          : () => _checkAndSaveCookies(silent: false),
+                      label: Text(
+                        _isChecking
+                            ? (_manualCheckQueued ? '已排队重新检测' : '检测中（点击可重试）')
+                            : '完成登录 / 同步凭据',
+                      ),
+                      onPressed: () => _checkAndSaveCookies(silent: false),
                     ),
                   ),
                 ],

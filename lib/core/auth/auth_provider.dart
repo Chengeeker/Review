@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -87,6 +88,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
     _loadFromStorage();
   }
 
+  /// Whether the verified session still belongs to [uid] after async sync.
+  bool isLoggedInAs(String? uid) =>
+      uid != null && uid.isNotEmpty && state.isLoggedIn && state.uid == uid;
+
   /// Normalize cookies collected from multiple WebView domains.
   ///
   /// CookieManager may return the same cookie name more than once when values
@@ -115,6 +120,21 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (value is num) return value != 0;
     final normalized = value?.toString().trim().toLowerCase();
     return normalized == '1' || normalized == 'true' || normalized == 'yes';
+  }
+
+  /// A UID by itself is not enough to establish a login session; callers must
+  /// also identify which documented verification path confirmed it. WebView
+  /// login starts on m.weibo.cn, so callers may accept a verified mobile
+  /// session while the desktop SSO cookie is still being synchronized.
+  static bool canCommitVerifiedSession({
+    required String uid,
+    required bool desktopSessionVerified,
+    required bool mobileSessionVerified,
+    required bool requireDesktopSession,
+  }) {
+    if (uid.trim().isEmpty) return false;
+    if (requireDesktopSession) return desktopSessionVerified;
+    return desktopSessionVerified || mobileSessionVerified;
   }
 
   static Map<String, dynamic>? _asMap(dynamic value) {
@@ -152,19 +172,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   static bool desktopConfigShowsLoggedIn(dynamic value) {
     final body = _asMap(value);
-    final data = _asMap(body?['data']);
-    if (body == null ||
-        data == null ||
-        isDefinitiveDesktopLogoutPayload(body)) {
+    if (body == null || isDefinitiveDesktopLogoutPayload(body)) {
       return false;
     }
-    final user = _asMap(data['user']) ?? _asMap(body['user']);
-    final loginFlagPresent = data.containsKey('islogin') ||
-        data.containsKey('login') ||
+    final data = _asMap(body['data']);
+    final user = _asMap(data?['user']) ?? _asMap(body['user']);
+    final loginFlagPresent = (data != null &&
+            (data.containsKey('islogin') || data.containsKey('login'))) ||
         body.containsKey('islogin') ||
         body.containsKey('login');
-    final loggedIn = _isTruthy(data['islogin']) ||
-        _isTruthy(data['login']) ||
+    final loggedIn = (data != null &&
+            (_isTruthy(data['islogin']) || _isTruthy(data['login']))) ||
         _isTruthy(body['islogin']) ||
         _isTruthy(body['login']) ||
         (!loginFlagPresent && user != null);
@@ -277,8 +295,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<bool> setAndVerifyCookie(
     String rawInput, {
     bool requireDesktopSession = false,
+    CancelToken? cancelToken,
+    Duration? verificationTimeout,
   }) async {
     state = state.copyWith(isValidating: true);
+    final verificationCancelToken = cancelToken ?? CancelToken();
     if (_storage.getCookieScopeSchemaVersion() <
         StorageService.currentCookieScopeSchemaVersion) {
       // Manual import/profile refresh can run before the feed controller's
@@ -334,11 +355,22 @@ class AuthNotifier extends StateNotifier<AuthState> {
     String resolvedAvatar = '';
     bool desktopSessionVerified = false;
     bool mobileSessionVerified = false;
+    final verificationTimeoutTimer = verificationTimeout == null
+        ? null
+        : Timer(
+            verificationTimeout,
+            () => verificationCancelToken.cancel(
+              'Login credential verification timed out',
+            ),
+          );
 
     try {
       final dio = Dio(
         BaseOptions(
           baseUrl: ApiConstants.baseUrl,
+          connectTimeout: const Duration(seconds: 8),
+          sendTimeout: const Duration(seconds: 8),
+          receiveTimeout: const Duration(seconds: 8),
           headers: {
             'User-Agent': ApiConstants.defaultUserAgent,
             'Cookie': effectiveFullCookie,
@@ -352,38 +384,67 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       // 1. Primary: Try /ajax/config/getconfig
       try {
-        final configRes = await dio.get('/ajax/config/getconfig');
-        if (configRes.data is Map<String, dynamic> &&
-            configRes.data['data'] != null) {
-          final configData = _asMap(configRes.data['data']);
-          if (configData != null) {
-            final uidFromConfig = configData['uid']?.toString() ?? '';
-            final userObj = _asMap(configData['user']);
-            final loginFlagPresent = configData.containsKey('islogin') ||
-                configData.containsKey('login');
-            final desktopLoggedIn = _isTruthy(configData['islogin']) ||
-                _isTruthy(configData['login']) ||
-                (!loginFlagPresent && userObj != null);
-            if (desktopLoggedIn && userObj != null) {
-              desktopSessionVerified = true;
-              resolvedUid = userObj['id']?.toString() ?? uidFromConfig;
-              resolvedNickname = userObj['screen_name']?.toString() ?? '';
-              resolvedAvatar = userObj['avatar_large']?.toString() ??
-                  userObj['avatar_hd']?.toString() ??
-                  userObj['profile_image_url']?.toString() ??
-                  '';
-            } else if (desktopLoggedIn && uidFromConfig.isNotEmpty) {
-              desktopSessionVerified = true;
-              resolvedUid = uidFromConfig;
-            }
-          }
+        final configRes = await dio.get(
+          '/ajax/config/getconfig',
+          cancelToken: verificationCancelToken,
+        );
+        if (desktopConfigShowsLoggedIn(configRes.data)) {
+          final body = _asMap(configRes.data);
+          final configData = _asMap(body?['data']);
+          final userObj = _asMap(configData?['user']) ?? _asMap(body?['user']);
+          desktopSessionVerified = true;
+          resolvedUid = desktopSessionUid(configRes.data);
+          resolvedNickname = userObj?['screen_name']?.toString() ?? '';
+          resolvedAvatar = userObj?['avatar_large']?.toString() ??
+              userObj?['avatar_hd']?.toString() ??
+              userObj?['profile_image_url']?.toString() ??
+              '';
         }
       } catch (_) {}
+
+      // 1.5. Desktop fallback: Try /ajax/statuses/config if getconfig was incomplete
+      if (!desktopSessionVerified) {
+        try {
+          final statusConfigRes = await dio.get(
+            '/ajax/statuses/config',
+            cancelToken: verificationCancelToken,
+          );
+          if (desktopConfigShowsLoggedIn(statusConfigRes.data)) {
+            final body = _asMap(statusConfigRes.data);
+            final configData = _asMap(body?['data']);
+            final userObj =
+                _asMap(configData?['user']) ?? _asMap(body?['user']);
+            desktopSessionVerified = true;
+            resolvedUid = desktopSessionUid(statusConfigRes.data);
+            if (resolvedNickname.isEmpty) {
+              resolvedNickname = userObj?['screen_name']?.toString() ?? '';
+            }
+            if (resolvedAvatar.isEmpty) {
+              resolvedAvatar = userObj?['avatar_large']?.toString() ??
+                  userObj?['avatar_hd']?.toString() ??
+                  userObj?['profile_image_url']?.toString() ??
+                  '';
+            }
+          }
+        } catch (_) {}
+      }
 
       // 2. Secondary: Try https://m.weibo.cn/api/config
       if (resolvedUid.isEmpty || resolvedNickname.isEmpty) {
         try {
-          final mConfigRes = await dio.get('https://m.weibo.cn/api/config');
+          final mConfigRes = await dio.get(
+            'https://m.weibo.cn/api/config',
+              options: Options(
+                headers: {
+                'Referer': 'https://m.weibo.cn/',
+                'User-Agent':
+                    'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+                'Accept': 'application/json, text/plain, */*',
+                'X-Requested-With': 'XMLHttpRequest',
+                },
+              ),
+              cancelToken: verificationCancelToken,
+          );
           if (mConfigRes.data is Map<String, dynamic> &&
               mConfigRes.data['data'] != null) {
             final mData = mConfigRes.data['data'] as Map<String, dynamic>;
@@ -392,7 +453,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
                 mData['uid']?.toString() ?? mUser?['id']?.toString() ?? '';
             if (_isTruthy(mData['login']) && mUid.isNotEmpty) {
               mobileSessionVerified = true;
-              resolvedUid = mUid;
+              if (resolvedUid.isEmpty) resolvedUid = mUid;
               if (resolvedNickname.isEmpty) {
                 resolvedNickname = mUser?['screen_name']?.toString() ?? '';
               }
@@ -407,14 +468,22 @@ class AuthNotifier extends StateNotifier<AuthState> {
       // 3. Tertiary: Try from /ajax/profile/detail
       if (resolvedUid.isEmpty) {
         try {
-          final detailRes = await dio.get('/ajax/profile/detail');
+          final detailRes = await dio.get(
+            '/ajax/profile/detail',
+            cancelToken: verificationCancelToken,
+          );
           if (detailRes.data is Map<String, dynamic> &&
               detailRes.data['data'] != null) {
-            final verifiedUrl =
-                detailRes.data['data']['verified_url']?.toString() ?? '';
+            final data = _asMap(detailRes.data['data']);
+            final verifiedUrl = data?['verified_url']?.toString() ?? '';
             final uidMatch = RegExp(r'uid=(\d+)').firstMatch(verifiedUrl);
-            if (uidMatch != null) {
-              resolvedUid = uidMatch.group(1)!;
+            final uid = uidMatch?.group(1) ??
+                data?['uid']?.toString() ??
+                data?['id']?.toString() ??
+                '';
+            if (uid.isNotEmpty && uid != '0') {
+              resolvedUid = uid;
+              desktopSessionVerified = true;
             }
           }
         } catch (_) {}
@@ -423,7 +492,10 @@ class AuthNotifier extends StateNotifier<AuthState> {
       // 4. Quaternary: Try from /ajax/feed/allGroups
       if (resolvedUid.isEmpty) {
         try {
-          final groupsRes = await dio.get('/ajax/feed/allGroups');
+          final groupsRes = await dio.get(
+            '/ajax/feed/allGroups',
+            cancelToken: verificationCancelToken,
+          );
           if (groupsRes.data is Map<String, dynamic>) {
             final rawGroups = groupsRes.data['groups'] as List? ?? [];
             for (final item in rawGroups) {
@@ -432,6 +504,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
                   final gid = g['gid']?.toString() ?? '';
                   if (gid.startsWith('11000') && gid.length > 5) {
                     resolvedUid = gid.substring(5);
+                    desktopSessionVerified = true;
                     break;
                   }
                 }
@@ -445,8 +518,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
       if (resolvedUid.isNotEmpty &&
           (resolvedNickname.isEmpty || resolvedAvatar.isEmpty)) {
         try {
-          final infoRes = await dio
-              .get('/ajax/profile/info', queryParameters: {'uid': resolvedUid});
+          final infoRes = await dio.get(
+            '/ajax/profile/info',
+            queryParameters: {'uid': resolvedUid},
+            cancelToken: verificationCancelToken,
+          );
           if (infoRes.data is Map<String, dynamic> &&
               infoRes.data['data'] != null) {
             final userData = infoRes.data['data']['user'];
@@ -466,15 +542,33 @@ class AuthNotifier extends StateNotifier<AuthState> {
       }
     } catch (_) {}
 
-    // Atomic commit ONLY if verification resolved a genuine UID. Login-page
-    // auto-detection additionally requires the desktop session, otherwise a
-    // mobile-only SSO response could close the page before the desktop feed
-    // Cookie had been synchronized.
-    if (resolvedUid.isNotEmpty &&
-        (!requireDesktopSession || desktopSessionVerified)) {
+    // Stop the deadline before the short local persistence phase. A timed-out
+    // network verification must never leave a request running that can commit
+    // an unexpected late session.
+    verificationTimeoutTimer?.cancel();
+    // A verification timeout cancels the actual Dio requests. Do not let a
+    // late response from an abandoned verification commit a session afterwards.
+    if (verificationCancelToken.isCancelled) {
+      state = state.copyWith(isValidating: false);
+      return false;
+    }
+
+    // Commit only after one of the supported desktop/mobile verification paths
+    // confirms the session. Mobile WebView login may complete before desktop
+    // SSO catches up; the feed controller reconciles desktop cookies later.
+    if (canCommitVerifiedSession(
+      uid: resolvedUid,
+      desktopSessionVerified: desktopSessionVerified,
+      mobileSessionVerified: mobileSessionVerified,
+      requireDesktopSession: requireDesktopSession,
+    )) {
       await _storage.setFullCookie(effectiveFullCookie);
       if (desktopSessionVerified) {
         await _storage.setDesktopCookie(effectiveFullCookie);
+      } else {
+        // Never retain a desktop cookie from another/older account while a
+        // newly verified mobile session is waiting for SSO synchronization.
+        await _storage.clearDesktopCookie();
       }
       if (mobileSessionVerified) {
         await _storage.setMobileCookie(effectiveFullCookie);
@@ -505,6 +599,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
         avatar: resolvedAvatar.isNotEmpty ? resolvedAvatar : null,
         isValidating: false,
         isCookieExpired: false,
+        cookieValidationStatus: desktopSessionVerified
+            ? CookieValidationStatus.valid
+            : CookieValidationStatus.needsDesktopSync,
       );
       return true;
     }

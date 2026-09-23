@@ -27,6 +27,39 @@ void main() {
       expect(AuthNotifier.normalizeCookieHeader('_2Aabcdef'), isEmpty);
     });
 
+    test('accepts a verified mobile WebView session without desktop SSO', () {
+      expect(
+        AuthNotifier.canCommitVerifiedSession(
+          uid: '1234567890',
+          desktopSessionVerified: false,
+          mobileSessionVerified: true,
+          requireDesktopSession: false,
+        ),
+        isTrue,
+      );
+      expect(
+        AuthNotifier.canCommitVerifiedSession(
+          uid: '1234567890',
+          desktopSessionVerified: false,
+          mobileSessionVerified: true,
+          requireDesktopSession: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('does not commit a uid inferred without a verified session', () {
+      expect(
+        AuthNotifier.canCommitVerifiedSession(
+          uid: '1234567890',
+          desktopSessionVerified: false,
+          mobileSessionVerified: false,
+          requireDesktopSession: false,
+        ),
+        isFalse,
+      );
+    });
+
     test('recognizes the official desktop login redirect payload', () {
       expect(
         AuthNotifier.isDefinitiveDesktopLogoutPayload({
@@ -91,13 +124,62 @@ void main() {
       expect(shouldProbeCookiesForUrl('https://m.weibo.cn/'), isTrue);
       expect(
         shouldProbeCookiesForUrl('https://passport.weibo.com/sso/crossdomain'),
-        isTrue,
+        isFalse,
+      );
+      expect(
+        shouldProbeCookiesForUrl(
+            'https://login.sina.com.cn/sso/v2/crossdomain?ticket=abc'),
+        isFalse,
       );
       expect(
         shouldProbeCookiesForUrl(
             'https://passport.weibo.com/sso/signin?ticket=abc'),
+        isFalse,
+      );
+    });
+
+    test('detects login transition URLs for automatic synchronization', () {
+      expect(
+        isLoginSuccessTransitionUrl(
+            'https://login.sina.com.cn/sso/v2/crossdomain?ticket=ST-12345'),
         isTrue,
       );
+      expect(
+        isLoginSuccessTransitionUrl('https://m.weibo.cn/'),
+        isTrue,
+      );
+      expect(
+        isLoginSuccessTransitionUrl(
+            'https://passport.weibo.com/sso/signin?entry=wapsso&url=https%3A%2F%2Fm.weibo.cn%2F'),
+        isFalse,
+      );
+    });
+
+    test('login returns to mobile Weibo landing page', () {
+      final loginUri = Uri.parse(weiboWebLoginUrl);
+      expect(loginUri.host, 'passport.weibo.com');
+      expect(loginUri.queryParameters['entry'], 'wapsso');
+      expect(loginUri.queryParameters['url'], 'https://m.weibo.cn/');
+    });
+
+    test('accepts desktop verified session', () {
+      expect(
+        AuthNotifier.canCommitVerifiedSession(
+          uid: '1234567890',
+          desktopSessionVerified: true,
+          mobileSessionVerified: false,
+          requireDesktopSession: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('cookie diagnostics expose names but never values', () {
+      final summary = cookieNamesForDiagnostics(
+        'SUB=secret-value; SCF=another-secret; XSRF-TOKEN=csrf-secret',
+      );
+      expect(summary, 'SUB,SCF,XSRF-TOKEN');
+      expect(summary, isNot(contains('secret')));
     });
 
     test('migrates legacy mixed cookies to a verified desktop session',

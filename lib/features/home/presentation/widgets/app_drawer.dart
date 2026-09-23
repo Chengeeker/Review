@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/auth/auth_provider.dart';
+import '../../../../core/network/weibo_dio_client.dart';
+import '../../../../core/storage/storage_service.dart';
 import '../../../../core/utils/haptic_feedback_util.dart';
 import '../../../../core/widgets/app_avatar.dart';
 import '../../../auth/presentation/login_page.dart';
 import '../../../drawer_features/presentation/browsing_history_page.dart';
 import '../../../drawer_features/presentation/chaohua_center_page.dart';
 import '../../../drawer_features/presentation/likes_favorites_page.dart';
+import '../../../drawer_features/data/message_unread_service.dart';
 import '../../../drawer_features/presentation/my_follows_page.dart';
 import '../../../drawer_features/presentation/my_messages_page.dart';
 import '../../../feed/presentation/group_management_page.dart';
@@ -21,6 +26,9 @@ class AppDrawer extends ConsumerStatefulWidget {
 }
 
 class _AppDrawerState extends ConsumerState<AppDrawer> {
+  Timer? _messageBadgeTimer;
+  int _messageUnreadTotal = 0;
+
   @override
   void initState() {
     super.initState();
@@ -33,7 +41,34 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
               auth.avatar == null)) {
         ref.read(authProvider.notifier).refreshUserProfile();
       }
+      _refreshMessageBadge();
+      _messageBadgeTimer = Timer.periodic(
+        const Duration(minutes: 1),
+        (_) => _refreshMessageBadge(),
+      );
     });
+  }
+
+  @override
+  void dispose() {
+    _messageBadgeTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refreshMessageBadge() async {
+    if (!mounted) return;
+    if (!ref.read(authProvider).isLoggedIn) {
+      if (_messageUnreadTotal != 0) {
+        setState(() => _messageUnreadTotal = 0);
+      }
+      return;
+    }
+    final counts = await MessageUnreadService(
+      ref.read(storageServiceProvider),
+    ).fetchCounts(ref.read(weiboDioClientProvider).dio);
+    if (mounted && counts != null && counts.total != _messageUnreadTotal) {
+      setState(() => _messageUnreadTotal = counts.total);
+    }
   }
 
   @override
@@ -180,6 +215,9 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
                     context,
                     icon: Icons.mail_outline_rounded,
                     title: '我的消息',
+                    trailing: _messageUnreadTotal > 0
+                        ? _buildUnreadBadge(_messageUnreadTotal)
+                        : null,
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(
@@ -227,6 +265,7 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
     required IconData icon,
     required String title,
     required VoidCallback onTap,
+    Widget? trailing,
   }) {
     return ListTile(
       leading: Icon(icon, size: 22),
@@ -234,12 +273,33 @@ class _AppDrawerState extends ConsumerState<AppDrawer> {
         title,
         style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
       ),
+      trailing: trailing,
       contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
       visualDensity: VisualDensity.compact,
       onTap: () {
         Navigator.pop(context);
         onTap();
       },
+    );
+  }
+
+  Widget _buildUnreadBadge(int count) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE53935),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        count > 99 ? '99+' : '$count',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     );
   }
 }

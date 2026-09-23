@@ -3,6 +3,7 @@ package com.review
 import android.content.Context
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.Manifest
 import android.location.Location
 import android.location.LocationManager
 import android.os.Build
@@ -14,11 +15,20 @@ import android.webkit.CookieManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.sharelite/cookies"
+    private val MESSAGE_NOTIFICATIONS_CHANNEL = "com.review/message_notifications"
+    private val MESSAGE_NOTIFICATION_WORK = "review_message_notifications"
     private var methodChannel: MethodChannel? = null
     private var initialUrl: String? = null
+    private var notificationPermissionResult: MethodChannel.Result? = null
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
@@ -171,6 +181,38 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun canPostNotifications(): Boolean {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+        ) return false
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        return Build.VERSION.SDK_INT < 24 || manager.areNotificationsEnabled()
+    }
+
+    private fun syncMessageNotificationWork() {
+        val preferences = getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)
+        val enabled = preferences.getBoolean("flutter.message_notifications_enabled", false)
+        val workManager = WorkManager.getInstance(applicationContext)
+        if (!enabled || !canPostNotifications()) {
+            workManager.cancelUniqueWork(MESSAGE_NOTIFICATION_WORK)
+            return
+        }
+
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+        val request = PeriodicWorkRequestBuilder<MessageNotificationWorker>(
+            15,
+            TimeUnit.MINUTES,
+        ).setConstraints(constraints).build()
+        workManager.enqueueUniquePeriodicWork(
+            MESSAGE_NOTIFICATION_WORK,
+            ExistingPeriodicWorkPolicy.REPLACE,
+            request,
+        )
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         val mChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
@@ -282,6 +324,20 @@ class MainActivity : FlutterActivity() {
                                         "https://weibo.cn",
                                         "weibo.cn",
                                         ".weibo.cn"
+                                    )
+                                ),
+                                "sso" to readCookie(
+                                    listOf(
+                                        "https://login.sina.com.cn",
+                                        "login.sina.com.cn",
+                                        "https://passport.weibo.com",
+                                        "passport.weibo.com",
+                                        "https://passport.sina.cn",
+                                        "passport.sina.cn",
+                                        "https://sina.cn",
+                                        "sina.cn",
+                                        ".sina.com.cn",
+                                        ".sina.cn"
                                     )
                                 )
                             )
@@ -559,5 +615,54 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+
+        val notificationChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            MESSAGE_NOTIFICATIONS_CHANNEL,
+        )
+        notificationChannel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "requestNotificationPermission" -> {
+                    if (Build.VERSION.SDK_INT < 33) {
+                        result.success(canPostNotifications())
+                    } else if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+                        PackageManager.PERMISSION_GRANTED
+                    ) {
+                        result.success(canPostNotifications())
+                    } else if (notificationPermissionResult != null) {
+                        result.error("PERMISSION_REQUEST_IN_PROGRESS", "通知权限请求正在处理中", null)
+                    } else {
+                        notificationPermissionResult = result
+                        requestPermissions(
+                            arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                            4903,
+                        )
+                    }
+                }
+                "syncBackgroundNotifications" -> {
+                    try {
+                        syncMessageNotificationWork()
+                        result.success(true)
+                    } catch (error: Exception) {
+                        result.error("WORK_SCHEDULING_FAILED", error.message, null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    @Deprecated("Deprecated in Android API")
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != 4903) return
+        val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+        val notificationsEnabled = canPostNotifications()
+        notificationPermissionResult?.success(granted && notificationsEnabled)
+        notificationPermissionResult = null
     }
 }

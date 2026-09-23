@@ -81,6 +81,25 @@ class StorageService {
   static const String keyWebDavPassword = 'webdav_password';
   static const String keyWebDavDirectory = 'webdav_directory';
   static const String keyBlockedUserIds = 'blocked_user_ids';
+  static const String keyMutedMessageGroupIds = 'muted_message_group_ids';
+  static const String keyMessageUnreadBaselines =
+      'message_unread_baselines_json';
+  static const String keyMessageContactUnreadBaselines =
+      'message_contact_unread_baselines_json';
+  static const String keyMessageNotificationsEnabled =
+      'message_notifications_enabled';
+  static const String keyMessageNotificationMentions =
+      'message_notification_mentions';
+  static const String keyMessageNotificationLikes =
+      'message_notification_likes';
+  static const String keyMessageNotificationComments =
+      'message_notification_comments';
+  static const String keyMessageNotificationDirectMessages =
+      'message_notification_direct_messages';
+  static const String keyMessageNotificationLastCounts =
+      'message_notifications_last_counts_json';
+  static const String keyMessageNotificationInitialized =
+      'message_notifications_initialized';
 
   final SharedPreferences _prefs;
 
@@ -106,6 +125,7 @@ class StorageService {
   String? getDesktopCookie() => _prefs.getString(keyDesktopCookie);
   Future<bool> setDesktopCookie(String value) =>
       _prefs.setString(keyDesktopCookie, value);
+  Future<bool> clearDesktopCookie() => _prefs.remove(keyDesktopCookie);
 
   String? getMobileCookie() => _prefs.getString(keyMobileCookie);
   Future<bool> setMobileCookie(String value) =>
@@ -143,6 +163,22 @@ class StorageService {
   bool getBool(String key, {bool defaultValue = false}) =>
       _prefs.getBool(key) ?? defaultValue;
   Future<bool> setBool(String key, bool value) => _prefs.setBool(key, value);
+
+  List<String> getMutedMessageGroupIds() =>
+      _prefs.getStringList(keyMutedMessageGroupIds) ?? const [];
+
+  bool isMessageGroupMuted(String groupId) =>
+      getMutedMessageGroupIds().contains(groupId);
+
+  Future<void> setMessageGroupMuted(String groupId, bool muted) async {
+    final ids = getMutedMessageGroupIds().toSet();
+    if (muted) {
+      ids.add(groupId);
+    } else {
+      ids.remove(groupId);
+    }
+    await _prefs.setStringList(keyMutedMessageGroupIds, ids.toList());
+  }
 
   bool getUseFloatingNavBar() => _prefs.getBool(keyUseFloatingNavBar) ?? true;
   Future<bool> setUseFloatingNavBar(bool val) =>

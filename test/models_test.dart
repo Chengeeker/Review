@@ -560,6 +560,154 @@ void main() {
       expect(status.hotTopic?.discussionText, equals('6977新讨论'));
     });
 
+    test('WeiboStatusModel renders automatic webpage card images as pictures',
+        () {
+      final status = WeiboStatusModel.fromJson({
+        'id': '5345920309791640',
+        'mid': '5345920309791640',
+        'text_raw': 'http://t.cn/AXO3q237 \u200b',
+        'created_at': '刚刚',
+        'user': {'id': '7699970976', 'screen_name': '奥运内容用户'},
+        'url_objects': [
+          {
+            'url_ori': 'http://t.cn/AXO3q237',
+            'info': {
+              'url_short': 'http://t.cn/AXO3q237',
+              'type': 39,
+            },
+            'object': {
+              'object': {
+                'object_type': 'webpage',
+                'display_name': '祝贺盛李豪获得射击10米气步枪混合团体金牌',
+                'target_url':
+                    'https://m.weibo.cn/c/wbox?id=example&page=pages/award',
+                'pic_url': 'https://wx4.sinaimg.cn/large/award-card.jpg',
+                'image': {'url': 'https://wx3.sinaimg.cn/large/award-card.jpg'},
+              },
+            },
+          },
+        ],
+      });
+
+      expect(status.pics, hasLength(1));
+      expect(status.pics.single.largeUrl,
+          equals('https://wx4.sinaimg.cn/large/award-card.jpg'));
+      expect(status.pics.single.isWebpageCard, isTrue);
+      expect(status.pics.single.width, equals(16));
+      expect(status.pics.single.height, equals(9));
+      expect(status.textRaw, isEmpty);
+      expect(status.urlStruct!.single['card_image_url'],
+          equals('https://wx4.sinaimg.cn/large/award-card.jpg'));
+    });
+
+    test('WeiboStatusModel keeps topic card images out of the photo gallery',
+        () {
+      final status = WeiboStatusModel.fromJson({
+        'id': 'topic-card-status',
+        'mid': 'topic-card-status',
+        'text_raw': '中国射击队[超话]',
+        'created_at': '刚刚',
+        'user': {'id': '7699970976', 'screen_name': '奥运内容用户'},
+        'url_objects': [
+          {
+            'url_ori': '中国射击队[超话]',
+            'object': {
+              'object': {
+                'object_type': 'topic',
+                'display_name': '中国射击队',
+                'image': {'url': 'https://wx2.sinaimg.cn/thumbnail/topic.jpg'},
+              },
+            },
+          },
+        ],
+      });
+
+      expect(status.pics, isEmpty);
+    });
+
+    test('WeiboStatusModel renders the hydrated bigPic webpage card image', () {
+      final status = WeiboStatusModel.fromJson({
+        'id': '5345920309791640',
+        'mid': '5345920309791640',
+        'text_raw': 'http://t.cn/AXO3q237',
+        'created_at': '刚刚',
+        'user': {'id': '7699970976', 'screen_name': '中国射击队'},
+        'url_struct': [
+          {
+            'url_title': '祝贺盛李豪获得射击10米气步枪混合团体金牌',
+            'short_url': 'http://t.cn/AXO3q237',
+            'long_url': 'https://weibo.com/u/7699970976',
+            'h5_target_url':
+                'https://m.weibo.cn/c/wbox?id=award-card&page=pages/detail',
+            'url_type': 39,
+          },
+        ],
+        'page_info': {
+          'type': 'bigPic',
+          'page_pic': {
+            'url':
+                'https://wx4.sinaimg.cn/large/001MUa3Ely8ihcbkvea31j60t30gdmzg02.jpg',
+          },
+          'media_pic_url':
+              'https://d.sinaimg.cn/prd/100/1857/2025/05/22/normalbeijing1.png',
+          'media_stream_url': 'https://d.sinaimg.cn/prd/award.mp4',
+        },
+      });
+
+      expect(status.pics, hasLength(1));
+      expect(status.pics.single.largeUrl,
+          contains('001MUa3Ely8ihcbkvea31j60t30gdmzg02.jpg'));
+      expect(status.pics.single.isWebpageCard, isTrue);
+      expect(status.pics.single.webpageCardBackgroundUrl,
+          equals('https://d.sinaimg.cn/prd/100/1857/2025/05/22/normalbeijing1.png'));
+      expect(status.pics.single.width, equals(16));
+      expect(status.pics.single.height, equals(9));
+      expect(status.textRaw, isEmpty);
+    });
+
+    test('WeiboStatusModel parses desktop birthday card background layers', () {
+      final status = WeiboStatusModel.fromJson({
+        'id': '5239919674917842',
+        'mid': '5239919674917842',
+        'text_raw': 'http://t.cn/AXycm1sD',
+        'created_at': '刚刚',
+        'user': {'id': '7699970976', 'screen_name': '光靠干饭就'},
+        'url_struct': [
+          {
+            'url_title': '今天是我的生日，来祝福我吧！',
+            'short_url': 'http://t.cn/AXycm1sD',
+            'url_type': 39,
+          },
+        ],
+        'page_info': {
+          'type': '23',
+          'object_type': 'webpage',
+          'card_info': {
+            'pic_url':
+                'https://pc.us.sinaimg.cn/0020LMLrgx08tt9q3UTl0b0701000hUJ0k01.png',
+            'page_info': {
+              'pic_info': {
+                'pic_big': {
+                  'url':
+                      'https://pc.us.sinaimg.cn/0010lkgtjx07nH2wfJhl0b0701000h100k01.png',
+                  'width': 854,
+                  'height': 480,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      expect(status.pics, hasLength(1));
+      expect(status.pics.single.largeUrl,
+          contains('0020LMLrgx08tt9q3UTl0b0701000hUJ0k01.png'));
+      expect(status.pics.single.webpageCardBackgroundUrl,
+          contains('0010lkgtjx07nH2wfJhl0b0701000h100k01.png'));
+      expect(status.pics.single.isWebpageCard, isTrue);
+      expect(status.textRaw, isEmpty);
+    });
+
     test('WeiboStatusModel maps url_objects video cards to native media fields',
         () {
       final status = WeiboStatusModel.fromJson({

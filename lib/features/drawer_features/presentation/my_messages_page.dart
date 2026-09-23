@@ -1,13 +1,17 @@
+import 'dart:async';
+
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/network/weibo_dio_client.dart';
+import '../../../core/storage/storage_service.dart';
 import '../../../core/utils/app_toast.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
 import '../../../core/utils/weibo_time_formatter.dart';
 import '../../../core/widgets/app_avatar.dart';
 import '../../auth/presentation/login_page.dart';
+import '../data/message_unread_service.dart';
 import 'chat_conversation_page.dart';
 import 'likes_comments_page.dart';
 import 'mentions_page.dart';
@@ -23,7 +27,7 @@ class MyMessagesPage extends ConsumerStatefulWidget {
 class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
   final List<Map<String, dynamic>> _contacts = [];
   bool _isLoading = true;
-  int _totalContacts = 0;
+  bool _isClearingUnread = false;
 
   @override
   void initState() {
@@ -32,14 +36,11 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
   }
 
   Future<void> _clearUnreadMessages() async {
+    if (_isClearingUnread) return;
     HapticFeedbackUtil.light();
     final client = ref.read(weiboDioClientProvider);
-    final previousContacts = _contacts
-        .map((contact) => Map<String, dynamic>.from(contact))
-        .toList(growable: false);
-
-    // 1. 本地乐观清除全部未读标记
     setState(() {
+      _isClearingUnread = true;
       for (final c in _contacts) {
         c['unread'] = 0;
         c['unread_count'] = 0;
@@ -47,7 +48,13 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
       }
     });
 
-    // 2. 异步调用微博多重未读清除接口
+    // Persist local baselines before the remote requests so a contacts refresh
+    // cannot bring the just-cleared counters back from a stale server response.
+    await MessageUnreadService(ref.read(storageServiceProvider))
+        .markCurrentAsRead(client.dio, _contacts);
+    if (!mounted) return;
+
+    // Ask Weibo to clear direct messages and the four notification sections.
     var remoteSuccess = false;
     try {
       Future<dynamic> safeRequest(Future<dynamic> request) async {
@@ -72,24 +79,37 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
           queryParameters: {'type': 'all'},
         )),
       ]);
-      remoteSuccess = results.any((result) {
-        final statusCode = result?.statusCode;
-        return statusCode is int && statusCode >= 200 && statusCode < 300;
-      });
+      remoteSuccess = results.any(_isClearResponseConfirmed);
     } catch (_) {}
 
-    if (mounted) {
-      if (!remoteSuccess) {
-        setState(() {
-          _contacts
-            ..clear()
-            ..addAll(previousContacts);
-        });
-        AppToast.show(context, '微博服务器未确认清除，未读状态已恢复');
-      } else {
-        AppToast.show(context, '已清除未读信息');
-      }
+    if (!mounted) return;
+    setState(() => _isClearingUnread = false);
+    AppToast.show(
+      context,
+      remoteSuccess ? '已清除未读消息' : '本地未读计数已清零，服务器未确认同步',
+    );
+  }
+
+  bool _isClearResponseConfirmed(dynamic response) {
+    final statusCode = response?.statusCode;
+    if (statusCode is! int || statusCode < 200 || statusCode >= 300) {
+      return false;
     }
+    final data = response.data;
+    if (data is Map) {
+      if (data['error'] != null && data['error'].toString().isNotEmpty) {
+        return false;
+      }
+      if (data['ok'] != null) {
+        return data['ok'] == 1 || data['ok'] == '1' || data['ok'] == true;
+      }
+      if (data['code'] != null) {
+        final code = data['code'].toString();
+        return code == '0' || code == '100000';
+      }
+      return false;
+    }
+    return data == null || data == '';
   }
 
   Future<void> _fetchContacts() async {
@@ -102,7 +122,6 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
     setState(() => _isLoading = true);
     final client = ref.read(weiboDioClientProvider);
     final extracted = <Map<String, dynamic>>[];
-    int total = 0;
 
     try {
       final res = await client.dio.get(
@@ -110,7 +129,6 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
       );
       if (res.data is Map<String, dynamic>) {
         final data = res.data as Map<String, dynamic>;
-        total = data['totalNumber'] is int ? data['totalNumber'] as int : 0;
         final rawList = data['contacts'] as List? ?? [];
         extracted.addAll(rawList.whereType<Map<String, dynamic>>());
 
@@ -134,14 +152,61 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
       }
     } catch (_) {}
 
+    final displayContacts = await MessageUnreadService(
+      ref.read(storageServiceProvider),
+    ).applyContactUnreadBaselines(extracted);
+
     if (mounted) {
       setState(() {
         _contacts.clear();
-        _contacts.addAll(extracted);
-        _totalContacts = total > 0 ? total : _contacts.length;
+        _contacts.addAll(displayContacts);
         _isLoading = false;
       });
     }
+  }
+
+  void _openNotificationPage(String category, Widget page) {
+    // Mark the category as read independently of opening the page; this keeps
+    // navigation immediate while persisting the local unread watermark.
+    unawaited(
+      MessageUnreadService(ref.read(storageServiceProvider)).markCategoryAsRead(
+        ref.read(weiboDioClientProvider).dio,
+        category,
+      ),
+    );
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => page),
+    );
+  }
+
+  Future<void> _openConversation({
+    required Map<String, dynamic> contact,
+    required String id,
+    required String name,
+    required String avatar,
+    required bool isGroup,
+    required int unreadCount,
+  }) async {
+    if (unreadCount > 0 && id.isNotEmpty) {
+      // Reflect the read immediately, then persist the raw server counter as
+      // this conversation's baseline so a stale contacts response cannot
+      // restore the badge after returning from the chat.
+      setState(() => contact['unread_count'] = 0);
+      await MessageUnreadService(ref.read(storageServiceProvider))
+          .markContactAsRead(id, _contacts);
+    }
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChatConversationPage(
+          targetId: id,
+          targetName: name,
+          targetAvatar: avatar,
+          isGroup: isGroup,
+        ),
+      ),
+    );
+    if (mounted) await _fetchContacts();
   }
 
   @override
@@ -155,6 +220,21 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
       appBar: AppBar(
         title:
             const Text('我的消息', style: TextStyle(fontWeight: FontWeight.bold)),
+        actions: isLoggedIn
+            ? [
+                IconButton(
+                  tooltip: '清除未读消息',
+                  onPressed: _isClearingUnread ? null : _clearUnreadMessages,
+                  icon: _isClearingUnread
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.cleaning_services_rounded),
+                ),
+              ]
+            : null,
       ),
       body: !isLoggedIn
           ? Center(
@@ -208,12 +288,10 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
                                 iconColor: Colors.blue.shade600,
                                 title: '@我的',
                                 subtitle: '提及我的微博与评论',
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                        builder: (ctx) => const MentionsPage()),
-                                  );
-                                },
+                                onTap: () => _openNotificationPage(
+                                  'mentions',
+                                  const MentionsPage(),
+                                ),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -224,14 +302,10 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
                                 iconColor: Colors.pink.shade500,
                                 title: '收到的赞',
                                 subtitle: '收到的点赞记录',
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (ctx) =>
-                                          const ReceivedLikesPage(),
-                                    ),
-                                  );
-                                },
+                                onTap: () => _openNotificationPage(
+                                  'likes',
+                                  const ReceivedLikesPage(),
+                                ),
                               ),
                             ),
                           ],
@@ -264,14 +338,10 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
                                 iconColor: const Color(0xFF10B981),
                                 title: '收到的评论',
                                 subtitle: '与我互动的评论回复',
-                                onTap: () {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (ctx) =>
-                                          const ReceivedCommentsPage(),
-                                    ),
-                                  );
-                                },
+                                onTap: () => _openNotificationPage(
+                                  'comments',
+                                  const ReceivedCommentsPage(),
+                                ),
                               ),
                             ),
                           ],
@@ -284,11 +354,10 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
                   const Divider(height: 1, thickness: 0.5),
                   const SizedBox(height: 12),
 
-                  // 2. 私信会话列表标题与清除未读信息按钮
+                  // 2. 私信会话列表标题
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Row(
                           children: [
@@ -298,53 +367,7 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                            if (_totalContacts > 0) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: colorScheme.surfaceContainerHighest,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(
-                                  '$_totalContacts',
-                                  style: TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.bold,
-                                    color: colorScheme.onSurfaceVariant,
-                                  ),
-                                ),
-                              ),
-                            ],
                           ],
-                        ),
-                        InkWell(
-                          borderRadius: BorderRadius.circular(8),
-                          onTap: _clearUnreadMessages,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 4),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.cleaning_services_rounded,
-                                  size: 15,
-                                  color: colorScheme.primary,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '清除未读信息',
-                                  style: TextStyle(
-                                    fontSize: 12.5,
-                                    color: colorScheme.primary,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
                         ),
                       ],
                     ),
@@ -397,21 +420,26 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
                         final message = contact['message'] is Map
                             ? (contact['message'] as Map<String, dynamic>)
                             : <String, dynamic>{};
-                        final unreadCount = contact['unread_count'] is int
-                            ? contact['unread_count'] as int
-                            : 0;
+                        final unreadCount = MessageUnreadService.readCount(
+                            contact['unread_count']);
                         final sigMsgs =
                             contact['significant_msgs'] as List? ?? [];
                         final hasSpecialAt = sigMsgs.isNotEmpty;
 
-                        final rawId = user['id']?.toString() ?? '';
+                        final rawId = user['id']?.toString() ??
+                            user['idstr']?.toString() ??
+                            '';
                         final name = user['name']?.toString() ??
                             user['screen_name']?.toString() ??
                             '私信用户';
-                        final isGroup = contact['is_group'] == true ||
-                            rawId.length > 12 ||
-                            name.contains('群') ||
-                            name.contains('交流');
+                        final isGroup =
+                            MessageUnreadService.isGroupContact(contact);
+                        // A stored mute ID comes from this group's info page,
+                        // so use the exact conversation ID as the source of
+                        // truth instead of depending on server group flags.
+                        final isMuted = ref
+                            .read(storageServiceProvider)
+                            .isMessageGroupMuted(rawId);
 
                         final avatar = user['avatar_large']?.toString() ??
                             user['round_avatar_large']?.toString() ??
@@ -433,18 +461,25 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
                                   top: -2,
                                   right: -2,
                                   child: Container(
+                                    key: ValueKey(
+                                      'message-unread-badge-$rawId',
+                                    ),
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 5, vertical: 1.5),
                                     decoration: BoxDecoration(
-                                      color: Colors.red.shade600,
+                                      color: isMuted
+                                          ? colorScheme.surfaceContainerHighest
+                                          : Colors.red.shade600,
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     constraints:
                                         const BoxConstraints(minWidth: 16),
                                     child: Text(
                                       unreadCount > 99 ? '99+' : '$unreadCount',
-                                      style: const TextStyle(
-                                        color: Colors.white,
+                                      style: TextStyle(
+                                        color: isMuted
+                                            ? colorScheme.onSurfaceVariant
+                                            : Colors.white,
                                         fontSize: 10,
                                         fontWeight: FontWeight.bold,
                                       ),
@@ -514,19 +549,14 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
                               ],
                             ),
                           ),
-                          onTap: () {
-                            // 直接进入微博原生聊天界面！
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (ctx) => ChatConversationPage(
-                                  targetId: rawId,
-                                  targetName: name,
-                                  targetAvatar: avatar,
-                                  isGroup: isGroup,
-                                ),
-                              ),
-                            );
-                          },
+                          onTap: () => _openConversation(
+                            contact: contact,
+                            id: rawId,
+                            name: name,
+                            avatar: avatar,
+                            isGroup: isGroup,
+                            unreadCount: unreadCount,
+                          ),
                         );
                       },
                     ),

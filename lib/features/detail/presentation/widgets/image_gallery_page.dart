@@ -367,7 +367,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                           pic.width > 0 &&
                           pic.height / pic.width > 2.0);
 
-                  final imageWidget = ExtendedImage.network(
+                  final foregroundImage = ExtendedImage.network(
                     pic.originalUrl.isNotEmpty
                         ? pic.originalUrl
                         : (pic.largeUrl.isNotEmpty
@@ -434,6 +434,34 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                             : InitialAlignment.center,
                       );
                     },
+                  );
+                  final backgroundUrl = pic.webpageCardBackgroundUrl?.trim();
+                  final hasBackground = backgroundUrl != null &&
+                      backgroundUrl.isNotEmpty &&
+                      backgroundUrl != pic.originalUrl &&
+                      backgroundUrl != pic.largeUrl;
+
+                  final imageWidget = ColoredBox(
+                    color:
+                        pic.isWebpageCard ? Colors.white : Colors.transparent,
+                    child: hasBackground
+                        ? Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              IgnorePointer(
+                                child: ExtendedImage.network(
+                                  backgroundUrl,
+                                  width: double.infinity,
+                                  height: double.infinity,
+                                  headers: ApiConstants.imageHeaders,
+                                  fit: BoxFit.contain,
+                                  cache: true,
+                                ),
+                              ),
+                              foregroundImage,
+                            ],
+                          )
+                        : foregroundImage,
                   );
 
                   return Stack(

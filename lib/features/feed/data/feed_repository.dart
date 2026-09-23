@@ -77,6 +77,9 @@ class FeedRepository {
   final WeiboDioClient _client;
   final StorageService _storage;
   final DetailRepository _detailRepository;
+  final Map<String, Future<Map<String, dynamic>?>> _officialStatusRequests = {};
+
+  static const int _statusParseConcurrency = 6;
 
   FeedRepository(this._client, this._storage)
       : _detailRepository = DetailRepository(_client);
@@ -86,25 +89,48 @@ class FeedRepository {
   /// mobile status endpoint. Desktop responses may keep `is_vote` or
   /// `vote_dynamic` while omitting `url_objects`.
   Future<List<WeiboStatusModel>> _parseStatuses(List rawStatuses) async {
-    final statuses = <WeiboStatusModel>[];
-    for (final item in rawStatuses) {
-      if (item is! Map) continue;
-      final json = Map<String, dynamic>.from(item);
-      try {
-        var status = WeiboStatusModel.fromJson(json);
-        if (_needsOfficialEngagementHydration(json, status)) {
-          final officialJson = await _fetchOfficialStatus(status);
-          if (officialJson != null) {
-            status = WeiboStatusModel.fromJson({...json, ...officialJson});
-          }
-        }
-        if (status.isLiveBroadcast && !status.hasPlayableVideoStream) {
-          status = await _detailRepository.enrichLivePlayback(status);
-        }
-        if (status.id.isNotEmpty) statuses.add(status);
-      } catch (_) {}
+    if (rawStatuses.isEmpty) return [];
+
+    // Smart cards need a second official status request because the desktop
+    // timeline only exposes a type-39 short link. Keep a small bounded worker
+    // pool so a profile containing many such cards does not wait for every
+    // request serially, while avoiding an unbounded burst against Weibo.
+    final parsed = List<WeiboStatusModel?>.filled(rawStatuses.length, null);
+    var nextIndex = 0;
+
+    Future<void> worker() async {
+      while (true) {
+        final index = nextIndex++;
+        if (index >= rawStatuses.length) return;
+        parsed[index] = await _parseStatusItem(rawStatuses[index]);
+      }
     }
-    return statuses;
+
+    final workerCount = rawStatuses.length < _statusParseConcurrency
+        ? rawStatuses.length
+        : _statusParseConcurrency;
+    await Future.wait(List.generate(workerCount, (_) => worker()));
+    return parsed.whereType<WeiboStatusModel>().toList();
+  }
+
+  Future<WeiboStatusModel?> _parseStatusItem(Object? item) async {
+    if (item is! Map) return null;
+    final json = Map<String, dynamic>.from(item);
+    try {
+      var status = WeiboStatusModel.fromJson(json);
+      if (_needsOfficialEngagementHydration(json, status)) {
+        final officialJson = await _fetchOfficialStatusCached(status);
+        if (officialJson != null) {
+          status = WeiboStatusModel.fromJson({...json, ...officialJson});
+        }
+      }
+      if (status.isLiveBroadcast && !status.hasPlayableVideoStream) {
+        status = await _detailRepository.enrichLivePlayback(status);
+      }
+      return status.id.isNotEmpty ? status : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Reuses the same official engagement hydration for other status lists,
@@ -130,7 +156,13 @@ class FeedRepository {
     final hasHotTopicMarker = _containsHotTopicMarker(json);
 
     return (status.poll == null && hasVoteMarker) ||
-        (status.hotTopic == null && hasHotTopicMarker);
+        (status.hotTopic == null && hasHotTopicMarker) ||
+        (status.pics.isEmpty && _hasAutomaticWebpageCard(status));
+  }
+
+  static bool _hasAutomaticWebpageCard(WeiboStatusModel status) {
+    final urlStruct = status.urlStruct;
+    return urlStruct?.any(isAutomaticWebpageCardEntry) == true;
   }
 
   static bool _hasVoteSmartLink(WeiboStatusModel status) {
@@ -172,6 +204,24 @@ class FeedRepository {
       // Enrichment failure must leave the original timeline status intact.
     }
     return null;
+  }
+
+  Future<Map<String, dynamic>?> _fetchOfficialStatusCached(
+    WeiboStatusModel status,
+  ) async {
+    final id = status.mid.isNotEmpty ? status.mid : status.id;
+    if (id.isEmpty) return null;
+
+    final existing = _officialStatusRequests[id];
+    if (existing != null) return existing;
+
+    final request = _fetchOfficialStatus(status);
+    _officialStatusRequests[id] = request;
+    final result = await request;
+    if (result == null && identical(_officialStatusRequests[id], request)) {
+      _officialStatusRequests.remove(id);
+    }
+    return result;
   }
 
   static bool _isTruthy(Object? value) {

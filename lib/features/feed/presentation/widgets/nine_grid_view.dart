@@ -43,7 +43,8 @@ class NineGridView extends ConsumerWidget {
     return _buildGrid(context, crossAxisCount: 3, style: style);
   }
 
-  Widget _buildSingleImage(BuildContext context, WeiboPicModel pic, WeiboStyleSettings style) {
+  Widget _buildSingleImage(
+      BuildContext context, WeiboPicModel pic, WeiboStyleSettings style) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -73,18 +74,7 @@ class NineGridView extends ConsumerWidget {
             children: [
               ClipRRect(
                 borderRadius: radius,
-                child: ExtendedImage.network(
-                  pic.previewUrl,
-                  headers: ApiConstants.imageHeaders,
-                  fit: BoxFit.cover,
-                  cache: true,
-                  loadStateChanged: (state) {
-                    if (state.extendedImageLoadState == LoadState.loading) {
-                      return Container(color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4));
-                    }
-                    return null;
-                  },
-                ),
+                child: _buildImageContent(pic, colorScheme),
               ),
               if (pic.isVideo) ...[
                 Center(
@@ -105,7 +95,9 @@ class NineGridView extends ConsumerWidget {
                 Positioned(
                   bottom: 6,
                   right: 6,
-                  child: _buildBadge(pic.videoDuration?.isNotEmpty == true ? pic.videoDuration! : '视频'),
+                  child: _buildBadge(pic.videoDuration?.isNotEmpty == true
+                      ? pic.videoDuration!
+                      : '视频'),
                 ),
               ] else if (pic.isLivePhoto)
                 Positioned(
@@ -126,7 +118,8 @@ class NineGridView extends ConsumerWidget {
     );
   }
 
-  Widget _buildGrid(BuildContext context, {required int crossAxisCount, required WeiboStyleSettings style}) {
+  Widget _buildGrid(BuildContext context,
+      {required int crossAxisCount, required WeiboStyleSettings style}) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final spacing = style.largeImageMode ? 7.0 : 5.0;
@@ -152,18 +145,7 @@ class NineGridView extends ConsumerWidget {
             children: [
               ClipRRect(
                 borderRadius: radius,
-                child: ExtendedImage.network(
-                  pic.previewUrl,
-                  headers: ApiConstants.imageHeaders,
-                  fit: BoxFit.cover,
-                  cache: true,
-                  loadStateChanged: (state) {
-                    if (state.extendedImageLoadState == LoadState.loading) {
-                      return Container(color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4));
-                    }
-                    return null;
-                  },
-                ),
+                child: _buildImageContent(pic, colorScheme),
               ),
               if (pic.isVideo) ...[
                 Center(
@@ -184,7 +166,9 @@ class NineGridView extends ConsumerWidget {
                 Positioned(
                   bottom: 4,
                   right: 4,
-                  child: _buildBadge(pic.videoDuration?.isNotEmpty == true ? pic.videoDuration! : '视频'),
+                  child: _buildBadge(pic.videoDuration?.isNotEmpty == true
+                      ? pic.videoDuration!
+                      : '视频'),
                 ),
               ] else if (pic.isLivePhoto)
                 Positioned(
@@ -202,6 +186,49 @@ class NineGridView extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildImageContent(WeiboPicModel pic, ColorScheme colorScheme) {
+    Widget networkImage(String url) {
+      return ExtendedImage.network(
+        url,
+        headers: ApiConstants.imageHeaders,
+        fit: BoxFit.cover,
+        cache: true,
+        loadStateChanged: (state) {
+          if (state.extendedImageLoadState == LoadState.loading) {
+            return Container(
+              color: pic.isWebpageCard
+                  ? Colors.white
+                  : colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+            );
+          }
+          return null;
+        },
+      );
+    }
+
+    final backgroundUrl = pic.webpageCardBackgroundUrl?.trim();
+    final hasBackground = backgroundUrl != null &&
+        backgroundUrl.isNotEmpty &&
+        backgroundUrl != pic.previewUrl &&
+        backgroundUrl != pic.originalUrl;
+
+    return ColoredBox(
+      // Some official award/member cards are transparent PNGs despite their
+      // .jpg CDN path. Keep their intended white card background in both
+      // light and dark app themes while the full background layer loads.
+      color: pic.isWebpageCard ? Colors.white : Colors.transparent,
+      child: hasBackground
+          ? Stack(
+              fit: StackFit.expand,
+              children: [
+                IgnorePointer(child: networkImage(backgroundUrl)),
+                IgnorePointer(child: networkImage(pic.previewUrl)),
+              ],
+            )
+          : networkImage(pic.previewUrl),
     );
   }
 

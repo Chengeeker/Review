@@ -273,7 +273,7 @@ class WeiboDioClient {
 
     if (responses.isNotEmpty) return List.unmodifiable(responses);
     if (lastHtml.isNotEmpty) return [lastHtml];
-    if (lastError != null) throw lastError!;
+    if (lastError != null) throw lastError;
     throw StateError('微博文章请求未返回内容');
   }
 

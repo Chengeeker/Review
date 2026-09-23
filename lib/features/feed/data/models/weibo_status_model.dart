@@ -119,6 +119,22 @@ String? _firstNonEmptyValue(Iterable<Object?> values) {
   return null;
 }
 
+String? _firstNormalizedMediaUrl(Iterable<Object?> values) {
+  for (final value in values) {
+    final normalized = _normalizeMediaUrl(value);
+    if (normalized != null && normalized.isNotEmpty) return normalized;
+  }
+  return null;
+}
+
+double? _firstPositiveDimension(Iterable<Object?> values) {
+  for (final value in values) {
+    final dimension = double.tryParse(value?.toString().trim() ?? '');
+    if (dimension != null && dimension > 0) return dimension;
+  }
+  return null;
+}
+
 String? _normalizedMediaValue(Object? value) {
   final normalized = _normalizeMediaUrl(value);
   return normalized == null || normalized.isEmpty ? null : normalized;
@@ -217,9 +233,30 @@ List<Map<String, dynamic>> _parseUrlStructs(Map<String, dynamic> json) {
     addQuality('默认画质', stream?['url']);
     addQuality('原画', media?['original_url']);
 
+    final mediaImage = _asDynamicMap(media?['image']);
+    final objectType = _firstNonEmptyValue([
+      media?['object_type'],
+      object?['object_type'],
+    ]);
+    final isWebPageCard = objectType?.toLowerCase() == 'webpage' ||
+        info?['type']?.toString() == '39';
+    final cardImageUrl = isWebPageCard
+        ? _firstNormalizedMediaUrl([
+            media?['pic_url'],
+            mediaImage?['url'],
+          ])
+        : null;
+    final cardImageWidth = _firstPositiveDimension([
+      mediaImage?['width'],
+      media?['width'],
+    ]);
+    final cardImageHeight = _firstPositiveDimension([
+      mediaImage?['height'],
+      media?['height'],
+    ]);
     final coverUrl = _firstNonEmptyValue([
       _asDynamicMap(media?['screenshots'])?['1'],
-      _asDynamicMap(media?['image'])?['url'],
+      mediaImage?['url'],
       media?['cover_image'],
     ]);
     final title = _firstNonEmptyValue([
@@ -243,6 +280,10 @@ List<Map<String, dynamic>> _parseUrlStructs(Map<String, dynamic> json) {
       if (title != null) 'url_title': title,
       if (objectId != null) 'object_id': objectId,
       if (info?['type'] != null) 'url_type': info?['type'],
+      if (cardImageUrl != null) 'card_image_url': cardImageUrl,
+      if (cardImageWidth != null) 'card_image_width': cardImageWidth,
+      if (cardImageHeight != null) 'card_image_height': cardImageHeight,
+      if (objectType != null) 'card_object_type': objectType,
       if (qualityUrls.isNotEmpty) 'video_quality_urls': qualityUrls,
       if (qualityUrls.isNotEmpty) 'video_url': qualityUrls.values.first,
       if (coverUrl != null) 'video_cover_url': coverUrl,
@@ -317,6 +358,8 @@ class WeiboPicModel {
   final String? videoUrl;
   final String? videoDuration;
   final String? videoTitle;
+  final bool isWebpageCard;
+  final String? webpageCardBackgroundUrl;
 
   const WeiboPicModel({
     required this.pid,
@@ -333,6 +376,8 @@ class WeiboPicModel {
     this.videoUrl,
     this.videoDuration,
     this.videoTitle,
+    this.isWebpageCard = false,
+    this.webpageCardBackgroundUrl,
   });
 
   /// High quality preview URL for feed cards & grid (uses orj960 / large: crisp 80%-100% original quality, not blurry thumbnail)
@@ -421,6 +466,11 @@ class WeiboPicModel {
         json['video_duration']?.toString() ?? json['videoDuration']?.toString();
     final vTitle =
         json['video_title']?.toString() ?? json['videoTitle']?.toString();
+    final isWebpageCard =
+        json['is_webpage_card'] == true || json['isWebpageCard'] == true;
+    final webpageCardBackgroundUrl = json['webpage_card_background_url']
+            ?.toString() ??
+        json['webpageCardBackgroundUrl']?.toString();
 
     return WeiboPicModel(
       pid: pid,
@@ -437,6 +487,8 @@ class WeiboPicModel {
       videoUrl: vUrl,
       videoDuration: vDur,
       videoTitle: vTitle,
+      isWebpageCard: isWebpageCard,
+      webpageCardBackgroundUrl: webpageCardBackgroundUrl,
     );
   }
 
@@ -458,8 +510,202 @@ class WeiboPicModel {
       'videoUrl': videoUrl,
       'videoDuration': videoDuration,
       'videoTitle': videoTitle,
+      'is_webpage_card': isWebpageCard,
+      'webpage_card_background_url': webpageCardBackgroundUrl,
     };
   }
+}
+
+bool _isRealEmbeddedImageUrl(String? url) {
+  if (url == null || url.trim().isEmpty) return false;
+  final lower = url.trim().toLowerCase();
+
+  if (lower.contains('s.weibo.com') ||
+      lower.contains('weibo.com/u/') ||
+      lower.contains('weibo.com/n/') ||
+      lower.contains('weibo.com/detail/') ||
+      lower.contains('m.weibo.cn/status/') ||
+      lower.contains('m.weibo.cn/detail/') ||
+      lower.contains('.html') ||
+      lower.contains('.htm')) {
+    return false;
+  }
+
+  if (lower.contains('.sinaimg.cn') ||
+      lower.contains('photo.weibo.com') ||
+      lower.contains('image.weibo.com') ||
+      lower.contains('pic.weibo.com')) {
+    return true;
+  }
+
+  return RegExp(r'\.(jpg|jpeg|png|gif|webp|bmp|heic)($|[?#])',
+          caseSensitive: false)
+      .hasMatch(lower);
+}
+
+/// A desktop timeline represents many automatically generated cards as a
+/// type-39 smart link and omits the rendered image. The mobile status
+/// response supplies the corresponding `page_info` image after hydration.
+bool isAutomaticWebpageCardEntry(Map<String, dynamic> entry) {
+  final urlType = int.tryParse(entry['url_type']?.toString() ?? '');
+  if (urlType != 39) return false;
+  final shortUrl = _firstNonEmptyValue([
+    entry['short_url'],
+    entry['url_ori'],
+  ]);
+  return shortUrl?.startsWith('http://') == true ||
+      shortUrl?.startsWith('https://') == true;
+}
+
+String _embeddedImageIdentity(String url) {
+  var normalized = url.trim();
+  final queryIndex = normalized.indexOf('?');
+  if (queryIndex >= 0) normalized = normalized.substring(0, queryIndex);
+  normalized = normalized.replaceAll(
+    RegExp(r'/(thumbnail|bmiddle|orj\d+|large|mw2000|original|small|square)/'),
+    '/',
+  );
+  return normalized.toLowerCase();
+}
+
+/// Extracts real image attachments from official smart-card metadata.
+///
+/// A normal status stores images in `pic_infos`, while the newer automatic
+/// award/member cards put the rendered image under
+/// `url_objects[].object.object.pic_url` or `image.url`. Keep this separate
+/// from `url_type_pic`: that field is commonly only a small card-type icon.
+List<WeiboPicModel> _parseEmbeddedImageCards(
+  List<Map<String, dynamic>> urlStruct,
+  List<WeiboPicModel> existingPics,
+  Set<String> imageShortUrls,
+) {
+  final parsedPics = <WeiboPicModel>[];
+  final seenIdentities = <String>{};
+
+  for (final existing in existingPics) {
+    final existingUrl = existing.originalUrl.isNotEmpty
+        ? existing.originalUrl
+        : (existing.largeUrl.isNotEmpty
+            ? existing.largeUrl
+            : existing.thumbnail);
+    if (existingUrl.isNotEmpty) {
+      seenIdentities.add(_embeddedImageIdentity(existingUrl));
+    }
+  }
+
+  bool addCandidate(WeiboPicModel pic) {
+    final imageUrl = pic.originalUrl.isNotEmpty
+        ? pic.originalUrl
+        : (pic.largeUrl.isNotEmpty ? pic.largeUrl : pic.thumbnail);
+    if (!_isRealEmbeddedImageUrl(imageUrl)) return false;
+
+    final identity = _embeddedImageIdentity(imageUrl);
+    if (identity.isEmpty) return false;
+    if (seenIdentities.add(identity)) parsedPics.add(pic);
+    return true;
+  }
+
+  for (final entry in urlStruct) {
+    final shortUrl = _firstNonEmptyValue([
+      entry['short_url'],
+      entry['url_ori'],
+    ]);
+    var isImageAttachment = false;
+
+    final picInfos = entry['pic_infos'];
+    if (picInfos is Map) {
+      for (final rawPic in picInfos.values) {
+        if (rawPic is Map) {
+          final picMap = Map<String, dynamic>.from(rawPic);
+          isImageAttachment = addCandidate(WeiboPicModel.fromJson(
+                {...picMap, 'pid': picMap['pid'] ?? ''},
+              )) ||
+              isImageAttachment;
+        }
+      }
+    }
+
+    final picInfo = entry['pic_info'];
+    if (picInfo is Map) {
+      isImageAttachment = addCandidate(
+              WeiboPicModel.fromJson(Map<String, dynamic>.from(picInfo))) ||
+          isImageAttachment;
+    }
+
+    final urlType = int.tryParse(entry['url_type']?.toString() ?? '');
+    final urlTitle = entry['url_title']?.toString().trim() ?? '';
+    final cardImageUrl = _firstNormalizedMediaUrl([
+      entry['card_image_url'],
+      if (urlType == 39 || urlTitle == '查看图片') entry['ori_url'],
+    ]);
+    final videoQualityUrls = entry['video_quality_urls'];
+    final hasDirectVideo =
+        videoQualityUrls is Map && videoQualityUrls.isNotEmpty;
+
+    // Do not turn a video cover into a photo when the same smart card already
+    // has native playback metadata. Topic cards likewise never receive a
+    // `card_image_url` in _parseUrlStructs, so their existing routing stays
+    // intact.
+    if (cardImageUrl != null &&
+        !hasDirectVideo &&
+        _isRealEmbeddedImageUrl(cardImageUrl)) {
+      final width = _firstPositiveDimension([
+            entry['card_image_width'],
+          ]) ??
+          16.0;
+      final height = _firstPositiveDimension([
+            entry['card_image_height'],
+          ]) ??
+          9.0;
+      isImageAttachment = addCandidate(WeiboPicModel(
+            pid: shortUrl ?? cardImageUrl,
+            thumbnail: cardImageUrl,
+            large: cardImageUrl,
+            original: cardImageUrl,
+            width: width,
+            height: height,
+            isWebpageCard: true,
+          )) ||
+          isImageAttachment;
+    }
+
+    if (isImageAttachment && shortUrl != null && shortUrl.isNotEmpty) {
+      imageShortUrls.add(shortUrl);
+    }
+  }
+
+  return parsedPics;
+}
+
+String _removeEmbeddedImageLinks(
+  String rawText,
+  Set<String> imageShortUrls,
+) {
+  if (imageShortUrls.isEmpty) return rawText;
+
+  var cleaned = rawText;
+  for (final rawUrl in imageShortUrls) {
+    final url = rawUrl.trim();
+    if (url.isEmpty) continue;
+
+    final variants = <String>{url};
+    if (url.startsWith('http://')) {
+      variants.add(url.replaceFirst('http://', 'https://'));
+    } else if (url.startsWith('https://')) {
+      variants.add(url.replaceFirst('https://', 'http://'));
+    }
+    for (final variant in variants) {
+      cleaned = cleaned.replaceAll(
+        RegExp(
+          '${RegExp.escape(variant)}[\\u200B\\u200C\\u200D\\u2060\\uFEFF]*',
+        ),
+        '',
+      );
+    }
+  }
+  return cleaned
+      .replaceAll(RegExp(r'[\u200B\u200C\u200D\u2060\uFEFF]'), '')
+      .trim();
 }
 
 /// Weibo User Model
@@ -956,6 +1202,19 @@ class WeiboStatusModel {
     final Map<String, String> videoQualityMap = {};
 
     final typedUrlStruct = _parseUrlStructs(json);
+    final embeddedImageShortUrls = <String>{};
+    // A retweet wrapper can repeat the original smart-card metadata. The
+    // quoted status owns that image, so only promote cards on the root status
+    // and let the existing retweet card render the inner status once.
+    if (retweeted == null) {
+      pics.addAll(
+        _parseEmbeddedImageCards(
+          typedUrlStruct,
+          pics,
+          embeddedImageShortUrls,
+        ),
+      );
+    }
     final liveId = _extractLiveId({
       'live_id': json['live_id'],
       'liveId': json['liveId'],
@@ -992,6 +1251,87 @@ class WeiboStatusModel {
     }
 
     final pageInfoRaw = json['page_info'];
+    if (pageInfoRaw is Map && retweeted == null) {
+      final pageInfo = Map<String, dynamic>.from(pageInfoRaw);
+      final pageType = pageInfo['type']?.toString().toLowerCase() ?? '';
+      final cardInfo = _asDynamicMap(pageInfo['card_info']);
+      final cardPageInfo = _asDynamicMap(cardInfo?['page_info']);
+      final cardPicInfo = _asDynamicMap(cardPageInfo?['pic_info']);
+      final cardPicBig = _asDynamicMap(cardPicInfo?['pic_big']);
+      final cardPicMiddle = _asDynamicMap(cardPicInfo?['pic_middle']);
+      final isImageWebpage = pageType == 'bigpic' ||
+          pageType == 'big_pic' ||
+          pageType == 'webpage' ||
+          (pageInfo['object_type']?.toString().toLowerCase() == 'webpage' &&
+              cardInfo != null);
+      if (isImageWebpage && typedUrlStruct.any(isAutomaticWebpageCardEntry)) {
+        final pagePic = _asDynamicMap(pageInfo['page_pic']);
+        final pageImageUrl = _firstNormalizedMediaUrl([
+          pageInfo['page_pic'],
+          pagePic?['url'],
+          pagePic?['image_url'],
+          pageInfo['page_pic_url'],
+          pageInfo['pic_url'],
+          cardInfo?['pic_url'],
+          pageInfo['media_pic_url'],
+        ]);
+        final webpageCardBackgroundUrl = _firstNormalizedMediaUrl([
+          pageInfo['media_pic_url'],
+          pageInfo['background_url'],
+          pageInfo['card_background_url'],
+          cardPicBig?['url'],
+          cardPicMiddle?['url'],
+        ]);
+        if (pageImageUrl != null && _isRealEmbeddedImageUrl(pageImageUrl)) {
+          final imageIdentity = _embeddedImageIdentity(pageImageUrl);
+          final alreadyParsed = pics.any((pic) {
+            final existingUrl = pic.originalUrl.isNotEmpty
+                ? pic.originalUrl
+                : (pic.largeUrl.isNotEmpty ? pic.largeUrl : pic.thumbnail);
+            return existingUrl.isNotEmpty &&
+                _embeddedImageIdentity(existingUrl) == imageIdentity;
+          });
+          if (!alreadyParsed) {
+            pics.add(
+              WeiboPicModel(
+                pid: _firstNonEmptyValue([
+                      pagePic?['pid'],
+                      pagePic?['id'],
+                      pageImageUrl,
+                    ]) ??
+                    pageImageUrl,
+                thumbnail: pageImageUrl,
+                large: pageImageUrl,
+                original: pageImageUrl,
+                width: _firstPositiveDimension([
+                      pagePic?['width'],
+                      pageInfo['width'],
+                    ]) ??
+                    16.0,
+                height: _firstPositiveDimension([
+                      pagePic?['height'],
+                      pageInfo['height'],
+                      cardPicBig?['height'],
+                      cardPicMiddle?['height'],
+                    ]) ??
+                    9.0,
+                isWebpageCard: true,
+                webpageCardBackgroundUrl: webpageCardBackgroundUrl,
+              ),
+            );
+          }
+          for (final entry in typedUrlStruct) {
+            if (!isAutomaticWebpageCardEntry(entry)) continue;
+            final shortUrl = _firstNonEmptyValue([
+              entry['short_url'],
+              entry['url_ori'],
+            ]);
+            if (shortUrl != null) embeddedImageShortUrls.add(shortUrl);
+          }
+        }
+      }
+    }
+
     // A retweet wrapper can repeat the original post's page_info at the
     // wrapper level. That media belongs to retweeted_status and must not be
     // promoted to the author of the retweet, otherwise the same video is
@@ -1216,9 +1556,15 @@ class WeiboStatusModel {
     final mblogid = json['mblogid']?.toString() ??
         json['idstr']?.toString() ??
         json['id']?.toString();
-    final fullTextRaw = json['longTextContent_raw']?.toString() ??
+    final rawFullText = json['longTextContent_raw']?.toString() ??
         json['longTextContent']?.toString() ??
         json['full_text_raw']?.toString();
+    final fullTextRaw = rawFullText == null
+        ? null
+        : _removeEmbeddedImageLinks(rawFullText, embeddedImageShortUrls);
+    final rawText =
+        json['text_raw']?.toString() ?? json['text']?.toString() ?? '';
+    final textRaw = _removeEmbeddedImageLinks(rawText, embeddedImageShortUrls);
     final rawTextHtml = json['text']?.toString();
     final textHtml = rawTextHtml != null && rawTextHtml.contains('<img')
         ? rawTextHtml
@@ -1294,7 +1640,7 @@ class WeiboStatusModel {
       mid: numericMid.isNotEmpty ? numericMid : rawMid,
       mblogid: mblogid,
       createdAt: json['created_at']?.toString() ?? '',
-      textRaw: json['text_raw']?.toString() ?? json['text']?.toString() ?? '',
+      textRaw: textRaw,
       textHtml: textHtml,
       fullTextRaw: fullTextRaw,
       isLongText: isLongText,

@@ -463,7 +463,20 @@ class DetailRepository {
   Future<WeiboStatusModel> _enrichOfficialEngagement(
     WeiboStatusModel status,
   ) async {
-    if (status.poll != null && status.hotTopic != null) return status;
+    final hasAutomaticWebpageCard =
+        status.urlStruct?.any(isAutomaticWebpageCardEntry) == true;
+    final hasCompleteWebpageCard = status.pics.any(
+      (pic) =>
+          pic.isWebpageCard &&
+          pic.webpageCardBackgroundUrl?.trim().isNotEmpty == true,
+    );
+    final needsWebpageCardHydration =
+        hasAutomaticWebpageCard && !hasCompleteWebpageCard;
+    if (status.poll != null &&
+        status.hotTopic != null &&
+        !needsWebpageCardHydration) {
+      return status;
+    }
     final id = status.mid.isNotEmpty ? status.mid : status.id;
     if (id.isEmpty) return status;
 
@@ -490,8 +503,23 @@ class DetailRepository {
       }
       if (officialJson == null) return status;
 
-      final official = WeiboStatusModel.fromJson(officialJson);
+      // The mobile response contains the rendered card image, but can omit
+      // the desktop response's type-39 `url_struct`. Preserve that marker so
+      // the model knows this page_info belongs to an automatic card and can
+      // remove the short link from the detail text.
+      final officialPayload = Map<String, dynamic>.from(officialJson);
+      if (officialPayload['url_struct'] == null && status.urlStruct != null) {
+        officialPayload['url_struct'] = status.urlStruct;
+      }
+      final official = WeiboStatusModel.fromJson(officialPayload);
+      final hasWebpageImage = official.pics.any((pic) => pic.isWebpageCard);
+      final officialUrlStruct = official.urlStruct;
       return status.copyWith(
+        pics: official.pics.isNotEmpty ? official.pics : status.pics,
+        textRaw: hasWebpageImage ? official.textRaw : status.textRaw,
+        urlStruct: officialUrlStruct?.isNotEmpty == true
+            ? officialUrlStruct
+            : status.urlStruct,
         poll: status.poll ?? official.poll,
         hotTopic: status.hotTopic ?? official.hotTopic,
         visibilityType: status.visibilityType ?? official.visibilityType,

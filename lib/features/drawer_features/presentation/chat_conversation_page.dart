@@ -62,8 +62,8 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
     super.dispose();
   }
 
-  Future<void> _fetchMessages() async {
-    setState(() => _isLoading = true);
+  Future<void> _fetchMessages({bool showLoading = true}) async {
+    if (showLoading) setState(() => _isLoading = true);
     final client = ref.read(weiboDioClientProvider);
     final extracted = <Map<String, dynamic>>[];
 
@@ -315,37 +315,13 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
     final client = ref.read(weiboDioClientProvider);
     final authState = ref.read(authProvider);
     final myUid = authState.uid ?? 'me';
-
+    final sentAt = DateTime.now();
     _inputController.clear();
 
-    // 1. 本地乐观回显
-    final nowTs = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    final optimisticMsg = widget.isGroup
-        ? <String, dynamic>{
-            'from_uid': myUid,
-            'content': text,
-            'time': nowTs,
-            'type': 1,
-            'id': nowTs,
-          }
-        : <String, dynamic>{
-            'sender_id': myUid,
-            'text': text,
-            'created_at': DateTime.now().toIso8601String(),
-            'id': nowTs,
-          };
-
-    setState(() {
-      if (widget.isGroup) {
-        _messages.add(optimisticMsg);
-      } else {
-        _messages.insert(0, optimisticMsg);
-      }
-    });
-    if (widget.isGroup) _scrollToLatest(animated: true);
-
-    // 2. 发送网络请求
-    var sent = false;
+    // A successful HTTP status alone is not proof that Weibo accepted the
+    // message. Do not render a synthetic outgoing bubble; verify the API
+    // business response and then read the conversation back from the server.
+    var requestAccepted = false;
     try {
       if (widget.isGroup) {
         final response = await client.dio.post(
@@ -356,7 +332,8 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
             'source': '209678993',
           },
         );
-        sent = response.statusCode != null &&
+        requestAccepted = _isSuccessfulMessageResponse(response.data) &&
+            response.statusCode != null &&
             response.statusCode! >= 200 &&
             response.statusCode! < 300;
       } else {
@@ -368,23 +345,89 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
             'source': '209678993',
           },
         );
-        sent = response.statusCode != null &&
+        requestAccepted = _isSuccessfulMessageResponse(response.data) &&
+            response.statusCode != null &&
             response.statusCode! >= 200 &&
             response.statusCode! < 300;
       }
     } catch (_) {}
 
-    if (mounted) {
-      setState(() {
-        _isSending = false;
-        if (!sent) {
-          _messages.removeWhere((message) => message['id'] == nowTs);
-        }
+    var confirmed = false;
+    if (requestAccepted) {
+      await _fetchMessages(showLoading: false);
+      confirmed = _messages.any((message) {
+        final body = (message['content'] ?? message['text'] ?? '').toString();
+        final sender = (message['from_uid'] ??
+                message['sender_id'] ??
+                message['user_id'] ??
+                _asMessageMap(message['sender'])?['id'] ??
+                '')
+            .toString();
+        return body == text &&
+            sender == myUid &&
+            _messageTime(message) >=
+                sentAt
+                    .subtract(const Duration(minutes: 1))
+                    .millisecondsSinceEpoch;
       });
-      if (!sent) {
-        AppToast.show(context, '消息发送失败，请检查网络或登录状态');
+    }
+
+    if (mounted) {
+      setState(() => _isSending = false);
+      if (confirmed) {
+        if (widget.isGroup) _scrollToLatest(animated: true);
+      } else if (requestAccepted) {
+        AppToast.show(context, '接口已接受请求，但服务器暂未回读到消息；请先刷新核实，避免重复发送');
+      } else {
+        AppToast.show(context, '微博服务器未确认消息发送成功');
       }
     }
+  }
+
+  bool _isSuccessfulMessageResponse(dynamic response) {
+    final data = _asMessageMap(response);
+    if (data == null || data.isEmpty) return false;
+    if (data['error'] != null && data['error'].toString().isNotEmpty) {
+      return false;
+    }
+    if (data.containsKey('error_code') &&
+        data['error_code']?.toString() != '0') {
+      return false;
+    }
+    if (data.containsKey('ok')) {
+      final ok = data['ok'];
+      return ok == 1 || ok == '1' || ok == true;
+    }
+    if (data.containsKey('code')) {
+      final code = data['code']?.toString();
+      if (code != '0' && code != '100000') return false;
+      return true;
+    }
+    for (final key in const ['id', 'idstr', 'msg_id', 'message_id']) {
+      if (data[key] != null) return true;
+    }
+    for (final key in const ['message', 'direct_message', 'data']) {
+      final nested = _asMessageMap(data[key]);
+      if (nested != null && nested.isNotEmpty) {
+        if ((nested['error'] != null &&
+                nested['error'].toString().isNotEmpty) ||
+            (nested.containsKey('error_code') &&
+                nested['error_code']?.toString() != '0')) {
+          return false;
+        }
+        if (nested['ok'] == 1 || nested['ok'] == '1' || nested['ok'] == true) {
+          return true;
+        }
+        if (nested['id'] != null || nested['idstr'] != null) return true;
+      }
+    }
+    return false;
+  }
+
+  Map<String, dynamic>? _asMessageMap(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return Map<String, dynamic>.from(value);
+    return null;
   }
 
   @override

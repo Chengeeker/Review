@@ -1,6 +1,5 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:review/core/constants/api_constants.dart';
 import 'package:review/core/network/weibo_dio_client.dart';
 import 'package:review/core/storage/storage_service.dart';
 import 'package:review/features/feed/data/feed_repository.dart';
@@ -42,9 +41,9 @@ void main() {
     );
 
     final result = await FeedRepository(client, storage).setPollVote(
-          voteId: 'vote-1',
-          optionIds: ['option-2', 'option-1'],
-        );
+      voteId: 'vote-1',
+      optionIds: ['option-2', 'option-1'],
+    );
 
     expect(sentData, {
       'id': 'vote-1',
@@ -57,7 +56,8 @@ void main() {
     expect(result.poll?.options.last.votes, 5);
   });
 
-  test('FeedRepository reads non-zero poll results from the official status API',
+  test(
+      'FeedRepository reads non-zero poll results from the official status API',
       () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
@@ -153,5 +153,63 @@ void main() {
     );
 
     expect(poll, isNull);
+  });
+
+  test('FeedRepository hydrates type-39 cards before rendering their image',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final storage = StorageService(prefs);
+    await storage.setFullCookie('SUB=test; XSRF-TOKEN=test');
+
+    final client = WeiboDioClient(storage);
+    var requestCount = 0;
+    client.dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          requestCount += 1;
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              data: {
+                'data': {
+                  'id': '5345920309791640',
+                  'mid': '5345920309791640',
+                  'text_raw': '',
+                  'page_info': {
+                    'type': 'bigPic',
+                    'page_pic': {
+                      'url': 'https://wx4.sinaimg.cn/large/award-card.jpg',
+                    },
+                  },
+                },
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    final statuses = await FeedRepository(client, storage).parseStatuses([
+      {
+        'id': '5345920309791640',
+        'mid': '5345920309791640',
+        'text_raw': 'http://t.cn/AXO3q237',
+        'user': {'id': '7699970976', 'screen_name': '中国射击队'},
+        'url_struct': [
+          {
+            'url_title': '祝贺盛李豪获得射击10米气步枪混合团体金牌',
+            'short_url': 'http://t.cn/AXO3q237',
+            'url_type': 39,
+            'h5_target_url': 'https://m.weibo.cn/c/wbox?id=award-card',
+          },
+        ],
+      },
+    ]);
+
+    expect(requestCount, equals(1));
+    expect(statuses, hasLength(1));
+    expect(statuses.single.pics, hasLength(1));
+    expect(statuses.single.textRaw, isEmpty);
   });
 }

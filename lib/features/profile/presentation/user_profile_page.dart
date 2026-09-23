@@ -218,7 +218,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
       if (res.data is Map<String, dynamic>) {
         final rawList = res.data['data']?['list'] as List? ?? [];
-        return ref.read(feedRepositoryProvider).parseStatuses(rawList);
+        return await ref.read(feedRepositoryProvider).parseStatuses(rawList);
       }
     } catch (_) {}
     return [];

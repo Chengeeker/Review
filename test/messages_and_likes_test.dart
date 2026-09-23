@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +15,7 @@ import 'package:review/features/detail/presentation/widgets/nested_comments_shee
 import 'package:review/features/drawer_features/presentation/likes_comments_page.dart';
 import 'package:review/features/drawer_features/presentation/likes_favorites_page.dart';
 import 'package:review/features/drawer_features/presentation/my_messages_page.dart';
+import 'package:review/features/drawer_features/data/message_unread_service.dart';
 import 'package:review/features/feed/data/models/weibo_status_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -174,6 +177,95 @@ void main() {
     expect(result.success, isTrue);
     expect(requestPath, ApiConstants.destroyComment);
     expect(requestData, {'cid': 'comment-1'});
+  });
+
+  test('getStatusDetail hydrates automatic card layers from the mobile status',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final storage = StorageService(prefs);
+    await storage.setFullCookie('SUB=test; XSRF-TOKEN=test');
+
+    final client = WeiboDioClient(storage);
+    client.dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.uri.host == 'weibo.com' &&
+              options.path == ApiConstants.statusDetail) {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: {
+                  'id': '5239919674917842',
+                  'mid': '5239919674917842',
+                  'text_raw': 'http://t.cn/AXycm1sD',
+                  'user': {'id': '7699970976', 'screen_name': '光靠干饭就'},
+                  'url_struct': [
+                    {
+                      'url_title': '今天是我的生日，来祝福我吧！',
+                      'short_url': 'http://t.cn/AXycm1sD',
+                      'url_type': 39,
+                    },
+                  ],
+                  'page_info': {
+                    'type': '23',
+                    'object_type': 'webpage',
+                    'card_info': {
+                      'pic_url':
+                          'https://pc.us.sinaimg.cn/0020/birthday-foreground.png',
+                      'page_info': {
+                        'pic_info': {
+                          'pic_big': {
+                            'url':
+                                'https://pc.us.sinaimg.cn/0010/birthday-background.png',
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              ),
+            );
+            return;
+          }
+
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'data': {
+                  'id': '5239919674917842',
+                  'mid': '5239919674917842',
+                  'text_raw': '',
+                  'user': {'id': '7699970976', 'screen_name': '光靠干饭就'},
+                  'page_info': {
+                    'type': 'bigPic',
+                    'page_pic': {
+                      'url':
+                          'https://pc.us.sinaimg.cn/0020/birthday-foreground.png',
+                    },
+                    'media_pic_url':
+                        'https://pc.us.sinaimg.cn/0010/birthday-background.png',
+                  },
+                },
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    final status =
+        await DetailRepository(client).getStatusDetail('5239919674917842');
+
+    expect(status, isNotNull);
+    expect(status!.pics, hasLength(1));
+    expect(status.pics.single.isWebpageCard, isTrue);
+    expect(status.pics.single.webpageCardBackgroundUrl,
+        contains('birthday-background.png'));
+    expect(status.textRaw, isEmpty);
   });
 
   test('getSecondComments parses official nested pagination envelopes',
@@ -497,6 +589,261 @@ void main() {
     );
 
     expect(find.text('我的消息'), findsOneWidget);
+  });
+
+  testWidgets(
+      'MyMessagesPage shows muted unread badges on each avatar and clears them',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({
+      StorageService.keyIsLoggedIn: true,
+      StorageService.keyFullCookie: 'SUB=test; XSRF-TOKEN=test',
+      StorageService.keySubCookie: 'test',
+      StorageService.keyUserUid: '42',
+      StorageService.keyUserNickname: '测试用户',
+      StorageService.keyUserAvatar: '',
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final storage = StorageService(prefs);
+    await storage.setMessageGroupMuted('short-muted-group-id', true);
+
+    final client = WeiboDioClient(storage);
+    client.dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.uri.path.endsWith('contacts.json')) {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                data: {
+                  'totalNumber': 37,
+                  'contacts': [
+                    {
+                      'is_group': true,
+                      'unread_count': 8,
+                      'user': {
+                        'id': 'short-muted-group-id',
+                        'name': '免打扰群聊',
+                        'avatar_large': '',
+                      },
+                      'message': {'text': '群消息'},
+                    },
+                    {
+                      'is_group': true,
+                      'unread_count': 2,
+                      'user': {
+                        'id': 'regular-group-id',
+                        'name': '普通群聊',
+                        'avatar_large': '',
+                      },
+                      'message': {'text': '群消息'},
+                    },
+                  ],
+                },
+              ),
+            );
+            return;
+          }
+          handler.resolve(
+            Response(requestOptions: options, data: {'ok': 1}),
+          );
+        },
+      ),
+    );
+
+    Widget buildPage() => ProviderScope(
+          overrides: [
+            storageServiceProvider.overrideWithValue(storage),
+            weiboDioClientProvider.overrideWithValue(client),
+          ],
+          child: const MaterialApp(home: MyMessagesPage()),
+        );
+
+    await tester.pumpWidget(buildPage());
+    await tester.pumpAndSettle();
+
+    expect(find.text('私信与群聊'), findsOneWidget);
+    expect(find.text('37'), findsNothing);
+    final mutedBadgeFinder =
+        find.byKey(const ValueKey('message-unread-badge-short-muted-group-id'));
+    final regularBadgeFinder =
+        find.byKey(const ValueKey('message-unread-badge-regular-group-id'));
+    expect(mutedBadgeFinder, findsOneWidget);
+    expect(regularBadgeFinder, findsOneWidget);
+
+    final mutedBadge = tester.widget<Container>(mutedBadgeFinder);
+    final regularBadge = tester.widget<Container>(regularBadgeFinder);
+    final mutedColor = Theme.of(tester.element(find.byType(MyMessagesPage)))
+        .colorScheme
+        .surfaceContainerHighest;
+    expect((mutedBadge.decoration as BoxDecoration).color, mutedColor);
+    expect(
+        (regularBadge.decoration as BoxDecoration).color, Colors.red.shade600);
+    final mutedBadgePosition = tester.widget<Positioned>(
+      find
+          .ancestor(of: mutedBadgeFinder, matching: find.byType(Positioned))
+          .first,
+    );
+    expect(mutedBadgePosition.top, -2);
+    expect(mutedBadgePosition.right, -2);
+
+    await tester.tap(find.byTooltip('清除未读消息'));
+    await tester.pumpAndSettle();
+    expect(mutedBadgeFinder, findsNothing);
+    expect(regularBadgeFinder, findsNothing);
+    await tester.pump(const Duration(seconds: 3));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(buildPage());
+    await tester.pumpAndSettle();
+    expect(find.text('37'), findsNothing);
+    expect(mutedBadgeFinder, findsNothing);
+    expect(regularBadgeFinder, findsNothing);
+  });
+
+  testWidgets('opening a conversation clears only its local unread badge',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({
+      StorageService.keyIsLoggedIn: true,
+      StorageService.keyFullCookie: 'SUB=test; XSRF-TOKEN=test',
+      StorageService.keySubCookie: 'test',
+      StorageService.keyUserUid: '42',
+      StorageService.keyUserNickname: '测试用户',
+      StorageService.keyUserAvatar: '',
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final storage = StorageService(prefs);
+    final client = WeiboDioClient(storage);
+    client.dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.uri.path.endsWith('contacts.json')) {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                data: {
+                  'contacts': [
+                    {
+                      'is_group': true,
+                      'unread_count': 8,
+                      'user': {
+                        'id': 'read-group-id',
+                        'name': '待读群聊',
+                        'avatar_large': '',
+                      },
+                      'message': {'text': '群消息'},
+                    },
+                    {
+                      'unread_count': 3,
+                      'user': {
+                        'id': 'other-chat-id',
+                        'name': '其他会话',
+                        'avatar_large': '',
+                      },
+                      'message': {'text': '另一条消息'},
+                    },
+                  ],
+                },
+              ),
+            );
+            return;
+          }
+          if (options.uri.path.endsWith('query_messages.json')) {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                data: {'messages': <dynamic>[]},
+              ),
+            );
+            return;
+          }
+          handler.resolve(
+            Response(requestOptions: options, data: {'ok': 1}),
+          );
+        },
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          storageServiceProvider.overrideWithValue(storage),
+          weiboDioClientProvider.overrideWithValue(client),
+        ],
+        child: const MaterialApp(home: MyMessagesPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final openedBadge =
+        find.byKey(const ValueKey('message-unread-badge-read-group-id'));
+    final otherBadge =
+        find.byKey(const ValueKey('message-unread-badge-other-chat-id'));
+    expect(openedBadge, findsOneWidget);
+    expect(otherBadge, findsOneWidget);
+
+    await tester.tap(find.text('待读群聊').first);
+    await tester.pumpAndSettle();
+    final contactBaselines = jsonDecode(
+      storage.getString(StorageService.keyMessageContactUnreadBaselines)!,
+    ) as Map<String, dynamic>;
+    expect(contactBaselines['read-group-id'], 8);
+    expect(contactBaselines.containsKey('other-chat-id'), isFalse);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(openedBadge, findsNothing);
+    expect(otherBadge, findsOneWidget);
+  });
+
+  test(
+      'opening a notification category clears its baseline, not other categories',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final storage = StorageService(prefs);
+    var likes = 4;
+    final dio = Dio()
+      ..interceptors.add(
+        InterceptorsWrapper(
+          onRequest: (options, handler) {
+            if (options.uri.path.endsWith('/ajax/remind/unread')) {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  data: {
+                    'data': {
+                      'mention_status': 2,
+                      'mention_cmt': 3,
+                      'like': likes,
+                      'cmt': 6,
+                    },
+                  },
+                ),
+              );
+            } else {
+              handler.resolve(
+                Response(
+                  requestOptions: options,
+                  data: {'contacts': <dynamic>[]},
+                ),
+              );
+            }
+          },
+        ),
+      );
+    final unreadService = MessageUnreadService(storage);
+
+    expect(await unreadService.markCategoryAsRead(dio, 'likes'), isTrue);
+    final baselines = jsonDecode(
+      storage.getString(StorageService.keyMessageUnreadBaselines)!,
+    ) as Map<String, dynamic>;
+    expect(baselines, {'likes': 4});
+
+    likes = 6;
+    final counts = await unreadService.fetchCounts(dio);
+    expect(counts?.likes, 2);
+    expect(counts?.mentions, 5);
+    expect(counts?.comments, 6);
   });
 
   testWidgets(

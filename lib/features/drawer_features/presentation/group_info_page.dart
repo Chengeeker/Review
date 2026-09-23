@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../../../core/network/weibo_dio_client.dart';
+import '../../../core/storage/storage_service.dart';
 import '../../../core/utils/app_dialog.dart';
 import '../../../core/utils/app_toast.dart';
 import '../../../core/utils/weibo_text_parser.dart';
@@ -35,11 +36,13 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
   bool _isLoading = true;
 
   bool _isPinned = false;
-  bool _isMuted = true;
+  bool _isMuted = false;
 
   @override
   void initState() {
     super.initState();
+    _isMuted =
+        ref.read(storageServiceProvider).isMessageGroupMuted(widget.groupId);
     _fetchGroupDetails();
   }
 
@@ -572,7 +575,12 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
                 SwitchListTile(
                   title: const Text('消息免打扰', style: TextStyle(fontSize: 15)),
                   value: _isMuted,
-                  onChanged: (val) => setState(() => _isMuted = val),
+                  onChanged: (val) async {
+                    await ref
+                        .read(storageServiceProvider)
+                        .setMessageGroupMuted(widget.groupId, val);
+                    if (mounted) setState(() => _isMuted = val);
+                  },
                 ),
 
                 const Divider(height: 1, thickness: 0.5),

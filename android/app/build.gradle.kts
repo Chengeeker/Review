@@ -44,8 +44,8 @@ android {
         applicationId = "com.review"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        versionCode = 63
-        versionName = "2.7.5"
+        versionCode = 76
+        versionName = "2.9.0"
         ndk {
             abiFilters.add("arm64-v8a")
         }
@@ -77,4 +77,8 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
 }
