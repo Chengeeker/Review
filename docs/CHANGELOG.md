@@ -6,6 +6,7 @@
 
 - 详情/受限微博卡片的可见范围图标与文字在原 24dp 固定槽位内上移 4dp，拉开与头像的视觉距离，同时保持卡片布局高度稳定。
 - 按补丁版本规则将版本名升级至 `2.9.11`、Android `versionCode` 升至 90；本次未运行 Flutter 测试。
+- arm64 Release APK 已通过 `aapt2 dump badging` 与 APK v2 签名校验：包名 `com.review`、版本名 `2.9.11`、`versionCode` 90、ABI `arm64-v8a`。产物 `Review_v2.9.11.apk`（31,699,064 字节），SHA-256：`3B864E9B2B0498DD5FFDE61D45845DB0FAC7228190417CEB53AC0B0AC4F0085F`；签名证书 SHA-256：`3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975`。未进行 Android 真机验收。
 
 ## 2.9.10+89（2026-09-30）
 
