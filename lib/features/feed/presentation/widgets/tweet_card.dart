@@ -1234,23 +1234,26 @@ class _TweetCardState extends ConsumerState<TweetCard> {
       height: 24,
       child: label == null
           ? const SizedBox.shrink()
-          : Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.public_outlined,
-                  size: 16,
-                  color: colorScheme.primary,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 14,
+          : Transform.translate(
+              offset: const Offset(0, -4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.public_outlined,
+                    size: 16,
                     color: colorScheme.primary,
                   ),
-                ),
-              ],
+                  const SizedBox(width: 6),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
             ),
     );
   }
