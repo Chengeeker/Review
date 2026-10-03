@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/services/link_routing_service.dart';
+import 'core/services/image_cache_maintenance.dart';
 import 'core/storage/storage_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
@@ -53,6 +56,9 @@ void main() async {
       child: const WBTestApp(),
     ),
   );
+
+  // Cache maintenance runs off the startup path and never touches saved media.
+  unawaited(ImageCacheMaintenance.trimOnStartup());
 }
 
 class WBTestApp extends ConsumerWidget {

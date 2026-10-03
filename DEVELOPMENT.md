@@ -1,8 +1,10 @@
 # Review 开发与技术架构文档
 
-> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-09-23；当前应用版本：`2.9.0+76`。
+> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-09-30；当前应用版本：`2.9.10+89`。
 >
-> `README.md` 是项目介绍文件，不属于本文档的同步范围。本次同步不修改 README，也不把登录 Cookie、Token、密码或其他凭据写入文档。
+> `README.md` 用于项目介绍；本文档维护当前实现，不记录登录 Cookie、Token、密码或其他凭据。
+
+本地完整开发文档统一保存在 `D:\App\开发文档\Review.md`，包含本说明、[变更记录](docs/CHANGELOG.md)、[工程复盘](docs/RETROSPECTIVE.md)和[旧手册归档](docs/archive/Review-legacy-2026-09-23.md)的全文。本仓库保留分主题源文件以便版本管理；修改任一源文件后应同步更新完整文档。旧手册只用于追溯，当前行为以源码、测试和本文档为准。
 
 ## 1. 先看结论：哪些内容来自微博，哪些只是本地能力
 
@@ -46,11 +48,15 @@ Review 是 Flutter 编写的微博网页端风格客户端。凡是涉及微博�
 
 ### 2.2 时间线和微博卡片
 
-- 登录后优先读取微博网页端关注流；未登录或无法读取完整关注流时，按当前会话能力回退到微博公开热门流，并明确使用访客/未登录状态。
+- 登录后先读取 `/ajax/feed/friendstimeline`；首屏请求失败或为空时，才尝试 `/ajax/feed/unreadfriendstimeline` 作为当前代码的兼容回退。两者都无内容时，只有没有完整 Cookie 的访客才回退公开热门流；已有完整 Cookie 的账号不把公域内容伪装为关注流。
 - 支持微博已有的“全部关注”“特别关注”“好友圈”以及微博账号已有的个人分组和热门频道。应用不会把本地虚构分组当成微博云端分组，分组管理页对不能写入官方的本地新分组会明确提示不支持。
 - 首页首次请求遇到空响应时只做一次短延迟重试；刷新得到空响应时不覆盖已有内容，避免短暂网络问题把可用时间线替换为“暂无微博内容”。加载更多使用 `max_id` 继续向历史分页，并做去重和屏蔽用户过滤。
 - 卡片支持微博文本、富文本链接、表情、图片九宫格、视频、Live Photo、投票、超话标识、橙色热搜话题、转发微博、长文展开和操作菜单。
-- 微博自动生成的荣誉/会员/活动网页卡片，会识别官方 `url_objects[].object.object` 的 `pic_url`/`image.url`，以及桌面时间线/详情中的 `url_struct`（`url_type=39`）经移动端状态接口补充的 `page_info.page_pic`。这类卡片可能由透明前景图和 `media_pic_url`/嵌套 `pic_info.pic_big` 背景图组成，应用会合成完整图片并复用列表、详情和图片画廊；透明卡片使用白色画布，避免深色主题下显示成黑底。对应的短链接从正文中移除，点击卡片只打开渲染后的图片，不再跳回个人主页。主页解析使用最多 6 路并发和按微博 ID 的内存缓存，避免这些卡片逐条串行请求。带真实视频播放地址的卡片仍走视频播放器，超话等普通主题卡片不转成图片。
+- 微博头像、图片网格、视频封面、搜索/超话图片等网络图片统一复用 `extended_image` 的磁盘缓存；同一完整 URL 命中缓存时，应用重启后可从临时缓存读取，不保证不同尺寸、域名或查询参数的 URL 共享缓存。启动后异步整理 `getTemporaryDirectory()/cacheimage`，仅处理该目录下 MD5 命名的缓存文件：超过 60 天或总量超过 512 MiB 时按文件修改时间从旧到新清理，跳过最近 1 分钟写入的文件。不会清理已保存到相册的媒体、账号资料或其他临时目录。系统仍可自行清除临时缓存；图片显示加载占位不等于实际重新下载。
+- 微博自动生成的荣誉/会员/活动网页卡片，会识别官方 `url_objects[].object.object` 的 `pic_url`/`image.url`，以及桌面时间线/详情中的 `url_struct`（`url_type=39`）经移动端状态接口补充的 `page_info.page_pic`。这类卡片可能由透明前景图和 `media_pic_url`/嵌套 `pic_info.pic_big` 背景图组成；分层卡片的列表比例优先采用背景画布的宽高，缺少尺寸时按常见横向卡片比例回退，避免拿透明前景的窄长尺寸裁切整张卡片。列表图层使用等比完整显示，透明卡片使用白色画布，详情画廊也等比完整显示。对应短链接从正文中移除，点击卡片只打开渲染后的图片，不再跳回个人主页。主页解析使用最多 6 路并发和按微博 ID 的内存缓存，避免这些卡片逐条串行请求。带真实视频播放地址的卡片仍走视频播放器，超话等普通主题卡片不转成图片。
+- 详情页补全自动卡片时，将移动端图层与桌面详情已有卡片合并；移动端只返回透明前景图时保留已有完整背景与画布尺寸，避免生日/荣誉卡片从完整卡片退化成只有头像。官方自动卡片短链接移除后，不显示重复链接正文；生日网页卡片从 `url_struct.url_title` 读取祝福标题，并将标题覆盖渲染在卡片白底图片的下方留白处，列表卡片和详情页保持一致，点击图片仍打开渲染后的图片。是否包含日期由微博返回标题决定，客户端不根据当前设备日期猜造文案。
+- 浏览记录复用同一 `TweetCard`，历史快照通过 `WeiboStatusModel.toJson/fromJson` 往返时保留 `pics`（包括自动卡片前景、背景和卡片标记），不能只解析微博 API 的 `pic_infos`。旧快照带有 `url_type=39` 自动卡片链接但缺少卡片图片时，浏览记录后台复用主页的 `FeedRepository.parseStatuses` 有界补全；成功后在原历史位置更新快照，不改浏览顺序。普通状态不发起这类补全，失败也不阻塞列表打开。
+- 长文判断在前台列表状态发布前完成：时间线和当前可见的用户主页在 `FeedRepository` 解析状态时，仅对微博源标记为长文且缺少全文的主微博/转发微博请求官方全文接口，补齐 `fullTextRaw` 后才将整批状态交给列表；卡片首帧据全文统一判断显示全文或“展开全文”，滚动期间不再异步替换正文。后台个人主页视频/相册缓冲及浏览记录中的旧快照不因此批量触发长文请求；解析失败保留原预览和手动展开/重试入口，用户主动展开时仍可补取全文。`DetailRepository` 按微博 ID 合并并发请求，最多同时执行 2 个全文请求，并保留最多 96 条最近使用的非空全文于进程内缓存。只有全文规范化后达到 360 个 Unicode 字符、预览遗漏至少 100 个字符、且全文至少比预览多 5 个实际富文本行时才折叠；普通长度及临界长度直接显示全文。
 - 独立微博视频链接（`h5.video.weibo.com/show/...`、`video.weibo.com/show?fid=...`、`weibo.com/tv/show/...` 以及移动端 `s/video/show` 变体）会调用微博官方视频组件接口获取签名媒体地址，再复用原生视频播放器；请求先使用不携带本地账号 Cookie 的公开接口，受限视频才回退到登录会话，不会把 H5 视频网页壳交给内置浏览器。针对当前移动端状态接口返回的 `url_objects` 视频卡片，应用会把其 `object_id`、封面、清晰度和已签名的 `weibocdn.com` 媒体地址合并到现有链接模型，并优先直接播放官方媒体地址；只有没有直接媒体地址时才回退 H5 组件解析。短链接、HTTP/HTTPS、HTML 实体和长文中的官方视频锚点也会统一规范化，避免视频短链接或 HTML `href` 被清理后又被当作普通网页打开。
 - 转发微博的原内容卡片可直接进入原微博；原微博通过 `page_info/media_info` 返回的视频，即使没有图片列表，也会在转发卡片中复用普通微博的视频预览和播放器。
 - 卡片菜单支持复制正文、收藏/取消收藏、复制链接、查看用户主页、屏蔽博主，以及在有权限时删除自己的微博。
@@ -67,6 +73,7 @@ Review 是 Flutter 编写的微博网页端风格客户端。凡是涉及微博�
 - 热门搜索使用 `/ajax/side/hotSearch`，必要时回退 `/ajax/statuses/hot_band`，保留官方返回顺序，并把官方置顶数据放在列表顶部。
 - 热搜分类使用官方接口映射：我的、热搜、文娱、社会、科技、生活、体育、ACG。没有对应网页端接口的分类不使用本地拼接或伪造榜单。
 - 微博热搜榜保留官方置顶标记、排名颜色、火焰排名标记和不在排名内的定位热搜标记。定位热搜使用实心点替代排名数字，并显示定位标识。
+- 热搜页重新点击已选中的底栏“热搜”会平滑回到当前分类顶部；双击会回顶并仅重新请求当前选中分类。热搜页顶栏双击在列表离顶时回顶，在顶部时刷新当前分类，不会同时刷新隐藏的其他分类。
 - 榜单前三不再额外使用特殊粗体；排名框、火焰图标和颜色仍按官方数据保留。词条、序号和顶栏分栏字重统一接受应用的字体粗细设置，顶栏只保留选中/未选中的相对层级，避免全局调到最粗时层级反转。
 - 搜索页热门搜索支持双列和单列切换。双列展示前 9 条，单列展示前 10 条；两种布局都保留“更多热搜”入口。单列使用与双列相同的字号并增加行间距。热门搜索不再对前三条单独加粗，所有文字跟随全局字体粗细设置，但排名颜色和官方排名图标保留。
 
@@ -79,6 +86,7 @@ Review 是 Flutter 编写的微博网页端风格客户端。凡是涉及微博�
 - 评论和楼中楼回复均使用微博返回的用户头像、昵称和认证信息；当评论/回复用户 UID 与当前微博作者 UID 一致时显示“博主”标签，不根据昵称本地猜测身份。
 - 点赞、取消点赞、收藏、取消收藏、转发入口和删除操作都以微博响应成功为准，界面中的即时变化属于乐观显示，失败时回滚或提示。
 - 消息中心的群聊按消息时间正序显示，较早消息在上、最新消息在下；首次打开定位到最新消息。群聊顶部下拉调用 `query_messages.json` 的 `max_mid` 读取更早历史，不再把固定首屏请求当成刷新，也不在上拉方向加载旧消息。私信维持原有独立会话路径。
+- 群聊列表、群信息和群成员页预热会话用户缓存，供聊天页首帧复用头像与昵称；完整群公告另由 `query_user_bulletin.json` 读取，不能仅依赖可能截断公告的 `query.json`。
 - 消息中心的未读清除基线持久化，避免重新拉取 contacts 后旧数恢复；打开某个私信/群聊会话时只将该会话标为本地已读，其他会话角标保留，新消息仍从 1 开始累计；打开 @、赞、收到的评论分类时只清除对应分类的本地计数，不会打开“我的消息”总览就一并清掉所有消息。会话未读数只显示在各自头像右上角，群免打扰气泡灰显，并排除于侧边栏聚合数与后台私信通知。“私信与群聊”标题不展示接口 `totalNumber`，以免清除后留下无法清理的误导总数。侧边栏聚合数来自 `/ajax/remind/unread` 与 WebIM contacts，前者是网页兼容接口且响应可能变化，解析失败时保留上次数值。Android 后台通知经 WorkManager 联网周期轮询（至少 15 分钟，实际可能更晚），首次轮询仅建立基线、不提示历史未读。
 - 聊天发送不再把任何 HTTP 2xx 都显示成已送达：检查业务响应并回读服务器会话；若无法确认，不显示合成气泡。`/webim/groupchat/send_message.json` 与 `/webim/2/direct_messages/new.json` 是未由微博公开接口契约/测试账号确认的兼容请求，本项目不使用用户账号发送测试消息。
 - 用户主页支持用户资料、背景图、认证/活动标识、微博列表、关注/取消关注、用户微博搜索和赞过的微博（按设置显示）。
@@ -181,13 +189,13 @@ lib/
 
 | 功能 | 当前接口 |
 | --- | --- |
-| 关注流/热门流/分组流 | `/ajax/feed/friendstimeline`、`/ajax/feed/hottimeline`、`/ajax/feed/groupstimeline`、`/ajax/feed/allGroups` |
+| 关注流/热门流/分组流 | `/ajax/feed/friendstimeline`；首屏失败或为空时尝试 `/ajax/feed/unreadfriendstimeline`；访客可回退 `/ajax/feed/hottimeline`；分组使用 `/ajax/feed/groupstimeline`、`/ajax/feed/allGroups` |
 | 用户微博/状态详情/长文/编辑历史 | `/ajax/statuses/mymblog`、`/ajax/statuses/show`、`/ajax/statuses/longtext`、`/ajax/statuses/editHistory` |
 | 发布/编辑/删除 | `/ajax/statuses/update`、`/ajax/statuses/modify`、`/ajax/statuses/destroy` |
 | 评论/回复/二级评论 | `/ajax/statuses/buildComments`（一级评论使用 `fetch_level=0`，楼中楼使用 `fetch_level=1`，均使用响应外层 `max_id` 分页）、`/ajax/comments/create`、`/ajax/comments/reply`、`/ajax/statuses/destroyComment` |
 | 点赞/收藏 | `/ajax/statuses/setLike`、`/ajax/statuses/cancelLike`、`/ajax/statuses/createFavorites`、`/ajax/statuses/destoryFavorites` |
 | 投票/投票结果 | `/ajax/statuses/setVote`、`m.weibo.cn/api/statuses/show`，网页结果读取回退 `/ajax/statuses/show` |
-| 关注关系/关系列表 | `/ajax/friendships/create`、`/ajax/friendships/destroy`、`/ajax/friendships/friends?uid=<uid>&page=<page>`；粉丝列表额外使用 `relate=fans` 和 `type=fans`，不附加 `fansSortType` 或本地数量参数，禁止把默认关注响应当成粉丝响应 |
+| 关注关系/关系列表 | 桌面端 `/ajax/friendships/create`、`/ajax/friendships/destroy`；移动端取消关注兼容路径拼作 `/api/friendships/destory`。关系列表使用 `/ajax/friendships/friends?uid=<uid>&page=<page>`；粉丝列表额外使用 `relate=fans` 和 `type=fans`，不附加 `fansSortType` 或本地数量参数，禁止把默认关注响应当成粉丝响应 |
 | 关注的超话 | `/ajax/profile/topicContent?tabid=231093_-_chaohua&page=<page>`；请求通过关注页 Referer 指定目标 UID，列表必须来自 `data.list` 等真实列表字段 |
 | 私信/群聊 | `/webim/2/direct_messages/conversation.json`、`/webim/groupchat/query_messages.json`；群聊首屏使用 `max_mid=0`，顶部历史使用当前最早消息的 `max_mid`，本地按消息时间统一升序渲染 |
 | 热搜/建议/搜索 | `/ajax/side/hotSearch`、`/ajax/statuses/hot_band`、`/ajax/side/search`、`/ajax/statuses/search` |
@@ -204,10 +212,11 @@ lib/
 
 - `AppTheme` 基于 Material 3，支持明暗主题、动态取色、自定义色盘、纯黑模式、字体粗细和悬浮底栏。
 - Material 水波纹通过 `HapticSplashFactory` 提供全局一次轻触；业务回调会消费同一次手势的自动反馈，不会重复震动。取消点击不会额外触发，Live 图播放/暂停按钮使用普通水波纹并只在动作入口触发一次轻触。
-- 触感工具保留约 40ms 的硬件抖动冷却，并使用 300ms 的同手势消费窗口，避免全局反馈与业务反馈叠加；没有 Material 水波纹的 GestureDetector 仍可由业务回调独立触发。公共头像组件的点击入口会消费全局水波纹反馈，确保只触发一次轻触；所有下拉刷新入口统一通过 `HapticFeedbackUtil.refresh` 触发一次轻触，并遵守全局触感开关。发布页定位按钮不再在业务方法开头重复触发轻触；成功选中地点后仅保留一次中等反馈。
+- 触感工具保留约 40ms 的硬件抖动冷却，并使用 300ms 的同手势消费窗口，避免全局反馈与业务反馈叠加；没有 Material 水波纹的 GestureDetector 仍可由业务回调独立触发。公共头像组件的点击入口会消费全局水波纹反馈，确保只触发一次轻触；微博正文 `@用户` 使用内联点击识别器，因此在其跳转回调中调用 `HapticFeedbackUtil.light()`，遵守全局触感开关和防重复规则；所有下拉刷新入口统一通过 `HapticFeedbackUtil.refresh` 触发一次轻触。发布页定位按钮不再在业务方法开头重复触发轻触；成功选中地点后仅保留一次中等反馈。
 - 公共头像点击区域至少为 48dp，并声明头像按钮语义；头像占位符按 Unicode code point 取首字符。Toast 根据安全区和键盘高度调整位置，并通过 live region 向读屏器公布内容。
 - 搜索页与热搜榜共用 `HotSearchBadge`；设置页分组共用 `AppSectionCard`。统一使用 `showAppDialog` 的确认弹窗，设置/存储路径底部菜单使用主题的圆角、背景和拖动条。
 - 时间线底栏单击支持回顶/返回上次位置，双击回顶并刷新；时间线顶栏双击支持回顶和二次刷新。
+- 热搜底栏再次单击回到当前分类顶部，双击回顶并刷新当前分类；热搜顶栏双击不在顶部时回顶、已在顶部时刷新当前分类。手势使用现有的 300ms 单/双击判定，不新增依赖。
 - 用户主页顶栏也使用相同的双击判定：不在顶部时双击平滑回顶，已经在顶部时再次双击刷新当前用户微博；单击不改变原有标题、搜索和分享操作。
 - 文章详情顶栏支持双击平滑回到文章顶部，单击不改变返回键和更多操作。
 
@@ -258,7 +267,7 @@ lib/
 - **微博样式**：相对/绝对时间、星期/年份/时区/秒数、发布设备、卡片背景布局、正文字号、行间距、链接颜色、备注和名字、主页背景图、用户活动图标、大图片模式、图片圆角、菜单位置、IP 属地显示方式、主页赞过的微博。
 - **存储**：图片/视频保存路径和本地历史数据；当前不提供“退出时自动清理缓存”或“立即清理缓存”入口。
 - **WebDAV 备份**：配置、测试、备份和恢复，遵守上面的安全白名单。
-- **账号和关于**：登录、凭据检测、凭据导出、关于应用、退出登录。关于应用版本名直接读取 `ApiConstants.appVersion`，当前显示 `2.9.0`。
+- **账号和关于**：登录、凭据检测、凭据导出、关于应用、退出登录。关于应用入口保持现有位置，版本名直接读取 `ApiConstants.appVersion`，当前显示 `2.9.10`。
 - **订阅消息提醒**：系统通知授权、总开关及 @、点赞、回复、私信分类开关；后台任务只在本机读取计数，通知不展示消息正文。
 
 ## 10. 测试、构建和发布
@@ -271,7 +280,7 @@ lib/
 D:\flutter_sdk\bin\flutter.bat test
 ```
 
-当前测试目录包含 23 个测试文件，覆盖模型序列化、富文本解析、时间格式、微博卡片、投票/热搜字段、认证会话、热搜榜、图片画廊、主题字体、分组、链接路由、搜索、消息/赞、详情互动、编辑历史、发布模型等。测试数量以实际命令输出为准，不在文档中固定写死旧数量。
+测试覆盖模型序列化、富文本解析、时间格式、微博卡片、投票/热搜字段、认证会话、热搜榜、图片画廊、主题字体、分组、链接路由、搜索、消息/赞、详情互动、编辑历史、发布模型等。测试文件数与测试用例数以当前目录和实际命令输出为准。
 
 ### 10.2 Release APK
 
@@ -279,14 +288,17 @@ Android Release 使用 JDK 17 和 Flutter SDK 构建。推荐在项目根目录�
 
 ```powershell
 $taskJavaHome = 'D:\jdk17'
-$taskTempDir = 'D:\App\Review\tmp'
+$taskTempDir = 'D:\App\Review\build\.jvm-temp'
+New-Item -ItemType Directory -Path $taskTempDir -Force | Out-Null
 $env:JAVA_HOME = $taskJavaHome
+$env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
 $env:TEMP = $taskTempDir
 $env:TMP = $taskTempDir
 $env:Path = "$taskJavaHome\bin;$env:Path"
-$env:GRADLE_OPTS = '-Dorg.gradle.daemon=false'
-& 'D:\flutter_sdk\bin\flutter.bat' build apk --release
+& 'D:\flutter_sdk\bin\flutter.bat' build apk --target-platform android-arm64 --release --no-tree-shake-icons --android-skip-build-dependency-validation --no-pub
 ```
+
+本机 JDK 17 在默认用户临时目录曾出现 `Selector` 本地通信管道错误；上面的临时目录只在当前 PowerShell 进程生效。Release 构建使用 `--no-pub` 保持 `pubspec.lock` 锁定的依赖和镜像来源不变；有意更新依赖时，单独运行 `flutter pub get` 并审查锁文件变更后再构建。签名从 Git 忽略的本地 `android/key.properties` 和密钥文件读取，口令不写入文档。
 
 构建结果通常位于：
 
@@ -294,11 +306,17 @@ $env:GRADLE_OPTS = '-Dorg.gradle.daemon=false'
 D:\App\Review\build\app\outputs\flutter-apk\app-release.apk
 ```
 
-交付时复制为：
+交付时从 `pubspec.yaml` 读取版本名，将产物复制为项目根目录的 `Review_v<version>.apk`：
 
-```text
-D:\App\Review\Review_v<version>.apk
+```powershell
+$taskVersionLine = Select-String -LiteralPath 'pubspec.yaml' -Pattern '^version:\s*(\d+\.\d+\.\d+)\+\d+' | Select-Object -First 1
+if (-not $taskVersionLine) { throw 'pubspec.yaml 中没有有效的版本号' }
+$taskVersionName = $taskVersionLine.Matches[0].Groups[1].Value
+$taskApkTarget = Join-Path (Get-Location) "Review_v$taskVersionName.apk"
+Copy-Item -LiteralPath 'build\app\outputs\flutter-apk\app-release.apk' -Destination $taskApkTarget -Force
 ```
+
+核验新包后，根目录只保留当前交付包。不要把历史版本的文件名写死在构建命令里；相同版本名、不同 `versionCode` 的覆盖构建会使用相同文件名。
 
 打包后必须用 `aapt2 dump badging` 核对包名、`versionName` 和 `versionCode`，并计算 SHA-256。APK 属于构建交付物，项目 `.gitignore` 已忽略 `*.apk`；推送源代码时不应通过强制添加把安装包混进源码提交。
 
@@ -307,7 +325,7 @@ D:\App\Review\Review_v<version>.apk
 - 功能更新：次版本号加 1，修订号归零，例如 `1.0.0 → 1.1.0`；即使当前是 `1.0.1`，功能更新也进入 `1.1.0`。
 - Bug 修复：修订版本号加 1，例如 `1.0.0 → 1.0.1`。
 - 每次发布都递增 Android `versionCode`。
-- 必须同步检查 `pubspec.yaml`、`lib/core/constants/api_constants.dart`、`android/app/build.gradle.kts` 和设置页关于应用。当前四处对应 `2.8.8+72`，关于页显示版本名 `2.8.8`。
+- 必须同步检查 `pubspec.yaml`、`lib/core/constants/api_constants.dart`、`android/app/build.gradle.kts` 和设置页关于应用；当前版本只在本文档开头标注一次，发布前仍以源码和 APK 元数据复核。
 - APK 文件名必须是应用名加版本名，例如 `Review_v2.4.0.apk`。根目录不保留过时的交付包。
 
 ## 11. 后续开发约束
@@ -318,3 +336,4 @@ D:\App\Review\Review_v<version>.apk
 4. 修复网络问题时保留原微博内容，避免空响应、鉴权歧义或回退接口覆盖有效数据；对重试设置明确上限。
 5. 修复交互时检查全局 Ink 触感是否已经提供反馈，避免在业务回调中再次震动；涉及 Android 系统栏、定位、媒体或相册时同时检查原生通道和 Flutter 页面退出清理。
 6. 修改后至少执行相关测试、`flutter test`、`git diff --check`，并核对版本、APK 元数据、README 是否保持用户要求的状态。
+7. 开发文档的本地统一成稿是 `D:\App\开发文档\Review.md`，必须包含当前说明、变更记录、工程复盘与历史手册的完整正文；更新任何分主题源文件后运行 `tool/sync_review_documentation.ps1` 同步成稿，不能将统一文档退回成只有链接的索引页。

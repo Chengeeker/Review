@@ -8,6 +8,7 @@ import '../../../../core/constants/api_constants.dart';
 import '../../../../core/storage/storage_service.dart';
 import '../../../../core/utils/app_toast.dart';
 import '../../../../core/utils/haptic_feedback_util.dart';
+import '../../../../core/widgets/cached_network_image.dart';
 import '../../../detail/data/detail_repository.dart';
 
 enum _DragMode { none, brightness, volume, seek }
@@ -765,7 +766,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                         ? Stack(
                             alignment: Alignment.center,
                             children: [
-                              Image.network(
+                              CachedNetworkImage(
                                 widget.coverUrl!,
                                 headers: ApiConstants.imageHeaders,
                                 fit: BoxFit.contain,

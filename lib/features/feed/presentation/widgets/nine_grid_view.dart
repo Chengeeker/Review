@@ -16,6 +16,7 @@ class NineGridView extends ConsumerWidget {
   final String statusId;
   final bool isDetail;
   final String? authorName;
+  final String? webpageCardCaption;
 
   const NineGridView({
     super.key,
@@ -23,6 +24,7 @@ class NineGridView extends ConsumerWidget {
     required this.statusId,
     this.isDetail = false,
     this.authorName,
+    this.webpageCardCaption,
   });
 
   @override
@@ -33,7 +35,12 @@ class NineGridView extends ConsumerWidget {
     final count = pics.length;
 
     if (count == 1) {
-      return _buildSingleImage(context, pics[0], style);
+      return _buildSingleImage(
+        context,
+        pics[0],
+        style,
+        caption: webpageCardCaption,
+      );
     }
 
     if (count == 2 || count == 4) {
@@ -44,7 +51,11 @@ class NineGridView extends ConsumerWidget {
   }
 
   Widget _buildSingleImage(
-      BuildContext context, WeiboPicModel pic, WeiboStyleSettings style) {
+    BuildContext context,
+    WeiboPicModel pic,
+    WeiboStyleSettings style, {
+    String? caption,
+  }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -60,61 +71,89 @@ class NineGridView extends ConsumerWidget {
 
     final radius = BorderRadius.circular(style.roundedImageCorners ? 16 : 0);
 
-    return GestureDetector(
-      onTap: () => _openMedia(context, 0),
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: maxWidth,
-          maxHeight: maxHeight,
-        ),
-        child: AspectRatio(
-          aspectRatio: aspectRatio,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              ClipRRect(
-                borderRadius: radius,
-                child: _buildImageContent(pic, colorScheme),
+    final image = Container(
+      constraints: BoxConstraints(
+        maxWidth: maxWidth,
+        maxHeight: maxHeight,
+      ),
+      child: AspectRatio(
+        aspectRatio: aspectRatio,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ClipRRect(
+              borderRadius: radius,
+              child: _buildImageContent(pic, colorScheme),
+            ),
+            if (pic.isVideo) ...[
+              Center(
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
               ),
-              if (pic.isVideo) ...[
-                Center(
-                  child: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.55),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.play_arrow_rounded,
-                      color: Colors.white,
-                      size: 28,
+              Positioned(
+                bottom: 6,
+                right: 6,
+                child: _buildBadge(pic.videoDuration?.isNotEmpty == true
+                    ? pic.videoDuration!
+                    : '视频'),
+              ),
+            ] else if (pic.isLivePhoto)
+              Positioned(
+                bottom: 6,
+                right: 6,
+                child: _buildLiveBadge(),
+              )
+            else if (pic.isGif || pic.isLong)
+              Positioned(
+                bottom: 6,
+                right: 6,
+                child: _buildBadge(pic.isGif ? 'GIF' : '长图'),
+              ),
+            if (pic.isWebpageCard && caption?.trim().isNotEmpty == true)
+              Positioned.fill(
+                child: LayoutBuilder(
+                  builder: (context, constraints) => Align(
+                    alignment: const Alignment(0, 0.68),
+                    child: IgnorePointer(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          caption!.trim(),
+                          key: const ValueKey('webpage-card-greeting'),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: const Color(0xFFFF8200),
+                            fontSize: (constraints.maxWidth * 0.045)
+                                .clamp(11.0, 16.0),
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
-                Positioned(
-                  bottom: 6,
-                  right: 6,
-                  child: _buildBadge(pic.videoDuration?.isNotEmpty == true
-                      ? pic.videoDuration!
-                      : '视频'),
-                ),
-              ] else if (pic.isLivePhoto)
-                Positioned(
-                  bottom: 6,
-                  right: 6,
-                  child: _buildLiveBadge(),
-                )
-              else if (pic.isGif || pic.isLong)
-                Positioned(
-                  bottom: 6,
-                  right: 6,
-                  child: _buildBadge(pic.isGif ? 'GIF' : '长图'),
-                ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
+    );
+
+    return GestureDetector(
+      onTap: () => _openMedia(context, 0),
+      child: image,
     );
   }
 
@@ -194,7 +233,7 @@ class NineGridView extends ConsumerWidget {
       return ExtendedImage.network(
         url,
         headers: ApiConstants.imageHeaders,
-        fit: BoxFit.cover,
+        fit: pic.isWebpageCard ? BoxFit.contain : BoxFit.cover,
         cache: true,
         loadStateChanged: (state) {
           if (state.extendedImageLoadState == LoadState.loading) {

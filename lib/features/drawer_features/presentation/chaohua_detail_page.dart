@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:easy_refresh/easy_refresh.dart';
+import 'package:extended_image/extended_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/weibo_dio_client.dart';
@@ -499,7 +500,10 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
                               color: colorScheme.surfaceContainerHighest,
                               image: displayAvatar.isNotEmpty
                                   ? DecorationImage(
-                                      image: NetworkImage(displayAvatar),
+                                      image: ExtendedNetworkImageProvider(
+                                        displayAvatar,
+                                        cache: true,
+                                      ),
                                       fit: BoxFit.cover,
                                     )
                                   : null,

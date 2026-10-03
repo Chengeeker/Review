@@ -88,13 +88,16 @@ class FeedRepository {
   /// marker is present, fills omitted poll/topic metadata from the official
   /// mobile status endpoint. Desktop responses may keep `is_vote` or
   /// `vote_dynamic` while omitting `url_objects`.
-  Future<List<WeiboStatusModel>> _parseStatuses(List rawStatuses) async {
+  Future<List<WeiboStatusModel>> _parseStatuses(
+    List rawStatuses, {
+    bool resolveLongText = false,
+  }) async {
     if (rawStatuses.isEmpty) return [];
 
-    // Smart cards need a second official status request because the desktop
-    // timeline only exposes a type-39 short link. Keep a small bounded worker
-    // pool so a profile containing many such cards does not wait for every
-    // request serially, while avoiding an unbounded burst against Weibo.
+    // Resolve only source-marked additions before a foreground page is
+    // returned, so list cards never swap preview text after they are visible.
+    // Smart cards may also need official metadata. Keep parsing bounded and
+    // long-text requests use DetailRepository's separate two-request limit.
     final parsed = List<WeiboStatusModel?>.filled(rawStatuses.length, null);
     var nextIndex = 0;
 
@@ -102,7 +105,10 @@ class FeedRepository {
       while (true) {
         final index = nextIndex++;
         if (index >= rawStatuses.length) return;
-        parsed[index] = await _parseStatusItem(rawStatuses[index]);
+        parsed[index] = await _parseStatusItem(
+          rawStatuses[index],
+          resolveLongText: resolveLongText,
+        );
       }
     }
 
@@ -113,7 +119,10 @@ class FeedRepository {
     return parsed.whereType<WeiboStatusModel>().toList();
   }
 
-  Future<WeiboStatusModel?> _parseStatusItem(Object? item) async {
+  Future<WeiboStatusModel?> _parseStatusItem(
+    Object? item, {
+    required bool resolveLongText,
+  }) async {
     if (item is! Map) return null;
     final json = Map<String, dynamic>.from(item);
     try {
@@ -127,16 +136,73 @@ class FeedRepository {
       if (status.isLiveBroadcast && !status.hasPlayableVideoStream) {
         status = await _detailRepository.enrichLivePlayback(status);
       }
+      if (resolveLongText) {
+        status = await _resolveLongTextBeforePresentation(status);
+      }
       return status.id.isNotEmpty ? status : null;
     } catch (_) {
       return null;
     }
   }
 
-  /// Reuses the same official engagement hydration for other status lists,
-  /// including the user profile timeline.
-  Future<List<WeiboStatusModel>> parseStatuses(List rawStatuses) {
-    return _parseStatuses(rawStatuses);
+  /// Parses status lists before presentation. Foreground timeline/profile
+  /// pages opt into resolving source-marked long text before publishing rows;
+  /// background-only buffers leave it unresolved to avoid speculative traffic.
+  Future<List<WeiboStatusModel>> parseStatuses(
+    List rawStatuses, {
+    bool resolveLongText = false,
+  }) {
+    return _parseStatuses(
+      rawStatuses,
+      resolveLongText: resolveLongText,
+    );
+  }
+
+  Future<WeiboStatusModel> _resolveLongTextBeforePresentation(
+    WeiboStatusModel status,
+  ) async {
+    final retweet = status.retweetedStatus;
+    final mainId = status.mblogid ?? status.id;
+    final retweetId = retweet == null ? null : retweet.mblogid ?? retweet.id;
+    final mainRequestIndex = status.needsLongText ? 0 : null;
+    final retweetRequestIndex = retweet?.needsLongText == true
+        ? (mainRequestIndex == null ? 0 : 1)
+        : null;
+    if (mainRequestIndex == null && retweetRequestIndex == null) {
+      return status;
+    }
+
+    final requestIds = <String>[];
+    if (mainRequestIndex != null) requestIds.add(mainId);
+    if (retweetRequestIndex != null) requestIds.add(retweetId!);
+
+    final resolvedTexts = await Future.wait(
+      requestIds.map((id) async {
+        try {
+          return await _detailRepository.getLongText(id);
+        } catch (_) {
+          // Keep the original preview if the supplemental request fails.
+          return null;
+        }
+      }),
+    );
+
+    var resolvedStatus = status;
+    if (mainRequestIndex != null) {
+      final fullText = resolvedTexts[mainRequestIndex];
+      if (fullText != null && fullText.isNotEmpty) {
+        resolvedStatus = resolvedStatus.copyWith(fullTextRaw: fullText);
+      }
+    }
+    if (retweetRequestIndex != null) {
+      final fullText = resolvedTexts[retweetRequestIndex];
+      if (fullText != null && fullText.isNotEmpty && retweet != null) {
+        resolvedStatus = resolvedStatus.copyWith(
+          retweetedStatus: retweet.copyWith(fullTextRaw: fullText),
+        );
+      }
+    }
+    return resolvedStatus;
   }
 
   bool _needsOfficialEngagementHydration(
@@ -398,7 +464,10 @@ class FeedRepository {
       if (response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
         final rawStatuses = data['statuses'] as List? ?? [];
-        final statuses = await _parseStatuses(rawStatuses);
+        final statuses = await _parseStatuses(
+          rawStatuses,
+          resolveLongText: true,
+        );
 
         if (statuses.isNotEmpty) {
           final nextMaxId = data['max_id'] != null && data['max_id'] != 0
@@ -432,7 +501,10 @@ class FeedRepository {
         if (unreadRes.data is Map<String, dynamic>) {
           final data = unreadRes.data as Map<String, dynamic>;
           final rawStatuses = data['statuses'] as List? ?? [];
-          final statuses = await _parseStatuses(rawStatuses);
+          final statuses = await _parseStatuses(
+            rawStatuses,
+            resolveLongText: true,
+          );
           if (statuses.isNotEmpty) {
             return TimelineResult(
               statuses: statuses,
@@ -479,7 +551,10 @@ class FeedRepository {
       if (response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
         final rawStatuses = data['statuses'] as List? ?? [];
-        final statuses = await _parseStatuses(rawStatuses);
+        final statuses = await _parseStatuses(
+          rawStatuses,
+          resolveLongText: true,
+        );
 
         if (statuses.isNotEmpty) {
           final nextMaxId = data['max_id'] != null && data['max_id'] != 0
@@ -533,7 +608,10 @@ class FeedRepository {
       if (response.data is Map<String, dynamic>) {
         final data = response.data as Map<String, dynamic>;
         final rawStatuses = data['statuses'] as List? ?? [];
-        final statuses = await _parseStatuses(rawStatuses);
+        final statuses = await _parseStatuses(
+          rawStatuses,
+          resolveLongText: true,
+        );
 
         if (statuses.isNotEmpty) {
           final nextMaxId = data['max_id'] != null && data['max_id'] != 0

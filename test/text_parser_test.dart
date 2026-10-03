@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:review/core/utils/haptic_feedback_util.dart';
 import 'package:review/core/utils/weibo_text_parser.dart';
 
 void main() {
@@ -260,5 +262,49 @@ void main() {
         ),
       ),
     );
+  });
+
+  testWidgets('tapping a mentioned user gives one light haptic',
+      (tester) async {
+    final calls = <MethodCall>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      calls.add(call);
+      return null;
+    });
+    HapticFeedbackUtil.isEnabled = true;
+    HapticFeedbackUtil.resetForTesting();
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(SystemChannels.platform, null);
+      HapticFeedbackUtil.isEnabled = true;
+      HapticFeedbackUtil.resetForTesting();
+    });
+
+    var openedUser = '';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            final spans = WeiboTextParser.parse(
+              rawText: '@目标用户',
+              context: context,
+              onUserTap: (user) => openedUser = user,
+            );
+            return Scaffold(body: Text.rich(TextSpan(children: spans)));
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.byType(RichText));
+    await tester.pump();
+
+    expect(openedUser, '目标用户');
+    final hapticCalls = calls
+        .where((call) => call.method == 'HapticFeedback.vibrate')
+        .toList();
+    expect(hapticCalls, hasLength(1));
+    expect(hapticCalls.single.arguments, 'HapticFeedbackType.lightImpact');
   });
 }

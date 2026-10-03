@@ -15,6 +15,7 @@ import '../../../core/utils/haptic_feedback_util.dart';
 import '../../../core/utils/spring_page_route.dart';
 import '../../../core/utils/weibo_time_formatter.dart';
 import '../../../core/widgets/app_avatar.dart';
+import '../../../core/widgets/cached_network_image.dart';
 import '../../detail/presentation/widgets/image_gallery_page.dart';
 import '../../feed/data/feed_repository.dart';
 import '../../feed/data/models/weibo_status_model.dart';
@@ -398,8 +399,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
       if (res.data is Map<String, dynamic>) {
         final rawList = res.data['data']?['list'] as List? ?? [];
-        var list =
-            await ref.read(feedRepositoryProvider).parseStatuses(rawList);
+        var list = await ref
+            .read(feedRepositoryProvider)
+            .parseStatuses(rawList, resolveLongText: true);
 
         // 2. 个人主页是否显示ta赞过的微博过滤
         if (!weiboStyle.showProfileLikedTweets && effectiveUid != null) {
@@ -469,8 +471,9 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         );
         if (searchRes.data is Map<String, dynamic>) {
           final rawStatuses = searchRes.data['statuses'] as List? ?? [];
-          final list =
-              await ref.read(feedRepositoryProvider).parseStatuses(rawStatuses);
+          final list = await ref
+              .read(feedRepositoryProvider)
+              .parseStatuses(rawStatuses, resolveLongText: true);
 
           if (mounted) {
             setState(() {
@@ -1404,7 +1407,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                             child: Stack(
                               fit: StackFit.expand,
                               children: [
-                                Image.network(
+                                CachedNetworkImage(
                                   pic.previewUrl,
                                   headers: ApiConstants.imageHeaders,
                                   fit: BoxFit.cover,
@@ -1552,7 +1555,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                 fit: StackFit.expand,
                 children: [
                   if (coverUrl.isNotEmpty)
-                    Image.network(
+                    CachedNetworkImage(
                       coverUrl,
                       headers: ApiConstants.imageHeaders,
                       fit: BoxFit.cover,

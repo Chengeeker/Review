@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -363,6 +365,31 @@ class StorageService {
       list.removeRange(60, list.length);
     }
     return _prefs.setStringList(keyBrowsingHistoryStatuses, list);
+  }
+
+  /// Replaces a history snapshot in place after a status has been enriched.
+  /// Unlike [recordViewedStatusJson], this does not move it to the top, since
+  /// background metadata hydration is not a new user visit.
+  Future<bool> updateBrowsingHistoryStatusJson(
+    String statusId,
+    String statusJson,
+  ) async {
+    if (statusId.isEmpty || statusJson.isEmpty) return false;
+    final list = List<String>.from(getBrowsingHistoryStatusJsons());
+    for (var index = 0; index < list.length; index++) {
+      try {
+        final decoded = jsonDecode(list[index]);
+        if (decoded is! Map) continue;
+        final storedId = (decoded['id'] ?? decoded['idstr'] ?? '').toString();
+        if (storedId != statusId) continue;
+        list[index] = statusJson;
+        return await _prefs.setStringList(keyBrowsingHistoryStatuses, list);
+      } catch (_) {
+        // Leave malformed legacy entries untouched while searching for the
+        // requested status.
+      }
+    }
+    return false;
   }
 
   Future<bool> removeBrowsingHistoryItem(int index) async {

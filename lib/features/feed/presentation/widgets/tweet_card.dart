@@ -14,6 +14,7 @@ import '../../../../core/utils/weibo_text_parser.dart';
 import '../../../../core/utils/weibo_time_formatter.dart';
 import '../../../../core/constants/api_constants.dart';
 import '../../../../core/widgets/app_avatar.dart';
+import '../../../../core/widgets/cached_network_image.dart';
 import '../../../compose/presentation/compose_tweet_page.dart';
 import '../../../detail/presentation/status_detail_page.dart';
 import '../../../profile/presentation/user_profile_page.dart';
@@ -48,6 +49,213 @@ String _removeEmbeddedPollLink(String value, WeiboStatusModel status) {
         '',
       )
       .trimRight();
+}
+
+String _normalizeLongTextForComparison(
+  String value,
+  WeiboStatusModel status, {
+  bool removePollLink = true,
+}) {
+  var normalized = _trimTimelineTrailingWhitespace(value);
+  if (removePollLink) {
+    normalized = _removeEmbeddedPollLink(normalized, status);
+  }
+
+  return normalized
+      .replaceAll('&amp;', '&')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&#160;', ' ')
+      .replaceAll('&#xA0;', ' ')
+      .replaceAllMapped(
+        RegExp(r'<img\b[^>]*>', caseSensitive: false),
+        (match) {
+          final alt = RegExp(
+            r'''\balt\s*=\s*(?:"([^"]*)"|'([^']*)')''',
+            caseSensitive: false,
+          ).firstMatch(match.group(0)!);
+          return alt?.group(1) ?? alt?.group(2) ?? '';
+        },
+      )
+      .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
+      .replaceAll(RegExp(r'<[^>]*>'), '')
+      .replaceAll(RegExp(r'[\s\u200B\u200C\u200D\u2060\uFEFF]+'), ' ')
+      .trim();
+}
+
+String? _birthdayWebpageCardCaption(WeiboStatusModel status) {
+  if (!status.pics.any((pic) => pic.isWebpageCard)) return null;
+  for (final entry in status.urlStruct ?? const <Map<String, dynamic>>[]) {
+    if (!isAutomaticWebpageCardEntry(entry)) continue;
+    final title = (entry['url_title'] ?? entry['title'])?.toString().trim();
+    if (title != null && title.contains('生日')) return title;
+  }
+  return null;
+}
+
+String _removeBirthdayCardCaptionFromBody(
+  String text,
+  WeiboStatusModel status,
+) {
+  final caption = _birthdayWebpageCardCaption(status)?.trim();
+  if (caption == null || caption.isEmpty || text.isEmpty) return text;
+
+  final captionPattern = RegExp(
+    caption.split(RegExp(r'\s+')).map(RegExp.escape).join(r'\s*'),
+  );
+  if (!captionPattern.hasMatch(text)) return text;
+
+  return text
+      .replaceFirst(captionPattern, '')
+      .replaceAll(RegExp(r'^[\s\u200B\u200C\u200D\u2060\uFEFF]+'), '')
+      .replaceAll(RegExp(r'[\s\u200B\u200C\u200D\u2060\uFEFF]+$'), '');
+}
+
+const int _minimumLongTextRunesForCollapse = 360;
+const int _minimumHiddenLongTextRunesForCollapse = 100;
+const int _minimumAdditionalLongTextLinesForCollapse = 5;
+
+bool _shouldCollapseLongText({
+  required BuildContext context,
+  required WeiboStatusModel status,
+  required String fullText,
+  required double maxWidth,
+  required TextStyle defaultStyle,
+  required Color linkColor,
+  bool removePollLink = true,
+  String prefixText = '',
+  TextStyle? prefixStyle,
+}) {
+  final normalizedFullText = _normalizeLongTextForComparison(
+    fullText,
+    status,
+    removePollLink: removePollLink,
+  );
+  final normalizedPreview = _normalizeLongTextForComparison(
+    status.textRaw,
+    status,
+    removePollLink: removePollLink,
+  );
+  if (normalizedFullText == normalizedPreview) return false;
+
+  final fullTextRunes = normalizedFullText.runes.length;
+  final previewRunes = normalizedPreview.runes.length;
+  final hiddenRunes = fullTextRunes - previewRunes;
+
+  // Line-count deltas around Weibo's preview boundary are sensitive to
+  // wrapping and paragraph breaks. Only collapse a genuinely long post when
+  // the omitted part is itself substantial; short and borderline posts show
+  // their complete text instead of a nearly-useless expand/collapse control.
+  if (fullTextRunes < _minimumLongTextRunesForCollapse ||
+      hiddenRunes < _minimumHiddenLongTextRunesForCollapse) {
+    return false;
+  }
+
+  final previewLines = _measureVisibleTextLines(
+    context: context,
+    status: status,
+    rawText: status.textRaw,
+    maxWidth: maxWidth,
+    defaultStyle: defaultStyle,
+    linkColor: linkColor,
+    removePollLink: removePollLink,
+    prefixText: prefixText,
+    prefixStyle: prefixStyle,
+  );
+  final fullTextLines = _measureVisibleTextLines(
+    context: context,
+    status: status,
+    rawText: fullText,
+    maxWidth: maxWidth,
+    defaultStyle: defaultStyle,
+    linkColor: linkColor,
+    removePollLink: removePollLink,
+    prefixText: prefixText,
+    prefixStyle: prefixStyle,
+  );
+
+  return fullTextLines >=
+      previewLines + _minimumAdditionalLongTextLinesForCollapse;
+}
+
+int _measureVisibleTextLines({
+  required BuildContext context,
+  required WeiboStatusModel status,
+  required String rawText,
+  required double maxWidth,
+  required TextStyle defaultStyle,
+  required Color linkColor,
+  required bool removePollLink,
+  required String prefixText,
+  required TextStyle? prefixStyle,
+}) {
+  var visibleText = _trimTimelineTrailingWhitespace(rawText);
+  if (removePollLink) {
+    visibleText = _removeEmbeddedPollLink(visibleText, status);
+  }
+  visibleText = _removeBirthdayCardCaptionFromBody(visibleText, status);
+
+  final spans = <InlineSpan>[];
+  if (prefixText.isNotEmpty) {
+    spans.add(TextSpan(text: prefixText, style: prefixStyle));
+  }
+  spans.addAll(
+    WeiboTextParser.parse(
+      rawText: visibleText,
+      context: context,
+      urlStruct: status.urlStruct,
+      htmlText: status.textHtml,
+      linkColor: linkColor,
+      defaultStyle: defaultStyle,
+      interactive: false,
+    ),
+  );
+
+  final textScaler = MediaQuery.textScalerOf(context);
+  final textSpan = TextSpan(children: spans);
+  final placeholders = <PlaceholderDimensions>[];
+  void collectPlaceholders(InlineSpan span) {
+    if (span is WidgetSpan) {
+      // WeiboTextParser renders emotion images at 1.25em with 1 logical pixel
+      // of horizontal padding on either side.
+      final baseFontSize = defaultStyle.fontSize ?? 15;
+      final emojiSize = baseFontSize * 1.25;
+      final scale = baseFontSize == 0
+          ? 1.0
+          : textScaler.scale(baseFontSize) / baseFontSize;
+      placeholders.add(
+        PlaceholderDimensions(
+          size: Size((emojiSize + 2) * scale, emojiSize * scale),
+          alignment: span.alignment,
+          baseline: span.baseline,
+        ),
+      );
+    } else if (span is TextSpan) {
+      for (final child in span.children ?? const <InlineSpan>[]) {
+        collectPlaceholders(child);
+      }
+    }
+  }
+
+  for (final span in spans) {
+    collectPlaceholders(span);
+  }
+
+  final painter = TextPainter(
+    text: textSpan,
+    textDirection: Directionality.of(context),
+    textScaler: textScaler,
+    locale: Localizations.maybeLocaleOf(context),
+  );
+  if (placeholders.isNotEmpty) {
+    painter.setPlaceholderDimensions(placeholders);
+  }
+  final availableWidth = maxWidth.isFinite && maxWidth > 0
+      ? maxWidth
+      : MediaQuery.of(context).size.width;
+  painter.layout(maxWidth: availableWidth);
+  final lineCount = painter.computeLineMetrics().length;
+  painter.dispose();
+  return lineCount;
 }
 
 /// Material You (MD3) Weibo Status Card (支持时间智能格式化、全域微博样式个性化响应与长文本智能展开)
@@ -258,10 +466,14 @@ class _TweetCardState extends ConsumerState<TweetCard> {
   bool _isExpanded = false;
   bool _isLoadingLongText = false;
   String? _loadedLongText;
+  String? _attemptedMainLongTextId;
+  int _mainLongTextRequestToken = 0;
 
   bool _isRetweetExpanded = false;
   bool _isLoadingRetweetLongText = false;
   String? _loadedRetweetLongText;
+  String? _attemptedRetweetLongTextId;
+  int _retweetLongTextRequestToken = 0;
 
   bool? _liked;
   int? _attitudesCount;
@@ -279,8 +491,8 @@ class _TweetCardState extends ConsumerState<TweetCard> {
   bool get _effectiveFavorited => _favorited ?? widget.status.favorited;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     if (widget.isDetail && widget.status.needsLongText) {
       _fetchMainLongText();
     }
@@ -290,6 +502,16 @@ class _TweetCardState extends ConsumerState<TweetCard> {
   void didUpdateWidget(covariant TweetCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.status.id != widget.status.id) {
+      _mainLongTextRequestToken++;
+      _retweetLongTextRequestToken++;
+      _loadedLongText = null;
+      _attemptedMainLongTextId = null;
+      _isExpanded = false;
+      _isLoadingLongText = false;
+      _loadedRetweetLongText = null;
+      _attemptedRetweetLongTextId = null;
+      _isRetweetExpanded = false;
+      _isLoadingRetweetLongText = false;
       _liked = null;
       _attitudesCount = null;
       _favorited = null;
@@ -305,11 +527,26 @@ class _TweetCardState extends ConsumerState<TweetCard> {
       _showPollResults = false;
       _selectedPollOptionIds.clear();
     }
-    if (widget.isDetail &&
+    final mainStatusChanged = oldWidget.status.id != widget.status.id ||
+        oldWidget.status.needsLongText != widget.status.needsLongText ||
+        oldWidget.isDetail != widget.isDetail;
+    if (mainStatusChanged &&
         widget.status.needsLongText &&
         _loadedLongText == null &&
-        !_isLoadingLongText) {
+        !_isLoadingLongText &&
+        widget.isDetail) {
       _fetchMainLongText();
+    }
+    final oldRetweetId = oldWidget.status.retweetedStatus?.mblogid ??
+        oldWidget.status.retweetedStatus?.id;
+    final retweet = widget.status.retweetedStatus;
+    final retweetId = retweet?.mblogid ?? retweet?.id;
+    if (oldRetweetId != retweetId) {
+      _retweetLongTextRequestToken++;
+      _loadedRetweetLongText = null;
+      _attemptedRetweetLongTextId = null;
+      _isRetweetExpanded = false;
+      _isLoadingRetweetLongText = false;
     }
   }
 
@@ -357,62 +594,162 @@ class _TweetCardState extends ConsumerState<TweetCard> {
     );
   }
 
-  Future<void> _fetchMainLongText() async {
+  Future<void> _fetchMainLongText({
+    bool Function(String fullText)? shouldExpandWhenLoaded,
+    bool forceRetry = false,
+  }) async {
     if (_isLoadingLongText) return;
+    final statusId = widget.status.mblogid ?? widget.status.id;
+    if (!forceRetry && _attemptedMainLongTextId == statusId) return;
+    _attemptedMainLongTextId = statusId;
+    final requestToken = ++_mainLongTextRequestToken;
     setState(() => _isLoadingLongText = true);
     final repo = ref.read(detailRepositoryProvider);
-    final longText =
-        await repo.getLongText(widget.status.mblogid ?? widget.status.id);
-    if (mounted) {
-      setState(() {
-        _isLoadingLongText = false;
-        if (longText != null && longText.isNotEmpty) {
-          _loadedLongText = longText;
-          _isExpanded = true;
-        }
-      });
+    String? longText;
+    try {
+      longText = await repo.getLongText(statusId);
+    } catch (_) {
+      // Keep the preview and allow a later manual retry if the request fails.
     }
+    if (!mounted ||
+        requestToken != _mainLongTextRequestToken ||
+        statusId != (widget.status.mblogid ?? widget.status.id)) {
+      return;
+    }
+    final hasLongText = longText != null && longText.isNotEmpty;
+    setState(() {
+      _isLoadingLongText = false;
+      if (hasLongText) {
+        _loadedLongText = longText;
+        _isExpanded = shouldExpandWhenLoaded?.call(longText!) ?? false;
+      }
+    });
   }
 
-  Future<void> _toggleMainExpand() async {
+  Future<void> _fetchRetweetLongText({
+    required WeiboStatusModel retweet,
+    bool Function(String fullText)? shouldExpandWhenLoaded,
+    bool forceRetry = false,
+  }) async {
+    if (_isLoadingRetweetLongText) return;
+    final statusId = retweet.mblogid ?? retweet.id;
+    if (!forceRetry && _attemptedRetweetLongTextId == statusId) return;
+    _attemptedRetweetLongTextId = statusId;
+    final requestToken = ++_retweetLongTextRequestToken;
+    setState(() => _isLoadingRetweetLongText = true);
+    final repo = ref.read(detailRepositoryProvider);
+    String? longText;
+    try {
+      longText = await repo.getLongText(statusId);
+    } catch (_) {
+      // Leave the truncated repost available for a manual retry.
+    }
+    final currentRetweet = widget.status.retweetedStatus;
+    if (!mounted ||
+        requestToken != _retweetLongTextRequestToken ||
+        currentRetweet == null ||
+        statusId != (currentRetweet.mblogid ?? currentRetweet.id)) {
+      return;
+    }
+    final hasLongText = longText != null && longText.isNotEmpty;
+    setState(() {
+      _isLoadingRetweetLongText = false;
+      if (hasLongText) {
+        _loadedRetweetLongText = longText;
+        _isRetweetExpanded = shouldExpandWhenLoaded?.call(longText!) ?? false;
+      }
+    });
+  }
+
+  Future<void> _toggleMainExpand({
+    required BuildContext context,
+    required double maxWidth,
+    required WeiboStyleSettings weiboStyle,
+    required Color linkColor,
+    required bool hasMoreContent,
+  }) async {
+    if (_isLoadingLongText) return;
     HapticFeedbackUtil.light();
     if (_isExpanded) {
       setState(() => _isExpanded = false);
       return;
     }
 
-    if (_loadedLongText != null || widget.status.fullTextRaw != null) {
-      setState(() => _isExpanded = true);
+    final availableLongText = _loadedLongText ?? widget.status.fullTextRaw;
+    if (availableLongText != null && availableLongText.isNotEmpty) {
+      if (hasMoreContent) {
+        setState(() => _isExpanded = true);
+      }
       return;
     }
 
-    await _fetchMainLongText();
+    await _fetchMainLongText(
+      forceRetry: true,
+      shouldExpandWhenLoaded: (fullText) =>
+          context.mounted &&
+          _shouldCollapseLongText(
+            context: context,
+            status: widget.status,
+            fullText: fullText,
+            maxWidth: maxWidth,
+            defaultStyle: TextStyle(
+              fontSize: weiboStyle.fontSize,
+              height: weiboStyle.fontLineHeight,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+            linkColor: linkColor,
+          ),
+    );
   }
 
-  Future<void> _toggleRetweetExpand(WeiboStatusModel retweet) async {
+  Future<void> _toggleRetweetExpand({
+    required BuildContext context,
+    required WeiboStatusModel retweet,
+    required double maxWidth,
+    required WeiboStyleSettings weiboStyle,
+    required Color linkColor,
+    required bool hasMoreContent,
+  }) async {
+    if (_isLoadingRetweetLongText) return;
     HapticFeedbackUtil.light();
     if (_isRetweetExpanded) {
       setState(() => _isRetweetExpanded = false);
       return;
     }
 
-    if (_loadedRetweetLongText != null || retweet.fullTextRaw != null) {
-      setState(() => _isRetweetExpanded = true);
+    final availableLongText = _loadedRetweetLongText ?? retweet.fullTextRaw;
+    if (availableLongText != null && availableLongText.isNotEmpty) {
+      if (hasMoreContent) {
+        setState(() => _isRetweetExpanded = true);
+      }
       return;
     }
 
-    setState(() => _isLoadingRetweetLongText = true);
-    final repo = ref.read(detailRepositoryProvider);
-    final longText = await repo.getLongText(retweet.mblogid ?? retweet.id);
-    if (mounted) {
-      setState(() {
-        _isLoadingRetweetLongText = false;
-        if (longText != null && longText.isNotEmpty) {
-          _loadedRetweetLongText = longText;
-          _isRetweetExpanded = true;
-        }
-      });
-    }
+    await _fetchRetweetLongText(
+      retweet: retweet,
+      forceRetry: true,
+      shouldExpandWhenLoaded: (longText) =>
+          context.mounted &&
+          _shouldCollapseLongText(
+            context: context,
+            status: retweet,
+            fullText: longText,
+            maxWidth: maxWidth,
+            defaultStyle: TextStyle(
+              fontSize: weiboStyle.fontSize - 1,
+              height: weiboStyle.fontLineHeight,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            linkColor: linkColor,
+            removePollLink: false,
+            prefixText: '@${retweet.user.screenName}：',
+            prefixStyle: TextStyle(
+              fontWeight: context.adjustWeight(FontWeight.bold),
+              fontSize: weiboStyle.fontSize - 1,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+    );
   }
 
   @override
@@ -668,6 +1005,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                   statusId: status.id,
                   isDetail: isDetail,
                   authorName: status.user.screenName,
+                  webpageCardCaption: _birthdayWebpageCardCaption(status),
                 ),
               ] else if (status.hasVideo) ...[
                 // 3.5 Native Video Preview Card
@@ -736,110 +1074,150 @@ class _TweetCardState extends ConsumerState<TweetCard> {
       BuildContext context, WeiboStyleSettings weiboStyle, Color linkColor) {
     final status = widget.status;
     final isDetail = widget.isDetail;
-    final isShowingFull = isDetail ||
-        _isExpanded ||
-        (status.fullTextRaw != null && status.fullTextRaw!.isNotEmpty);
-    final rawTextToDisplay = (isShowingFull
-        ? (_loadedLongText ?? status.effectiveText)
-        : status.textRaw);
-    // 时间线接口的 text_raw 偶尔会在正文后带换行，Text.rich 会把它布局成
-    // 真实的空行，导致列表卡片正文与操作栏之间出现异常留白。详情页使用
-    // 单独请求的正文，保持原样；这里只收紧列表卡片的显示文本。
-    final visibleText = _removeEmbeddedPollLink(
-      isDetail
-          ? rawTextToDisplay
-          : _trimTimelineTrailingWhitespace(rawTextToDisplay),
-      status,
-    );
+    return LayoutBuilder(
+      builder: (textContext, constraints) {
+        final availableLongText = _loadedLongText ?? status.fullTextRaw;
+        final textColor = Theme.of(textContext).colorScheme.onSurface;
+        final defaultStyle = TextStyle(
+          fontSize: weiboStyle.fontSize,
+          height: weiboStyle.fontLineHeight,
+          color: textColor,
+        );
+        final hasMoreMainText = status.isLongText &&
+            (availableLongText == null ||
+                availableLongText.isEmpty ||
+                _shouldCollapseLongText(
+                  context: textContext,
+                  status: status,
+                  fullText: availableLongText,
+                  maxWidth: constraints.maxWidth,
+                  defaultStyle: defaultStyle,
+                  linkColor: linkColor,
+                ));
+        // If the official full text adds no rendered lines, show it in the
+        // card immediately. A toggle is reserved for a real visual expansion.
+        final isShowingFull =
+            isDetail || _isExpanded || (status.isLongText && !hasMoreMainText);
+        final rawTextToDisplay = isShowingFull
+            ? (availableLongText ?? status.effectiveText)
+            : status.textRaw;
+        // The birthday greeting belongs inside its generated image card, not
+        // duplicated as a separate body line above it.
+        final bodyWithoutCardCaption =
+            _removeBirthdayCardCaptionFromBody(rawTextToDisplay, status);
+        // Timeline text can end in a server-supplied newline, which Text.rich
+        // lays out as a distracting empty line; detail text is preserved.
+        final visibleText = _removeEmbeddedPollLink(
+          isDetail
+              ? bodyWithoutCardCaption
+              : _trimTimelineTrailingWhitespace(bodyWithoutCardCaption),
+          status,
+        );
 
-    final mainTextWidget = Text.rich(
-      TextSpan(
-        children: WeiboTextParser.parse(
-          rawText: visibleText,
-          context: context,
-          urlStruct: status.urlStruct,
-          htmlText: status.textHtml,
-          linkColor: linkColor,
-          defaultStyle: TextStyle(
-            fontSize: weiboStyle.fontSize,
-            height: weiboStyle.fontLineHeight,
-            color: Theme.of(context).colorScheme.onSurface,
-          ),
-        ),
-      ),
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (isDetail) SelectionArea(child: mainTextWidget) else mainTextWidget,
-        if (status.isLongText && !isDetail) ...[
-          const SizedBox(height: 4),
-          InkWell(
-            borderRadius: BorderRadius.circular(6),
-            onTap: _toggleMainExpand,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_isLoadingLongText) ...[
-                    SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                  ],
-                  Text(
-                    _isExpanded ? '收起' : '展开全文',
-                    style: TextStyle(
-                      fontSize: weiboStyle.fontSize - 1.5,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 2),
-                  Icon(
-                    _isExpanded
-                        ? Icons.expand_less_rounded
-                        : Icons.expand_more_rounded,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ],
-              ),
+        final mainTextWidget = Text.rich(
+          TextSpan(
+            children: WeiboTextParser.parse(
+              rawText: visibleText,
+              context: textContext,
+              urlStruct: status.urlStruct,
+              htmlText: status.textHtml,
+              linkColor: linkColor,
+              defaultStyle: defaultStyle,
             ),
           ),
-        ],
-        if (isDetail && status.isLongText && _isLoadingLongText) ...[
-          const SizedBox(height: 6),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 12,
-                height: 12,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '正在加载全文...',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Theme.of(context).colorScheme.primary,
+        );
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (isDetail)
+              SelectionArea(child: mainTextWidget)
+            else
+              mainTextWidget,
+            if (status.isLongText &&
+                !isDetail &&
+                (_isLoadingLongText || hasMoreMainText)) ...[
+              const SizedBox(height: 4),
+              InkWell(
+                borderRadius: BorderRadius.circular(6),
+                onTap: _isLoadingLongText
+                    ? null
+                    : () => _toggleMainExpand(
+                          context: textContext,
+                          maxWidth: constraints.maxWidth,
+                          weiboStyle: weiboStyle,
+                          linkColor: linkColor,
+                          hasMoreContent: hasMoreMainText,
+                        ),
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_isLoadingLongText) ...[
+                        SizedBox(
+                          width: 12,
+                          height: 12,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Theme.of(textContext).colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                      ],
+                      Text(
+                        _isLoadingLongText
+                            ? '正在获取全文…'
+                            : (_isExpanded ? '收起' : '展开全文'),
+                        style: TextStyle(
+                          fontSize: weiboStyle.fontSize - 1.5,
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(textContext).colorScheme.primary,
+                        ),
+                      ),
+                      if (!_isLoadingLongText) ...[
+                        const SizedBox(width: 2),
+                        Icon(
+                          _isExpanded
+                              ? Icons.expand_less_rounded
+                              : Icons.expand_more_rounded,
+                          size: 16,
+                          color: Theme.of(textContext).colorScheme.primary,
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ),
             ],
-          ),
-        ],
-      ],
+            if (isDetail && status.isLongText && _isLoadingLongText) ...[
+              const SizedBox(height: 6),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Theme.of(textContext).colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '正在加载全文...',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(textContext).colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 
@@ -1060,16 +1438,6 @@ class _TweetCardState extends ConsumerState<TweetCard> {
   ) {
     final theme = Theme.of(context);
     final isFlat = weiboStyle.cardBackgroundLayout == 'flat_tile';
-    final isShowingRetweetFull = widget.isDetail ||
-        _isRetweetExpanded ||
-        (retweet.fullTextRaw != null && retweet.fullTextRaw!.isNotEmpty);
-    final retweetTextToDisplay = (isShowingRetweetFull
-        ? (_loadedRetweetLongText ?? retweet.effectiveText)
-        : retweet.textRaw);
-    final visibleRetweetText = widget.isDetail
-        ? retweetTextToDisplay
-        : _trimTimelineTrailingWhitespace(retweetTextToDisplay);
-
     final retweetRadius = isFlat ? 6.0 : 16.0;
 
     return InkWell(
@@ -1090,30 +1458,57 @@ class _TweetCardState extends ConsumerState<TweetCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Builder(
-              builder: (ctx) {
+            LayoutBuilder(
+              builder: (textContext, constraints) {
+                final availableLongText =
+                    _loadedRetweetLongText ?? retweet.fullTextRaw;
+                final prefixText = '@${retweet.user.screenName}：';
+                final prefixStyle = TextStyle(
+                  fontWeight: textContext.adjustWeight(FontWeight.bold),
+                  fontSize: weiboStyle.fontSize - 1,
+                  color: theme.colorScheme.primary,
+                );
+                final defaultStyle = TextStyle(
+                  fontSize: weiboStyle.fontSize - 1,
+                  height: weiboStyle.fontLineHeight,
+                  color: theme.colorScheme.onSurfaceVariant,
+                );
+                final hasMoreText = retweet.isLongText &&
+                    (availableLongText == null ||
+                        availableLongText.isEmpty ||
+                        _shouldCollapseLongText(
+                          context: textContext,
+                          status: retweet,
+                          fullText: availableLongText,
+                          maxWidth: constraints.maxWidth,
+                          defaultStyle: defaultStyle,
+                          linkColor: linkColor,
+                          removePollLink: false,
+                          prefixText: prefixText,
+                          prefixStyle: prefixStyle,
+                        ));
+                final isShowingFull = widget.isDetail ||
+                    _isRetweetExpanded ||
+                    (retweet.isLongText && !hasMoreText);
+                final textToDisplay = isShowingFull
+                    ? (availableLongText ?? retweet.effectiveText)
+                    : retweet.textRaw;
+                final bodyWithoutCardCaption =
+                    _removeBirthdayCardCaptionFromBody(textToDisplay, retweet);
+                final visibleText = widget.isDetail
+                    ? bodyWithoutCardCaption
+                    : _trimTimelineTrailingWhitespace(bodyWithoutCardCaption);
                 final retweetTextWidget = Text.rich(
                   TextSpan(
                     children: [
-                      TextSpan(
-                        text: '@${retweet.user.screenName}：',
-                        style: TextStyle(
-                          fontWeight: context.adjustWeight(FontWeight.bold),
-                          fontSize: weiboStyle.fontSize - 1,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
+                      TextSpan(text: prefixText, style: prefixStyle),
                       ...WeiboTextParser.parse(
-                        rawText: visibleRetweetText,
-                        context: context,
+                        rawText: visibleText,
+                        context: textContext,
                         urlStruct: retweet.urlStruct,
                         htmlText: retweet.textHtml,
                         linkColor: linkColor,
-                        defaultStyle: TextStyle(
-                          fontSize: weiboStyle.fontSize - 1,
-                          height: weiboStyle.fontLineHeight,
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
+                        defaultStyle: defaultStyle,
                       ),
                     ],
                   ),
@@ -1128,49 +1523,68 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                   onTap: () => _openRetweetDetail(context, retweet),
                   child: retweetTextWidget,
                 );
-                return retweetTextTapTarget;
-              },
-            ),
-            if (retweet.isLongText && !widget.isDetail) ...[
-              const SizedBox(height: 4),
-              InkWell(
-                onTap: () => _toggleRetweetExpand(retweet),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_isLoadingRetweetLongText) ...[
-                        SizedBox(
-                          width: 11,
-                          height: 11,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 1.8,
-                            color: theme.colorScheme.primary,
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    retweetTextTapTarget,
+                    if (retweet.isLongText &&
+                        !widget.isDetail &&
+                        (_isLoadingRetweetLongText || hasMoreText)) ...[
+                      const SizedBox(height: 4),
+                      InkWell(
+                        onTap: _isLoadingRetweetLongText
+                            ? null
+                            : () => _toggleRetweetExpand(
+                                  context: textContext,
+                                  retweet: retweet,
+                                  maxWidth: constraints.maxWidth,
+                                  weiboStyle: weiboStyle,
+                                  linkColor: linkColor,
+                                  hasMoreContent: hasMoreText,
+                                ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_isLoadingRetweetLongText) ...[
+                                SizedBox(
+                                  width: 11,
+                                  height: 11,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 1.8,
+                                    color: theme.colorScheme.primary,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              Text(
+                                _isLoadingRetweetLongText
+                                    ? '正在获取全文…'
+                                    : (_isRetweetExpanded ? '收起' : '展开全文'),
+                                style: TextStyle(
+                                  fontSize: weiboStyle.fontSize - 2,
+                                  fontWeight: FontWeight.w600,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                              if (!_isLoadingRetweetLongText)
+                                Icon(
+                                  _isRetweetExpanded
+                                      ? Icons.expand_less_rounded
+                                      : Icons.expand_more_rounded,
+                                  size: 15,
+                                  color: theme.colorScheme.primary,
+                                ),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 4),
-                      ],
-                      Text(
-                        _isRetweetExpanded ? '收起' : '展开全文',
-                        style: TextStyle(
-                          fontSize: weiboStyle.fontSize - 2,
-                          fontWeight: FontWeight.w600,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                      Icon(
-                        _isRetweetExpanded
-                            ? Icons.expand_less_rounded
-                            : Icons.expand_more_rounded,
-                        size: 15,
-                        color: theme.colorScheme.primary,
                       ),
                     ],
-                  ),
-                ),
-              ),
-            ],
+                  ],
+                );
+              },
+            ),
             if (retweet.pics.isNotEmpty) ...[
               const SizedBox(height: 8),
               NineGridView(
@@ -1178,6 +1592,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                 statusId: retweet.id,
                 isDetail: widget.isDetail,
                 authorName: retweet.user.screenName,
+                webpageCardCaption: _birthdayWebpageCardCaption(retweet),
               ),
             ] else if (retweet.hasVideo) ...[
               const SizedBox(height: 8),
@@ -1721,7 +2136,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
               fit: StackFit.expand,
               children: [
                 if (coverUrl.isNotEmpty)
-                  Image.network(
+                  CachedNetworkImage(
                     coverUrl,
                     headers: ApiConstants.imageHeaders,
                     fit: BoxFit.cover,

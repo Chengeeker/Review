@@ -6,6 +6,7 @@ import '../../../core/constants/api_constants.dart';
 import '../../../core/storage/storage_service.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
 import '../../../core/widgets/app_avatar.dart';
+import '../../../core/widgets/cached_network_image.dart';
 import '../../detail/presentation/widgets/image_gallery_page.dart';
 import '../../drawer_features/presentation/chaohua_detail_page.dart';
 import '../../feed/data/models/weibo_status_model.dart';
@@ -571,7 +572,7 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage>
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: chaohua.image.isNotEmpty
-                  ? Image.network(
+                  ? CachedNetworkImage(
                       chaohua.image,
                       width: 50,
                       height: 50,
@@ -745,7 +746,7 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage>
               leading: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: ch.image.isNotEmpty
-                    ? Image.network(
+                    ? CachedNetworkImage(
                         ch.image,
                         width: 48,
                         height: 48,

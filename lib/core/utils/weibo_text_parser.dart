@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../constants/api_constants.dart';
 import '../services/link_routing_service.dart';
 import '../theme/app_theme.dart';
+import 'haptic_feedback_util.dart';
 import '../../features/drawer_features/presentation/chaohua_detail_page.dart';
 import '../../features/profile/presentation/user_profile_page.dart';
 import '../../features/search/presentation/search_results_page.dart';
@@ -123,6 +124,7 @@ class WeiboTextParser {
     Color? linkColor,
     List<Map<String, dynamic>>? urlStruct,
     String? htmlText,
+    bool interactive = true,
     Function(String user)? onUserTap,
     Function(String topic)? onTopicTap,
     VoidCallback? onPlainTextTap,
@@ -163,7 +165,7 @@ class WeiboTextParser {
     int lastMatchEnd = 0;
 
     TapGestureRecognizer? plainTextRecognizer() {
-      if (onPlainTextTap == null) return null;
+      if (!interactive || onPlainTextTap == null) return null;
       return TapGestureRecognizer()..onTap = onPlainTextTap;
     }
 
@@ -187,8 +189,10 @@ class WeiboTextParser {
           TextSpan(
             text: matchedText,
             style: highlightStyle,
-            recognizer: TapGestureRecognizer()
-              ..onTap = () {
+            recognizer: interactive
+                ? (TapGestureRecognizer()
+                  ..onTap = () {
+                HapticFeedbackUtil.light();
                 if (onUserTap != null) {
                   onUserTap(username);
                 } else {
@@ -200,7 +204,8 @@ class WeiboTextParser {
                     ),
                   );
                 }
-              },
+              })
+                : null,
           ),
         );
       } else if (matchedText.startsWith('#') && matchedText.endsWith('#')) {
@@ -235,8 +240,9 @@ class WeiboTextParser {
           TextSpan(
             text: matchedText,
             style: highlightStyle,
-            recognizer: TapGestureRecognizer()
-              ..onTap = () {
+            recognizer: interactive
+                ? (TapGestureRecognizer()
+                  ..onTap = () {
                 if (isChaohua) {
                   String containerId =
                       chaohuaStruct?['page_id']?.toString() ?? '';
@@ -263,7 +269,8 @@ class WeiboTextParser {
                     ),
                   );
                 }
-              },
+              })
+                : null,
           ),
         );
       } else if (matchedText.startsWith('http://') ||
@@ -335,8 +342,9 @@ class WeiboTextParser {
           TextSpan(
             text: isChaohuaLink ? ' 💎 $linkTitle' : ' 🔗 $linkTitle',
             style: highlightStyle,
-            recognizer: TapGestureRecognizer()
-              ..onTap = () async {
+            recognizer: interactive
+                ? (TapGestureRecognizer()
+                  ..onTap = () async {
                 if (isChaohuaLink) {
                   String containerId = pageId;
                   if (containerId.isEmpty) {
@@ -355,7 +363,8 @@ class WeiboTextParser {
                   LinkRoutingService.openUrl(context, targetUrl,
                       title: linkTitle);
                 }
-              },
+              })
+                : null,
           ),
         );
       } else if (matchedText.startsWith('[') && matchedText.endsWith(']')) {

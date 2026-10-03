@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -80,11 +82,76 @@ class _LivePlayback {
 
 /// Detail Repository for Fetching Status Detail, Comments, and Posting Comments
 class DetailRepository {
+  static const int _maxCachedLongTexts = 96;
+  static const int _maxConcurrentLongTextRequests = 2;
+
   final WeiboDioClient _client;
+  final Map<String, String> _longTextCache = <String, String>{};
+  final Map<String, Future<String?>> _longTextRequests =
+      <String, Future<String?>>{};
+  final Queue<Completer<void>> _longTextRequestWaiters =
+      Queue<Completer<void>>();
+  int _activeLongTextRequests = 0;
 
   DetailRepository(this._client);
 
   Future<String?> getLongText(String id) async {
+    final normalizedId = id.trim();
+    if (normalizedId.isEmpty) return null;
+
+    final cachedText = _longTextCache.remove(normalizedId);
+    if (cachedText != null) {
+      _longTextCache[normalizedId] = cachedText;
+      return cachedText;
+    }
+
+    final inFlightRequest = _longTextRequests[normalizedId];
+    if (inFlightRequest != null) return inFlightRequest;
+
+    final request = _requestLongTextWithLimit(normalizedId);
+    _longTextRequests[normalizedId] = request;
+    try {
+      final longText = await request;
+      if (longText != null && longText.isNotEmpty) {
+        _longTextCache[normalizedId] = longText;
+        while (_longTextCache.length > _maxCachedLongTexts) {
+          _longTextCache.remove(_longTextCache.keys.first);
+        }
+      }
+      return longText;
+    } finally {
+      _longTextRequests.remove(normalizedId);
+    }
+  }
+
+  Future<String?> _requestLongTextWithLimit(String id) async {
+    await _acquireLongTextRequestSlot();
+    try {
+      return await _requestLongText(id);
+    } finally {
+      _releaseLongTextRequestSlot();
+    }
+  }
+
+  Future<void> _acquireLongTextRequestSlot() {
+    if (_activeLongTextRequests < _maxConcurrentLongTextRequests) {
+      _activeLongTextRequests++;
+      return Future<void>.value();
+    }
+    final waiter = Completer<void>();
+    _longTextRequestWaiters.addLast(waiter);
+    return waiter.future;
+  }
+
+  void _releaseLongTextRequestSlot() {
+    if (_longTextRequestWaiters.isNotEmpty) {
+      _longTextRequestWaiters.removeFirst().complete();
+    } else {
+      _activeLongTextRequests--;
+    }
+  }
+
+  Future<String?> _requestLongText(String id) async {
     try {
       final response = await _client.dio.get(
         ApiConstants.longText,
@@ -514,12 +581,21 @@ class DetailRepository {
       final official = WeiboStatusModel.fromJson(officialPayload);
       final hasWebpageImage = official.pics.any((pic) => pic.isWebpageCard);
       final officialUrlStruct = official.urlStruct;
+      final mergedUrlStruct = officialUrlStruct?.isNotEmpty == true
+          ? officialUrlStruct
+          : status.urlStruct;
+      final textWithoutCardLink = _removeAutomaticCardLinks(
+        status.textRaw,
+        mergedUrlStruct,
+      );
       return status.copyWith(
-        pics: official.pics.isNotEmpty ? official.pics : status.pics,
-        textRaw: hasWebpageImage ? official.textRaw : status.textRaw,
-        urlStruct: officialUrlStruct?.isNotEmpty == true
-            ? officialUrlStruct
-            : status.urlStruct,
+        pics: _mergeHydratedWebpageCardPictures(status.pics, official.pics),
+        textRaw: hasWebpageImage
+            ? (official.textRaw.trim().isNotEmpty
+                ? official.textRaw
+                : textWithoutCardLink)
+            : status.textRaw,
+        urlStruct: mergedUrlStruct,
         poll: status.poll ?? official.poll,
         hotTopic: status.hotTopic ?? official.hotTopic,
         visibilityType: status.visibilityType ?? official.visibilityType,
@@ -538,6 +614,136 @@ class DetailRepository {
       // Enrichment is best effort; the already-renderable desktop status wins.
       return status;
     }
+  }
+
+  static List<WeiboPicModel> _mergeHydratedWebpageCardPictures(
+    List<WeiboPicModel> existing,
+    List<WeiboPicModel> hydrated,
+  ) {
+    if (hydrated.isEmpty) return existing;
+
+    final merged = List<WeiboPicModel>.of(hydrated);
+    final existingCards = existing.where((pic) => pic.isWebpageCard).toList();
+    final hydratedCardIndexes = <int>[
+      for (var index = 0; index < merged.length; index++)
+        if (merged[index].isWebpageCard) index,
+    ];
+
+    for (final existingCard in existingCards) {
+      var matchIndex = merged.indexWhere(
+        (candidate) =>
+            candidate.isWebpageCard && _samePicture(candidate, existingCard),
+      );
+
+      // Birthday and award cards are commonly represented by exactly one
+      // foreground image. If the mobile detail response has only that layer,
+      // retain the matching desktop layer's background instead of replacing
+      // the whole rendered card with an avatar-only PNG.
+      if (matchIndex < 0 &&
+          existingCards.length == 1 &&
+          hydratedCardIndexes.length == 1) {
+        matchIndex = hydratedCardIndexes.single;
+      }
+
+      if (matchIndex >= 0) {
+        merged[matchIndex] = _mergeWebpageCardLayers(
+          merged[matchIndex],
+          existingCard,
+        );
+      } else if (hydratedCardIndexes.isEmpty) {
+        merged.add(existingCard);
+      }
+    }
+
+    return merged;
+  }
+
+  static bool _samePicture(WeiboPicModel left, WeiboPicModel right) {
+    if (left.pid.isNotEmpty && left.pid == right.pid) return true;
+    final leftUrl = left.originalUrl.isNotEmpty
+        ? left.originalUrl
+        : (left.largeUrl.isNotEmpty ? left.largeUrl : left.thumbnail);
+    final rightUrl = right.originalUrl.isNotEmpty
+        ? right.originalUrl
+        : (right.largeUrl.isNotEmpty ? right.largeUrl : right.thumbnail);
+    if (leftUrl.isEmpty || rightUrl.isEmpty) return false;
+
+    String identity(String value) {
+      final uri = Uri.tryParse(value);
+      var normalized =
+          uri?.replace(query: '', fragment: '').toString() ?? value;
+      normalized = normalized.replaceAll(
+        RegExp(
+            r'/(thumbnail|bmiddle|orj\d+|large|mw2000|original|small|square)/'),
+        '/',
+      );
+      return normalized.toLowerCase();
+    }
+
+    return identity(leftUrl) == identity(rightUrl);
+  }
+
+  static WeiboPicModel _mergeWebpageCardLayers(
+    WeiboPicModel hydrated,
+    WeiboPicModel existing,
+  ) {
+    final hydratedBackground = hydrated.webpageCardBackgroundUrl?.trim();
+    final existingBackground = existing.webpageCardBackgroundUrl?.trim();
+    final hasExistingCanvas = existingBackground?.isNotEmpty == true;
+    return WeiboPicModel(
+      pid: hydrated.pid.isNotEmpty ? hydrated.pid : existing.pid,
+      thumbnail: hydrated.thumbnail.isNotEmpty
+          ? hydrated.thumbnail
+          : existing.thumbnail,
+      large: hydrated.large.isNotEmpty ? hydrated.large : existing.large,
+      original:
+          hydrated.original.isNotEmpty ? hydrated.original : existing.original,
+      width: hasExistingCanvas && existing.width > 0
+          ? existing.width
+          : (hydrated.width > 0 ? hydrated.width : existing.width),
+      height: hasExistingCanvas && existing.height > 0
+          ? existing.height
+          : (hydrated.height > 0 ? hydrated.height : existing.height),
+      isGif: hydrated.isGif || existing.isGif,
+      isLongPic: hydrated.isLongPic || existing.isLongPic,
+      isLivePhoto: hydrated.isLivePhoto || existing.isLivePhoto,
+      livePhotoVideoUrl:
+          hydrated.livePhotoVideoUrl ?? existing.livePhotoVideoUrl,
+      isVideo: hydrated.isVideo || existing.isVideo,
+      videoUrl: hydrated.videoUrl ?? existing.videoUrl,
+      videoDuration: hydrated.videoDuration ?? existing.videoDuration,
+      videoTitle: hydrated.videoTitle ?? existing.videoTitle,
+      isWebpageCard: hydrated.isWebpageCard || existing.isWebpageCard,
+      webpageCardBackgroundUrl: hydratedBackground?.isNotEmpty == true
+          ? hydratedBackground
+          : (existingBackground?.isNotEmpty == true
+              ? existingBackground
+              : null),
+    );
+  }
+
+  static String _removeAutomaticCardLinks(
+    String text,
+    List<Map<String, dynamic>>? urlStruct,
+  ) {
+    var cleaned = text;
+    for (final entry in urlStruct ?? const <Map<String, dynamic>>[]) {
+      if (!isAutomaticWebpageCardEntry(entry)) continue;
+      final shortUrl = (entry['short_url'] ?? entry['url_ori'])?.toString();
+      if (shortUrl == null || shortUrl.trim().isEmpty) continue;
+      final variants = <String>{shortUrl.trim()};
+      if (shortUrl.startsWith('http://')) {
+        variants.add(shortUrl.replaceFirst('http://', 'https://').trim());
+      } else if (shortUrl.startsWith('https://')) {
+        variants.add(shortUrl.replaceFirst('https://', 'http://').trim());
+      }
+      for (final variant in variants) {
+        cleaned = cleaned.replaceAll(variant, '');
+      }
+    }
+    return cleaned
+        .replaceAll(RegExp(r'[\u200B\u200C\u200D\u2060\uFEFF]'), '')
+        .trim();
   }
 
   Future<CommentResult> getComments({

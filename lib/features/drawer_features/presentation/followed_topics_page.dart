@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/network/weibo_dio_client.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
+import '../../../core/widgets/cached_network_image.dart';
 import '../../auth/presentation/login_page.dart';
 import 'chaohua_detail_page.dart';
 
@@ -364,7 +365,7 @@ class _FollowedTopicsPageState extends ConsumerState<FollowedTopicsPage> {
                               leading: avatar.isNotEmpty
                                   ? ClipRRect(
                                       borderRadius: BorderRadius.circular(12),
-                                      child: Image.network(
+                                      child: CachedNetworkImage(
                                         avatar,
                                         width: 48,
                                         height: 48,

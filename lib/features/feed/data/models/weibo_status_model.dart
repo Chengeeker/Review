@@ -468,9 +468,9 @@ class WeiboPicModel {
         json['video_title']?.toString() ?? json['videoTitle']?.toString();
     final isWebpageCard =
         json['is_webpage_card'] == true || json['isWebpageCard'] == true;
-    final webpageCardBackgroundUrl = json['webpage_card_background_url']
-            ?.toString() ??
-        json['webpageCardBackgroundUrl']?.toString();
+    final webpageCardBackgroundUrl =
+        json['webpage_card_background_url']?.toString() ??
+            json['webpageCardBackgroundUrl']?.toString();
 
     return WeiboPicModel(
       pid: pid,
@@ -1066,6 +1066,16 @@ class WeiboStatusModel {
           pics.add(WeiboPicModel.fromJson({...info, 'pid': pid.toString()}));
         }
       }
+    } else if (json['pics'] is List) {
+      // `toJson()` stores normalized images under `pics`. Browsing history
+      // snapshots use this shape rather than the API's `pic_infos`; without
+      // reading it back, every reopened history item silently loses its
+      // images and generated-card metadata (including birthday greetings).
+      for (final rawPic in json['pics'] as List) {
+        if (rawPic is Map) {
+          pics.add(WeiboPicModel.fromJson(Map<String, dynamic>.from(rawPic)));
+        }
+      }
     } else {
       for (final pid in picIds) {
         pics.add(WeiboPicModel.fromJson({'pid': pid.toString()}));
@@ -1284,6 +1294,27 @@ class WeiboStatusModel {
         ]);
         if (pageImageUrl != null && _isRealEmbeddedImageUrl(pageImageUrl)) {
           final imageIdentity = _embeddedImageIdentity(pageImageUrl);
+          final hasSeparateBackground = webpageCardBackgroundUrl != null &&
+              webpageCardBackgroundUrl != pageImageUrl;
+          final dimensionSources = <Map<String, dynamic>?>[
+            if (hasSeparateBackground) cardPicBig,
+            if (hasSeparateBackground) cardPicMiddle,
+            if (!hasSeparateBackground) pagePic,
+            if (!hasSeparateBackground) pageInfo,
+            if (!hasSeparateBackground) cardPicBig,
+            if (!hasSeparateBackground) cardPicMiddle,
+          ];
+          double cardWidth = 16;
+          double cardHeight = 9;
+          for (final dimensions in dimensionSources) {
+            if (dimensions == null) continue;
+            final width = _firstPositiveDimension([dimensions['width']]);
+            final height = _firstPositiveDimension([dimensions['height']]);
+            if (width == null || height == null) continue;
+            cardWidth = width;
+            cardHeight = height;
+            break;
+          }
           final alreadyParsed = pics.any((pic) {
             final existingUrl = pic.originalUrl.isNotEmpty
                 ? pic.originalUrl
@@ -1303,18 +1334,11 @@ class WeiboStatusModel {
                 thumbnail: pageImageUrl,
                 large: pageImageUrl,
                 original: pageImageUrl,
-                width: _firstPositiveDimension([
-                      pagePic?['width'],
-                      pageInfo['width'],
-                    ]) ??
-                    16.0,
-                height: _firstPositiveDimension([
-                      pagePic?['height'],
-                      pageInfo['height'],
-                      cardPicBig?['height'],
-                      cardPicMiddle?['height'],
-                    ]) ??
-                    9.0,
+                // Layered cards must use the background canvas dimensions.
+                // The transparent foreground can have a portrait extent that
+                // would otherwise crop the full card in the timeline.
+                width: cardWidth,
+                height: cardHeight,
                 isWebpageCard: true,
                 webpageCardBackgroundUrl: webpageCardBackgroundUrl,
               ),

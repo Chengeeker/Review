@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/storage/storage_service.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
 import '../../../core/utils/app_dialog.dart';
+import '../../feed/data/feed_repository.dart';
 import '../../feed/data/models/weibo_status_model.dart';
 import '../../feed/presentation/widgets/tweet_card.dart';
 
@@ -39,11 +40,62 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
       } catch (_) {}
     }
 
+    final incompleteAutomaticCards = list.where((status) {
+      final hasAutomaticCardLink =
+          status.urlStruct?.any(isAutomaticWebpageCardEntry) == true;
+      final hasRenderedCard = status.pics.any((pic) => pic.isWebpageCard);
+      return hasAutomaticCardLink && !hasRenderedCard;
+    }).toList();
+
     setState(() {
       _statuses.clear();
       _statuses.addAll(list);
       _isLoading = false;
     });
+
+    if (incompleteAutomaticCards.isNotEmpty) {
+      _hydrateIncompleteAutomaticCards(incompleteAutomaticCards);
+    }
+  }
+
+  Future<void> _hydrateIncompleteAutomaticCards(
+    List<WeiboStatusModel> incompleteCards,
+  ) async {
+    try {
+      // Reuse the same bounded official-status hydration as timeline/profile
+      // parsing. History remains immediately usable while these few stale
+      // automatic-card snapshots are repaired in the background.
+      final hydrated = await ref.read(feedRepositoryProvider).parseStatuses(
+            incompleteCards.map((status) => status.toJson()).toList(),
+          );
+      if (!mounted) return;
+
+      final replacements = <String, WeiboStatusModel>{};
+      for (final status in hydrated) {
+        if (status.pics.any((pic) => pic.isWebpageCard)) {
+          replacements[status.id] = status;
+        }
+      }
+      if (replacements.isEmpty) return;
+
+      setState(() {
+        for (var index = 0; index < _statuses.length; index++) {
+          final replacement = replacements[_statuses[index].id];
+          if (replacement != null) _statuses[index] = replacement;
+        }
+      });
+
+      final storage = ref.read(storageServiceProvider);
+      for (final status in replacements.values) {
+        await storage.updateBrowsingHistoryStatusJson(
+          status.id,
+          jsonEncode(status.toJson()),
+        );
+      }
+    } catch (_) {
+      // A failed/offline enrichment leaves the saved snapshot intact; it must
+      // not block the browsing-history list.
+    }
   }
 
   Future<void> _clearHistory() async {

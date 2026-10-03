@@ -268,6 +268,98 @@ void main() {
     expect(status.textRaw, isEmpty);
   });
 
+  test(
+      'getStatusDetail preserves existing birthday background and body when mobile layer is incomplete',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final storage = StorageService(prefs);
+    await storage.setFullCookie('SUB=test; XSRF-TOKEN=test');
+
+    final client = WeiboDioClient(storage);
+    client.dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (options.uri.host == 'weibo.com' &&
+              options.path == ApiConstants.statusDetail) {
+            handler.resolve(
+              Response(
+                requestOptions: options,
+                statusCode: 200,
+                data: {
+                  'id': 'birthday-detail-2026',
+                  'mid': 'birthday-detail-2026',
+                  'text_raw': '今天是我的生日 09月29日，来祝福我吧~ http://t.cn/bday',
+                  'user': {'id': '6367342728', 'screen_name': '测试用户'},
+                  'url_struct': [
+                    {
+                      'url_title': '今天是我的生日 09月29日，来祝福我吧~',
+                      'short_url': 'http://t.cn/bday',
+                      'url_type': 39,
+                    },
+                  ],
+                  'page_info': {
+                    'type': '23',
+                    'object_type': 'webpage',
+                    'card_info': {
+                      'pic_url':
+                          'https://pc.us.sinaimg.cn/0020/birthday-foreground.png',
+                      'page_info': {
+                        'pic_info': {
+                          'pic_big': {
+                            'url':
+                                'https://pc.us.sinaimg.cn/0010/birthday-background.png',
+                            'width': 854,
+                            'height': 480,
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              ),
+            );
+            return;
+          }
+
+          handler.resolve(
+            Response(
+              requestOptions: options,
+              statusCode: 200,
+              data: {
+                'data': {
+                  'id': 'birthday-detail-2026',
+                  'mid': 'birthday-detail-2026',
+                  'text_raw': '',
+                  'user': {'id': '6367342728', 'screen_name': '测试用户'},
+                  'page_info': {
+                    'type': 'bigPic',
+                    'page_pic': {
+                      'url':
+                          'https://pc.us.sinaimg.cn/0020/birthday-foreground.png',
+                    },
+                  },
+                },
+              },
+            ),
+          );
+        },
+      ),
+    );
+
+    final status =
+        await DetailRepository(client).getStatusDetail('birthday-detail-2026');
+
+    expect(status, isNotNull);
+    expect(status!.pics, hasLength(1));
+    expect(status.pics.single.isWebpageCard, isTrue);
+    expect(status.pics.single.webpageCardBackgroundUrl,
+        contains('birthday-background.png'));
+    expect(status.pics.single.width, 854);
+    expect(status.pics.single.height, 480);
+    expect(status.textRaw, '今天是我的生日 09月29日，来祝福我吧~');
+  });
+
   test('getSecondComments parses official nested pagination envelopes',
       () async {
     SharedPreferences.setMockInitialValues({});

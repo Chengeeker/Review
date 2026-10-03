@@ -25,23 +25,30 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
   int _currentIndex = 0;
   DateTime? _lastTimelineTapTime;
   Timer? _timelineSingleTapTimer;
+  DateTime? _lastHotSearchTapTime;
+  Timer? _hotSearchSingleTapTimer;
+  final GlobalKey<HotTrendsViewState> _hotTrendsKey =
+      GlobalKey<HotTrendsViewState>();
+
+  late final List<Widget> _pages = [
+    const FeedView(),
+    HotTrendsView(key: _hotTrendsKey),
+    const SettingsView(),
+  ];
 
   @override
   void dispose() {
     _timelineSingleTapTimer?.cancel();
+    _hotSearchSingleTapTimer?.cancel();
     super.dispose();
   }
-
-  final List<Widget> _pages = const [
-    FeedView(),
-    HotTrendsView(),
-    SettingsView(),
-  ];
 
   void _onNavigationItemSelected(int index) {
     if (index != _currentIndex) {
       _timelineSingleTapTimer?.cancel();
       _lastTimelineTapTime = null;
+      _hotSearchSingleTapTimer?.cancel();
+      _lastHotSearchTapTime = null;
       setState(() => _currentIndex = index);
       return;
     }
@@ -65,6 +72,29 @@ class _MainScaffoldState extends ConsumerState<MainScaffold> {
           ref.read(timelineScrollProvider.notifier).handleSingleTap();
           _lastTimelineTapTime = null;
         });
+      }
+    }
+
+    // 用户在当前“热搜”页面上再次点击热搜底栏。
+    if (index == 1) {
+      final now = DateTime.now();
+      if (_lastHotSearchTapTime != null &&
+          now.difference(_lastHotSearchTapTime!) <
+              const Duration(milliseconds: 300)) {
+        _hotSearchSingleTapTimer?.cancel();
+        _hotSearchSingleTapTimer = null;
+        _lastHotSearchTapTime = null;
+        _hotTrendsKey.currentState?.handleBottomBarDoubleTap();
+      } else {
+        _lastHotSearchTapTime = now;
+        _hotSearchSingleTapTimer?.cancel();
+        _hotSearchSingleTapTimer = Timer(
+          const Duration(milliseconds: 300),
+          () {
+            _hotTrendsKey.currentState?.handleBottomBarSingleTap();
+            _lastHotSearchTapTime = null;
+          },
+        );
       }
     }
   }

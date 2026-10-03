@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/api_constants.dart';
+import '../../../../core/widgets/cached_network_image.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/haptic_feedback_util.dart';
 import '../../../../core/utils/weibo_text_parser.dart';
@@ -44,10 +45,12 @@ class EditHistoryBottomSheet extends ConsumerStatefulWidget {
   }
 
   @override
-  ConsumerState<EditHistoryBottomSheet> createState() => _EditHistoryBottomSheetState();
+  ConsumerState<EditHistoryBottomSheet> createState() =>
+      _EditHistoryBottomSheetState();
 }
 
-class _EditHistoryBottomSheetState extends ConsumerState<EditHistoryBottomSheet> {
+class _EditHistoryBottomSheetState
+    extends ConsumerState<EditHistoryBottomSheet> {
   bool _isLoading = true;
   String? _errorMessage;
   WeiboEditHistoryModel? _editHistory;
@@ -64,7 +67,9 @@ class _EditHistoryBottomSheetState extends ConsumerState<EditHistoryBottomSheet>
       _errorMessage = null;
     });
 
-    final targetMid = (widget.mid != null && widget.mid!.isNotEmpty) ? widget.mid! : widget.statusId;
+    final targetMid = (widget.mid != null && widget.mid!.isNotEmpty)
+        ? widget.mid!
+        : widget.statusId;
     final repo = ref.read(detailRepositoryProvider);
     final result = await repo.getEditHistory(targetMid);
 
@@ -97,7 +102,9 @@ class _EditHistoryBottomSheetState extends ConsumerState<EditHistoryBottomSheet>
         color: colorScheme.surfaceContainerLow,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         border: Border(
-          top: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.25), width: 1),
+          top: BorderSide(
+              color: colorScheme.outlineVariant.withValues(alpha: 0.25),
+              width: 1),
         ),
       ),
       child: Column(
@@ -127,7 +134,8 @@ class _EditHistoryBottomSheetState extends ConsumerState<EditHistoryBottomSheet>
                     color: colorScheme.primaryContainer.withValues(alpha: 0.7),
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  child: Icon(Icons.history_rounded, size: 22, color: colorScheme.primary),
+                  child: Icon(Icons.history_rounded,
+                      size: 22, color: colorScheme.primary),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -180,7 +188,8 @@ class _EditHistoryBottomSheetState extends ConsumerState<EditHistoryBottomSheet>
     );
   }
 
-  Widget _buildBody(BuildContext context, ColorScheme colorScheme, ThemeData theme) {
+  Widget _buildBody(
+      BuildContext context, ColorScheme colorScheme, ThemeData theme) {
     if (_isLoading) {
       return Container(
         height: 220,
@@ -216,12 +225,14 @@ class _EditHistoryBottomSheetState extends ConsumerState<EditHistoryBottomSheet>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.info_outline_rounded, size: 40, color: colorScheme.error),
+            Icon(Icons.info_outline_rounded,
+                size: 40, color: colorScheme.error),
             const SizedBox(height: 12),
             Text(
               _errorMessage!,
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
             FilledButton.tonalIcon(
@@ -241,7 +252,8 @@ class _EditHistoryBottomSheetState extends ConsumerState<EditHistoryBottomSheet>
         alignment: Alignment.center,
         child: Text(
           '暂无编辑历史',
-          style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+          style: theme.textTheme.bodyMedium
+              ?.copyWith(color: colorScheme.onSurfaceVariant),
         ),
       );
     }
@@ -305,7 +317,8 @@ class _EditHistoryBottomSheetState extends ConsumerState<EditHistoryBottomSheet>
               children: [
                 // Version Pill Badge
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: isLatest
                         ? colorScheme.primaryContainer
@@ -361,21 +374,27 @@ class _EditHistoryBottomSheetState extends ConsumerState<EditHistoryBottomSheet>
             // Revision Pictures (if any)
             if (revision.pics.isNotEmpty) ...[
               const SizedBox(height: 12),
-              _buildPicsGrid(context, revision.pics, revision.id, revision.user.screenName),
+              _buildPicsGrid(context, revision.pics, revision.id,
+                  revision.user.screenName),
             ],
 
             // Footer (Region / Source)
-            if (revision.regionName != null && revision.regionName!.isNotEmpty) ...[
+            if (revision.regionName != null &&
+                revision.regionName!.isNotEmpty) ...[
               const SizedBox(height: 10),
               Row(
                 children: [
-                  Icon(Icons.location_on_outlined, size: 14, color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7)),
+                  Icon(Icons.location_on_outlined,
+                      size: 14,
+                      color:
+                          colorScheme.onSurfaceVariant.withValues(alpha: 0.7)),
                   const SizedBox(width: 4),
                   Text(
                     revision.regionName!,
                     style: TextStyle(
                       fontSize: 11.5,
-                      color: colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                      color:
+                          colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
                     ),
                   ),
                 ],
@@ -387,7 +406,8 @@ class _EditHistoryBottomSheetState extends ConsumerState<EditHistoryBottomSheet>
     );
   }
 
-  Widget _buildPicsGrid(BuildContext context, List<WeiboPicModel> pics, String statusId, String authorName) {
+  Widget _buildPicsGrid(BuildContext context, List<WeiboPicModel> pics,
+      String statusId, String authorName) {
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -410,7 +430,7 @@ class _EditHistoryBottomSheetState extends ConsumerState<EditHistoryBottomSheet>
           },
           child: ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: Image.network(
+            child: CachedNetworkImage(
               pic.previewUrl,
               headers: ApiConstants.imageHeaders,
               width: 84,

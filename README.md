@@ -95,11 +95,8 @@ flutter test
 ```
 
 ### 4. 编译 Release 正式版 APK (`arm64-v8a` 架构)
-```bash
-flutter build apk --release --target-platform android-arm64 --android-skip-build-dependency-validation
-```
 
-编译成功后，生成的 Android `arm64-v8a` 架构安装包按“应用名+版本名”自动命名保存于项目根目录下（如 `Review_v1.4.apk`）。
+本机签名、JDK 临时目录、完整构建命令和交付包核验统一参照[开发文档](DEVELOPMENT.md#102-release-apk)。Flutter 的原始产物位于 `build/app/outputs/flutter-apk/app-release.apk`；核验后交付到项目根目录，命名为 `Review_v<版本名>.apk`。
 
 ---
 

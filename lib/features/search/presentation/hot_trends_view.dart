@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,12 +22,15 @@ class HotTrendsView extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<HotTrendsView> createState() => _HotTrendsViewState();
+  HotTrendsViewState createState() => HotTrendsViewState();
 }
 
-class _HotTrendsViewState extends ConsumerState<HotTrendsView>
+class HotTrendsViewState extends ConsumerState<HotTrendsView>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  final List<GlobalKey<_HotCategoryListViewState>> _categoryListKeys = [];
+  DateTime? _lastTopBarTapTime;
+  Timer? _topBarSingleTapTimer;
 
   final List<Map<String, String>> _categories = [
     {'key': 'mine', 'name': '我的'},
@@ -41,6 +46,10 @@ class _HotTrendsViewState extends ConsumerState<HotTrendsView>
   @override
   void initState() {
     super.initState();
+    _categoryListKeys.addAll(
+      List.generate(
+          _categories.length, (_) => GlobalKey<_HotCategoryListViewState>()),
+    );
     _tabController = TabController(
       length: _categories.length,
       vsync: this,
@@ -50,8 +59,50 @@ class _HotTrendsViewState extends ConsumerState<HotTrendsView>
 
   @override
   void dispose() {
+    _topBarSingleTapTimer?.cancel();
     _tabController.dispose();
     super.dispose();
+  }
+
+  _HotCategoryListViewState? get _currentCategoryState {
+    final index = _tabController.index;
+    if (index < 0 || index >= _categoryListKeys.length) return null;
+    return _categoryListKeys[index].currentState;
+  }
+
+  /// 底栏再次点击热搜：回到当前分类列表顶部。
+  void handleBottomBarSingleTap() {
+    _currentCategoryState?._scrollToTop();
+  }
+
+  /// 底栏双击热搜：回到当前分类顶部并刷新该分类。
+  void handleBottomBarDoubleTap() {
+    final categoryState = _currentCategoryState;
+    categoryState?._scrollToTop();
+    if (categoryState != null) unawaited(categoryState._fetchList());
+  }
+
+  /// 顶栏双击：列表不在顶部时回顶，已经在顶部时刷新当前分类。
+  void handleTopBarDoubleTap() {
+    _currentCategoryState?._handleTopBarDoubleTap();
+  }
+
+  void _handleTopBarTap() {
+    final now = DateTime.now();
+    if (_lastTopBarTapTime != null &&
+        now.difference(_lastTopBarTapTime!) <
+            const Duration(milliseconds: 300)) {
+      _topBarSingleTapTimer?.cancel();
+      _topBarSingleTapTimer = null;
+      _lastTopBarTapTime = null;
+      handleTopBarDoubleTap();
+    } else {
+      _lastTopBarTapTime = now;
+      _topBarSingleTapTimer?.cancel();
+      _topBarSingleTapTimer = Timer(const Duration(milliseconds: 300), () {
+        _lastTopBarTapTime = null;
+      });
+    }
   }
 
   @override
@@ -62,54 +113,64 @@ class _HotTrendsViewState extends ConsumerState<HotTrendsView>
     final fontWeightAdjustment =
         ref.watch(themeProvider).effectiveFontWeightAdjustment;
 
+    final appBar = AppBar(
+      title: const Text('微博热搜', style: TextStyle(fontWeight: FontWeight.bold)),
+      actions: [
+        // 搜索按钮 (打开搜索落地页)
+        IconButton(
+          icon: const Icon(Icons.search_rounded),
+          tooltip: '搜索',
+          onPressed: () {
+            HapticFeedbackUtil.light();
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (ctx) => const SearchView()),
+            );
+          },
+        ),
+        const SizedBox(width: 4),
+      ],
+      bottom: TabBar(
+        controller: _tabController,
+        isScrollable: true,
+        tabAlignment: TabAlignment.start,
+        indicatorSize: TabBarIndicatorSize.label,
+        labelPadding: const EdgeInsets.symmetric(horizontal: 14),
+        labelStyle: TextStyle(
+          fontWeight: AppTheme.adjustFontWeight(
+            FontWeight.w600,
+            fontWeightAdjustment,
+          ),
+          fontSize: 15,
+        ),
+        unselectedLabelStyle: TextStyle(
+          fontWeight: AppTheme.adjustFontWeight(
+            FontWeight.normal,
+            fontWeightAdjustment,
+          ),
+          fontSize: 15,
+        ),
+        tabs: _categories.map((c) => Tab(text: c['name'])).toList(),
+      ),
+    );
+
     return Scaffold(
-      appBar: AppBar(
-        title:
-            const Text('微博热搜', style: TextStyle(fontWeight: FontWeight.bold)),
-        actions: [
-          // 搜索按钮 (打开搜索落地页)
-          IconButton(
-            icon: const Icon(Icons.search_rounded),
-            tooltip: '搜索',
-            onPressed: () {
-              HapticFeedbackUtil.light();
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (ctx) => const SearchView()),
-              );
-            },
-          ),
-          const SizedBox(width: 4),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          indicatorSize: TabBarIndicatorSize.label,
-          labelPadding: const EdgeInsets.symmetric(horizontal: 14),
-          labelStyle: TextStyle(
-            fontWeight: AppTheme.adjustFontWeight(
-              FontWeight.w600,
-              fontWeightAdjustment,
-            ),
-            fontSize: 15,
-          ),
-          unselectedLabelStyle: TextStyle(
-            fontWeight: AppTheme.adjustFontWeight(
-              FontWeight.normal,
-              fontWeightAdjustment,
-            ),
-            fontSize: 15,
-          ),
-          tabs: _categories.map((c) => Tab(text: c['name'])).toList(),
+      appBar: PreferredSize(
+        preferredSize: appBar.preferredSize,
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: _handleTopBarTap,
+          child: appBar,
         ),
       ),
       body: TabBarView(
         controller: _tabController,
-        children: _categories.map((c) {
+        children: List.generate(_categories.length, (index) {
+          final category = _categories[index];
           return _HotCategoryListView(
-            categoryKey: c['key']!,
+            key: _categoryListKeys[index],
+            categoryKey: category['key']!,
           );
-        }).toList(),
+        }),
       ),
     );
   }
@@ -120,6 +181,7 @@ class _HotCategoryListView extends ConsumerStatefulWidget {
   final String categoryKey;
 
   const _HotCategoryListView({
+    super.key,
     required this.categoryKey,
   });
 
@@ -132,6 +194,7 @@ class _HotCategoryListViewState extends ConsumerState<_HotCategoryListView>
     with AutomaticKeepAliveClientMixin {
   List<HotSearchItem> _items = [];
   bool _isLoading = true;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   bool get wantKeepAlive => true;
@@ -140,6 +203,29 @@ class _HotCategoryListViewState extends ConsumerState<_HotCategoryListView>
   void initState() {
     super.initState();
     _fetchList();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToTop() {
+    if (!_scrollController.hasClients || _scrollController.offset <= 0) return;
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _handleTopBarDoubleTap() {
+    if (_scrollController.hasClients && _scrollController.offset > 50) {
+      _scrollToTop();
+    } else {
+      unawaited(_fetchList());
+    }
   }
 
   Future<void> _fetchList() async {
@@ -212,6 +298,7 @@ class _HotCategoryListViewState extends ConsumerState<_HotCategoryListView>
     return EasyRefresh(
       onRefresh: () => HapticFeedbackUtil.refresh(_fetchList),
       child: ListView.separated(
+        controller: _scrollController,
         padding: EdgeInsets.fromLTRB(16, 8, 16, bottomNavPadding),
         itemCount: _items.length,
         separatorBuilder: (_, __) =>
