@@ -543,10 +543,33 @@ bool _isRealEmbeddedImageUrl(String? url) {
       .hasMatch(lower);
 }
 
+// Lottery links carry a navigation thumbnail, not a generated status image.
+// Classify the link itself: mentioning a draw in the post must not hide photos.
+bool _isLotteryLinkCard(Map<String, dynamic> entry) {
+  final title = entry['url_title']?.toString() ??
+      entry['page_title']?.toString() ??
+      entry['title']?.toString() ??
+      '';
+  if (title.contains('抽奖')) return true;
+  final type = entry['card_object_type'] ?? entry['object_type'];
+  if (type?.toString().toLowerCase() == 'lottery') return true;
+  for (final key in const [
+    'long_url',
+    'ori_url',
+    'h5_target_url',
+    'page_url'
+  ]) {
+    final host = Uri.tryParse(entry[key]?.toString() ?? '')?.host.toLowerCase();
+    if (host == 'lottery.weibo.com' || host == 'lottery.weibo.cn') return true;
+  }
+  return false;
+}
+
 /// A desktop timeline represents many automatically generated cards as a
 /// type-39 smart link and omits the rendered image. The mobile status
 /// response supplies the corresponding `page_info` image after hydration.
 bool isAutomaticWebpageCardEntry(Map<String, dynamic> entry) {
+  if (_isLotteryLinkCard(entry)) return false;
   final urlType = int.tryParse(entry['url_type']?.toString() ?? '');
   if (urlType != 39) return false;
   final shortUrl = _firstNonEmptyValue([
@@ -606,6 +629,7 @@ List<WeiboPicModel> _parseEmbeddedImageCards(
   }
 
   for (final entry in urlStruct) {
+    if (_isLotteryLinkCard(entry)) continue;
     final shortUrl = _firstNonEmptyValue([
       entry['short_url'],
       entry['url_ori'],
@@ -1274,7 +1298,9 @@ class WeiboStatusModel {
           pageType == 'webpage' ||
           (pageInfo['object_type']?.toString().toLowerCase() == 'webpage' &&
               cardInfo != null);
-      if (isImageWebpage && typedUrlStruct.any(isAutomaticWebpageCardEntry)) {
+      if (isImageWebpage &&
+          !_isLotteryLinkCard(pageInfo) &&
+          typedUrlStruct.any(isAutomaticWebpageCardEntry)) {
         final pagePic = _asDynamicMap(pageInfo['page_pic']);
         final pageImageUrl = _firstNormalizedMediaUrl([
           pageInfo['page_pic'],

@@ -2,6 +2,12 @@
 
 这里记录已经完成的版本变更及当次验证结果。当前行为和发布命令以 [DEVELOPMENT.md](../DEVELOPMENT.md) 为准；历史测试数量不代表以后构建的测试结果。更早、更细的实施记录保存在[旧手册归档](archive/Review-legacy-2026-09-23.md)。
 
+## 2.9.12+91（2026-10-04）
+
+- 修复抽奖链接缩略图被当作第三张微博配图的问题：在共享解析层排除抽奖链接图片及自动卡片补全资格，保留正文链接与真实配图，生日/夺金卡片保持原逻辑。
+- 新增两种接口结构（`url_struct`/`url_objects`）及浏览记录往返的回归测试；全量 `flutter test --no-pub` 178 项通过，`flutter analyze --no-pub` 无 error/warning，仍有 51 条 info 提示。未取得示例微博实时接口响应、未进行真机验收。
+- arm64 Release APK 已通过 `aapt2 dump badging` 和 APK v2 签名校验：包名 `com.review`、版本 `2.9.12`、`versionCode` 91、ABI `arm64-v8a`。产物 `Review_v2.9.12.apk`（31,699,064 字节），SHA-256：`A037E48ABA7194F5D3688C8A77A32F05B2B0AFA2E133E354A96F5EFEFBC948D1`。2.9.11 APK 已移入 `build/previous-deliveries`；未进行 Android 真机安装验收。
+
 ## 2.9.11+90（2026-10-04）
 
 - 详情/受限微博卡片的可见范围图标与文字在原 24dp 固定槽位内上移 4dp，拉开与头像的视觉距离，同时保持卡片布局高度稳定。

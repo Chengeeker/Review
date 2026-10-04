@@ -600,6 +600,62 @@ void main() {
           equals('https://wx4.sinaimg.cn/large/award-card.jpg'));
     });
 
+    for (final shape in ['url_struct', 'url_objects']) {
+      test('lottery $shape thumbnail is not a status photo', () {
+        const shortUrl = 'https://t.cn/draw';
+        final status = WeiboStatusModel.fromJson({
+          'id': '5350266511033449',
+          'text_raw': '参与抽奖 $shortUrl',
+          'user': {'id': '6593199887', 'screen_name': '原神'},
+          'pic_ids': ['art1', 'art2'],
+          'pic_infos': {
+            for (final id in ['art1', 'art2'])
+              id: {
+                'pid': id,
+                'large': {'url': 'https://wx1.sinaimg.cn/large/$id.jpg'}
+              },
+          },
+          if (shape == 'url_struct')
+            'url_struct': [
+              {
+                'short_url': shortUrl,
+                'url_title': '抽奖详情',
+                'url_type': 39,
+                'card_image_url': 'https://wx1.sinaimg.cn/large/draw.jpg',
+                'pic_info': {
+                  'pid': 'lottery-icon',
+                  'large': {'url': 'https://wx1.sinaimg.cn/large/draw.jpg'},
+                },
+              }
+            ],
+          if (shape == 'url_objects')
+            'url_objects': [
+              {
+                'url_ori': shortUrl,
+                'info': {'type': 39, 'title': '抽奖详情'},
+                'object': {
+                  'object': {
+                    'object_type': 'webpage',
+                    'pic_url': 'https://wx1.sinaimg.cn/large/draw.jpg',
+                  }
+                },
+              }
+            ],
+          'page_info': {
+            'type': 'bigPic',
+            'page_pic': {'url': 'https://wx1.sinaimg.cn/large/draw.jpg'},
+          },
+        });
+        expect(status.pics.map((pic) => pic.pid), ['art1', 'art2']);
+        expect(status.textRaw, contains(shortUrl));
+        expect(status.urlStruct!.single['url_title'], '抽奖详情');
+        expect(isAutomaticWebpageCardEntry(status.urlStruct!.single), isFalse);
+        final restored = WeiboStatusModel.fromJson(status.toJson());
+        expect(restored.pics, hasLength(2));
+        expect(restored.textRaw, contains(shortUrl));
+      });
+    }
+
     test('WeiboStatusModel keeps topic card images out of the photo gallery',
         () {
       final status = WeiboStatusModel.fromJson({
@@ -658,8 +714,10 @@ void main() {
       expect(status.pics.single.largeUrl,
           contains('001MUa3Ely8ihcbkvea31j60t30gdmzg02.jpg'));
       expect(status.pics.single.isWebpageCard, isTrue);
-      expect(status.pics.single.webpageCardBackgroundUrl,
-          equals('https://d.sinaimg.cn/prd/100/1857/2025/05/22/normalbeijing1.png'));
+      expect(
+          status.pics.single.webpageCardBackgroundUrl,
+          equals(
+              'https://d.sinaimg.cn/prd/100/1857/2025/05/22/normalbeijing1.png'));
       expect(status.pics.single.width, equals(16));
       expect(status.pics.single.height, equals(9));
       expect(status.textRaw, isEmpty);
