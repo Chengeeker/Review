@@ -7,6 +7,7 @@ import '../../features/profile/presentation/user_profile_page.dart';
 import '../../features/feed/presentation/widgets/weibo_video_link_page.dart';
 import '../../features/feed/presentation/widgets/weibo_video_player_page.dart';
 import '../utils/haptic_feedback_util.dart';
+import '../utils/weibo_article_link.dart';
 import '../widgets/in_app_browser_page.dart';
 
 /// 统一链接路由与深层跳转分发中枢
@@ -38,22 +39,7 @@ class LinkRoutingService {
   /// The id is intentionally kept as a String: current article ids can be
   /// longer than the safe integer range on Android/Dart.
   static String? articleIdFromUrl(String rawUrl) {
-    final clean = normalizeOfficialUrl(rawUrl);
-    final uri = Uri.tryParse(clean);
-    if (uri == null) return null;
-
-    final host = uri.host.toLowerCase();
-    final isWeiboHost = host == 'weibo.com' ||
-        host.endsWith('.weibo.com') ||
-        host == 'weibo.cn' ||
-        host.endsWith('.weibo.cn');
-    if (!isWeiboHost) return null;
-
-    final path = uri.path.replaceFirst(RegExp(r'/+$'), '').toLowerCase();
-    if (path != '/ttarticle/p/show') return null;
-
-    final id = uri.queryParameters['id']?.trim();
-    return id == null || id.isEmpty ? null : id;
+    return weiboArticleIdFromUrl(rawUrl);
   }
 
   /// Returns the full Weibo video object id (`1034:...`) from a video

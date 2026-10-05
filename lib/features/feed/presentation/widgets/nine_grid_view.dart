@@ -2,6 +2,7 @@ import 'package:extended_image/extended_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/constants/api_constants.dart';
+import '../../../../core/services/link_routing_service.dart';
 import '../../../../core/theme/weibo_style_provider.dart';
 import '../../../../core/utils/haptic_feedback_util.dart';
 import '../../../../core/utils/spring_page_route.dart';
@@ -10,8 +11,8 @@ import '../../data/models/weibo_status_model.dart';
 import 'weibo_video_player_page.dart';
 
 /// Material You Adaptive Nine-Grid Image View
-/// Supports 1, 2, 4, 3, 6, 9 image layouts, GIF/Long-photo badges, and full-screen hero viewer ("一镜到底").
-class NineGridView extends ConsumerWidget {
+/// Lists preview up to nine images; detail and the gallery show all media.
+class NineGridView extends ConsumerStatefulWidget {
   final List<WeiboPicModel> pics;
   final String statusId;
   final bool isDetail;
@@ -28,11 +29,25 @@ class NineGridView extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NineGridView> createState() => _NineGridViewState();
+}
+
+class _NineGridViewState extends ConsumerState<NineGridView> {
+  final Object _heroScope = Object();
+
+  List<WeiboPicModel> get pics => widget.pics;
+  String get statusId => widget.statusId;
+  bool get isDetail => widget.isDetail;
+  String? get authorName => widget.authorName;
+  String? get webpageCardCaption => widget.webpageCardCaption;
+  int get _visibleCount => !isDetail && pics.length > 9 ? 9 : pics.length;
+
+  @override
+  Widget build(BuildContext context) {
     if (pics.isEmpty) return const SizedBox.shrink();
 
     final style = ref.watch(weiboStyleProvider);
-    final count = pics.length;
+    final count = _visibleCount;
 
     if (count == 1) {
       return _buildSingleImage(
@@ -153,7 +168,14 @@ class NineGridView extends ConsumerWidget {
 
     return GestureDetector(
       onTap: () => _openMedia(context, 0),
-      child: image,
+      child: pic.isVideo
+          ? image
+          : ImageGalleryHeroThumbnail(
+              scope: _heroScope,
+              index: 0,
+              pic: pic,
+              child: image,
+            ),
     );
   }
 
@@ -174,55 +196,81 @@ class NineGridView extends ConsumerWidget {
         crossAxisSpacing: spacing,
         childAspectRatio: 1.0,
       ),
-      itemCount: pics.length,
+      itemCount: _visibleCount,
       itemBuilder: (context, index) {
         final pic = pics[index];
-        return GestureDetector(
-          onTap: () => _openMedia(context, index),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              ClipRRect(
-                borderRadius: radius,
-                child: _buildImageContent(pic, colorScheme),
-              ),
-              if (pic.isVideo) ...[
-                Center(
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.55),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.play_arrow_rounded,
-                      color: Colors.white,
-                      size: 22,
-                    ),
+        final thumbnail = Stack(
+          fit: StackFit.expand,
+          children: [
+            ClipRRect(
+              borderRadius: radius,
+              child: _buildImageContent(pic, colorScheme),
+            ),
+            if (pic.isVideo) ...[
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 22,
                   ),
                 ),
-                Positioned(
-                  bottom: 4,
-                  right: 4,
-                  child: _buildBadge(pic.videoDuration?.isNotEmpty == true
-                      ? pic.videoDuration!
-                      : '视频'),
+              ),
+              Positioned(
+                bottom: 4,
+                right: 4,
+                child: _buildBadge(pic.videoDuration?.isNotEmpty == true
+                    ? pic.videoDuration!
+                    : '视频'),
+              ),
+            ] else if (pic.isLivePhoto)
+              Positioned(
+                bottom: 4,
+                right: 4,
+                child: _buildLiveBadge(),
+              )
+            else if (pic.isGif || pic.isLong)
+              Positioned(
+                bottom: 4,
+                right: 4,
+                child: _buildBadge(pic.isGif ? 'GIF' : '长图'),
+              ),
+            if (!isDetail && pics.length > 9 && index == 8)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Container(
+                    key: ValueKey('media-overflow-$statusId'),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      borderRadius: radius,
+                    ),
+                    child: Text('+${pics.length - 9}',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w600)),
+                  ),
                 ),
-              ] else if (pic.isLivePhoto)
-                Positioned(
-                  bottom: 4,
-                  right: 4,
-                  child: _buildLiveBadge(),
-                )
-              else if (pic.isGif || pic.isLong)
-                Positioned(
-                  bottom: 4,
-                  right: 4,
-                  child: _buildBadge(pic.isGif ? 'GIF' : '长图'),
+              ),
+          ],
+        );
+        return GestureDetector(
+          onTap: () => _openMedia(context, index),
+          child: pic.isVideo
+              ? thumbnail
+              : ImageGalleryHeroThumbnail(
+                  scope: _heroScope,
+                  index: index,
+                  pic: pic,
+                  child: thumbnail,
                 ),
-            ],
-          ),
         );
       },
     );
@@ -317,7 +365,16 @@ class NineGridView extends ConsumerWidget {
 
   void _openMedia(BuildContext context, int index) {
     final pic = pics[index];
+    if (pic.articleUrl != null) {
+      LinkRoutingService.openUrl(context, pic.articleUrl!,
+          title: pic.articleTitle);
+      return;
+    }
     if (pic.isVideo && pic.videoUrl != null && pic.videoUrl!.isNotEmpty) {
+      if (pics.length > 1) {
+        _openGallery(context, index);
+        return;
+      }
       HapticFeedbackUtil.light();
       Navigator.of(context).push(
         MaterialPageRoute(
@@ -345,6 +402,7 @@ class NineGridView extends ConsumerWidget {
           statusId: statusId,
           isDetail: isDetail,
           authorName: authorName,
+          heroScope: _heroScope,
         ),
       ),
     );

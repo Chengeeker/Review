@@ -44,6 +44,19 @@ void main() {
     expect(calls.single.arguments, 'HapticFeedbackType.lightImpact');
   });
 
+  test('scroll selection ticks keep up within the normal haptic cooldown',
+      () async {
+    HapticFeedbackUtil.light();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    HapticFeedbackUtil.selectionTick();
+    HapticFeedbackUtil.selectionTick();
+
+    await Future<void>.delayed(Duration.zero);
+
+    expect(calls, hasLength(2));
+    expect(calls.last.arguments, 'HapticFeedbackType.selectionClick');
+  });
+
   test('standalone manual feedback still works', () async {
     HapticFeedbackUtil.light();
 

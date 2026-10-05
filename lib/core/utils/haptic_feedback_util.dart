@@ -13,12 +13,13 @@ class HapticFeedbackUtil {
   static int _lastAutomaticTapTime = 0;
   static bool _automaticTapPending = false;
   static const int _cooldownMs = 40;
+  static const int _scrollTickCooldownMs = 12;
   static const int _automaticTapWindowMs = 300;
 
-  static bool _canTrigger() {
+  static bool _canTrigger({int cooldownMs = _cooldownMs}) {
     if (!isEnabled) return false;
     final now = DateTime.now().millisecondsSinceEpoch;
-    if (now - _lastTriggerTime < _cooldownMs) {
+    if (now - _lastTriggerTime < cooldownMs) {
       return false;
     }
     _lastTriggerTime = now;
@@ -45,6 +46,16 @@ class HapticFeedbackUtil {
   static void selection() {
     if (_consumeAutomaticTapFeedback()) return;
     if (_canTrigger()) {
+      HapticFeedback.selectionClick();
+    }
+  }
+
+  /// Frame-paced tick for sequential controls such as an image reel. It keeps
+  /// normal action feedback throttled while allowing fast, distinct page
+  /// changes to produce timely selection clicks.
+  static void selectionTick() {
+    if (_consumeAutomaticTapFeedback()) return;
+    if (_canTrigger(cooldownMs: _scrollTickCooldownMs)) {
       HapticFeedback.selectionClick();
     }
   }

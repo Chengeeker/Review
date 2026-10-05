@@ -589,7 +589,7 @@ class DetailRepository {
         mergedUrlStruct,
       );
       return status.copyWith(
-        pics: _mergeHydratedWebpageCardPictures(status.pics, official.pics),
+        pics: mergeStatusPictures(status.pics, official.pics),
         textRaw: hasWebpageImage
             ? (official.textRaw.trim().isNotEmpty
                 ? official.textRaw
@@ -616,13 +616,22 @@ class DetailRepository {
     }
   }
 
-  static List<WeiboPicModel> _mergeHydratedWebpageCardPictures(
+  static List<WeiboPicModel> mergeStatusPictures(
     List<WeiboPicModel> existing,
     List<WeiboPicModel> hydrated,
   ) {
     if (hydrated.isEmpty) return existing;
 
-    final merged = List<WeiboPicModel>.of(hydrated);
+    // Mobile enrichment can return only the first nine ordinary photos.
+    // Keep desktop photos in their official order, adding only missing mobile
+    // media. Generated webpage cards still use the layer merge below.
+    final merged = existing.where((pic) => !pic.isWebpageCard).toList();
+    for (final pic in hydrated.where((pic) => !pic.isWebpageCard)) {
+      if (!merged.any((candidate) => _samePicture(candidate, pic))) {
+        merged.add(pic);
+      }
+    }
+    merged.addAll(hydrated.where((pic) => pic.isWebpageCard));
     final existingCards = existing.where((pic) => pic.isWebpageCard).toList();
     final hydratedCardIndexes = <int>[
       for (var index = 0; index < merged.length; index++)
@@ -719,6 +728,8 @@ class DetailRepository {
           : (existingBackground?.isNotEmpty == true
               ? existingBackground
               : null),
+      articleUrl: hydrated.articleUrl ?? existing.articleUrl,
+      articleTitle: hydrated.articleTitle ?? existing.articleTitle,
     );
   }
 

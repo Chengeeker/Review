@@ -20,7 +20,7 @@ enum _HudType { none, brightness, volume, seek, doubleTapSeek }
 /// 1. 横竖屏一键旋转切换与全沉浸模式
 /// 2. 右上方下载与分享原生通道
 /// 3. 通用手势：长按左右侧2.0x倍速快进、双击左右侧快进/快退10秒、双击中间播放/暂停
-/// 4. 滑动手势：左侧上下滑调节亮度、右侧上下滑调节音量、横屏全域/竖屏底部左右滑动调节进度
+/// 4. 竖向滑动调节亮度/音量；横向手势留给混合媒体画廊，进度使用进度条。
 class WeiboVideoPlayerPage extends ConsumerStatefulWidget {
   final String videoUrl;
   final String? statusId;
@@ -31,6 +31,8 @@ class WeiboVideoPlayerPage extends ConsumerStatefulWidget {
   final Map<String, String>? mediaHeaders;
   final String? liveId;
   final int? liveStatus;
+  final bool embedded;
+  final VoidCallback? onToggleChrome;
 
   const WeiboVideoPlayerPage({
     super.key,
@@ -43,6 +45,8 @@ class WeiboVideoPlayerPage extends ConsumerStatefulWidget {
     this.mediaHeaders,
     this.liveId,
     this.liveStatus,
+    this.embedded = false,
+    this.onToggleChrome,
   });
 
   @override
@@ -136,6 +140,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
     Duration? startPosition,
     bool autoPlay = true,
   }) async {
+    if (!mounted) return;
     final liveMessage = _liveMessageForStatus(_liveStatus);
     if (liveMessage != null) {
       if (mounted) {
@@ -198,21 +203,26 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
       }
 
       await _controller?.dispose();
-      _controller = VideoPlayerController.networkUrl(
+      if (!mounted) return;
+      final controller = VideoPlayerController.networkUrl(
         Uri.parse(cleanUrl),
         httpHeaders: widget.mediaHeaders ?? ApiConstants.imageHeaders,
       );
+      _controller = controller;
 
-      await _controller!.initialize();
+      await controller.initialize();
+      if (!mounted || _controller != controller) return;
       _controller!.setLooping(true);
       await _controller!.setPlaybackSpeed(_playbackSpeed);
+      if (!mounted || _controller != controller) return;
 
       if (startPosition != null && startPosition > Duration.zero) {
         await _controller!.seekTo(startPosition);
       }
 
       if (autoPlay) {
-        await _controller!.play();
+        if (!mounted || _controller != controller) return;
+        await controller.play();
       }
 
       if (mounted) {
@@ -222,10 +232,12 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
         });
       }
 
-      _controller!.addListener(() {
+      if (!mounted || _controller != controller) return;
+      controller.addListener(() {
         if (mounted) setState(() {});
       });
     } catch (e) {
+      if (!mounted) return;
       if (widget.statusId != null &&
           widget.statusId!.isNotEmpty &&
           overrideUrl == null) {
@@ -247,6 +259,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
     try {
       final repo = ref.read(detailRepositoryProvider);
       final detail = await repo.getStatusDetail(widget.statusId!);
+      if (!mounted) return false;
       if (detail != null) {
         if (detail.liveStatus != null) {
           final liveMessage = _liveMessageForStatus(detail.liveStatus);
@@ -278,6 +291,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
         final liveId = detail.liveId ?? widget.liveId;
         if (liveId != null && liveId.isNotEmpty) {
           final liveStreamUrl = await repo.getLiveStreamUrl(liveId);
+          if (!mounted) return false;
           if (liveStreamUrl != null && liveStreamUrl.isNotEmpty) {
             await _initPlayer(overrideUrl: liveStreamUrl);
             return true;
@@ -304,7 +318,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
   void dispose() {
     _hideControlsTimer?.cancel();
     _hudDismissTimer?.cancel();
-    _restorePortraitAndSystemUI();
+    if (!widget.embedded) _restorePortraitAndSystemUI();
     _controller?.dispose();
     super.dispose();
   }
@@ -791,6 +805,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                         _showControls = !_showControls;
                       });
                       _resetControlsTimer();
+                      widget.onToggleChrome?.call();
                     },
                     onDoubleTap: () {
                       final x = _lastTapDownPosition.dx;
@@ -813,7 +828,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                     },
                     onLongPressEnd: (_) => _onLongPressEnd(),
                     onLongPressCancel: _onLongPressEnd,
-                    onPanStart: (details) {
+                    onVerticalDragStart: (details) {
                       _panStartPos = details.localPosition;
                       _dragMode = _DragMode.none;
                       _startBrightness = _currentBrightness;
@@ -822,20 +837,12 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                           _controller?.value.position ?? Duration.zero;
                       _targetSeekPosition = _startPosition;
                     },
-                    onPanUpdate: (details) {
+                    onVerticalDragUpdate: (details) {
                       final dx = details.localPosition.dx - _panStartPos.dx;
                       final dy = details.localPosition.dy - _panStartPos.dy;
 
                       if (_dragMode == _DragMode.none) {
-                        if (dx.abs() > 14 && dx.abs() > dy.abs()) {
-                          // 水平滑动判断：
-                          // 横屏状态：任意区域左右滑动调整进度 (2.c)
-                          // 竖屏状态：底部左右滑动调整进度 (3.c)
-                          if (_isLandscape ||
-                              _panStartPos.dy > screenHeight * 0.55) {
-                            _dragMode = _DragMode.seek;
-                          }
-                        } else if (dy.abs() > 14 && dy.abs() > dx.abs()) {
+                        if (dy.abs() > 14 && dy.abs() > dx.abs()) {
                           // 垂直滑动判断（以中间为界）：
                           // 左侧上下滑动：调亮度 (2.a, 3.a)
                           // 右侧上下滑动：调音量 (2.b, 3.b)
@@ -887,7 +894,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                         }
                       }
                     },
-                    onPanEnd: (_) {
+                    onVerticalDragEnd: (_) {
                       if (_dragMode == _DragMode.seek) {
                         _controller?.seekTo(_targetSeekPosition);
                       }
@@ -951,7 +958,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                 ),
 
                 // 4. 顶部导航栏 (返回键、标题、下载按钮、分享按钮)
-                if (_showControls)
+                if (_showControls && !widget.embedded)
                   Positioned(
                     top: 0,
                     left: 0,
@@ -1165,7 +1172,8 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                               // 画质右侧最右边：横屏显示开关 (全屏切换)
                               InkWell(
                                 borderRadius: BorderRadius.circular(12),
-                                onTap: _toggleOrientation,
+                                onTap:
+                                    widget.embedded ? null : _toggleOrientation,
                                 child: Container(
                                   padding: const EdgeInsets.all(4),
                                   decoration: BoxDecoration(

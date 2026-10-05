@@ -1,4 +1,5 @@
 import 'weibo_engagement_models.dart';
+import '../../../../core/utils/weibo_article_link.dart';
 
 int _intFromValue(Object? value) {
   if (value is num) return value.toInt();
@@ -198,6 +199,9 @@ List<Map<String, dynamic>> _parseUrlStructs(Map<String, dynamic> json) {
     final media = _asDynamicMap(object?['object']);
     final mediaUrls = _asDynamicMap(media?['urls']);
     final stream = _asDynamicMap(media?['stream']);
+    final isPollCard = media?.containsKey('vote_object') == true ||
+        media?.containsKey('vote_info') == true ||
+        media?.containsKey('poll_info') == true;
 
     final shortUrl = _firstNonEmptyValue([
       source['url_ori'],
@@ -239,11 +243,14 @@ List<Map<String, dynamic>> _parseUrlStructs(Map<String, dynamic> json) {
       object?['object_type'],
     ]);
     final isWebPageCard = objectType?.toLowerCase() == 'webpage' ||
+        objectType?.toLowerCase() == 'article' ||
+        weiboArticleIdFromUrl(targetUrl ?? '') != null ||
         info?['type']?.toString() == '39';
     final cardImageUrl = isWebPageCard
         ? _firstNormalizedMediaUrl([
             media?['pic_url'],
             mediaImage?['url'],
+            media?['cover_image'],
           ])
         : null;
     final cardImageWidth = _firstPositiveDimension([
@@ -284,6 +291,7 @@ List<Map<String, dynamic>> _parseUrlStructs(Map<String, dynamic> json) {
       if (cardImageWidth != null) 'card_image_width': cardImageWidth,
       if (cardImageHeight != null) 'card_image_height': cardImageHeight,
       if (objectType != null) 'card_object_type': objectType,
+      if (isPollCard) 'card_is_poll': true,
       if (qualityUrls.isNotEmpty) 'video_quality_urls': qualityUrls,
       if (qualityUrls.isNotEmpty) 'video_url': qualityUrls.values.first,
       if (coverUrl != null) 'video_cover_url': coverUrl,
@@ -360,6 +368,8 @@ class WeiboPicModel {
   final String? videoTitle;
   final bool isWebpageCard;
   final String? webpageCardBackgroundUrl;
+  final String? articleUrl;
+  final String? articleTitle;
 
   const WeiboPicModel({
     required this.pid,
@@ -378,6 +388,8 @@ class WeiboPicModel {
     this.videoTitle,
     this.isWebpageCard = false,
     this.webpageCardBackgroundUrl,
+    this.articleUrl,
+    this.articleTitle,
   });
 
   /// High quality preview URL for feed cards & grid (uses orj960 / large: crisp 80%-100% original quality, not blurry thumbnail)
@@ -489,6 +501,8 @@ class WeiboPicModel {
       videoTitle: vTitle,
       isWebpageCard: isWebpageCard,
       webpageCardBackgroundUrl: webpageCardBackgroundUrl,
+      articleUrl: weiboArticleUrlFromMetadata(json),
+      articleTitle: json['article_title']?.toString(),
     );
   }
 
@@ -512,6 +526,8 @@ class WeiboPicModel {
       'videoTitle': videoTitle,
       'is_webpage_card': isWebpageCard,
       'webpage_card_background_url': webpageCardBackgroundUrl,
+      if (articleUrl != null) 'article_url': articleUrl,
+      if (articleTitle != null) 'article_title': articleTitle,
     };
   }
 }
@@ -565,11 +581,64 @@ bool _isLotteryLinkCard(Map<String, dynamic> entry) {
   return false;
 }
 
+bool _isPollLinkCardEntry(Map<String, dynamic> entry, WeiboPollModel? poll) {
+  if (poll == null) return false;
+  if (entry['card_is_poll'] == true) return true;
+  final type = [
+    entry['type'],
+    entry['page_type'],
+    entry['object_type'],
+    entry['card_object_type'],
+  ].whereType<Object>().join(' ').toLowerCase();
+  if (type.contains('vote') || type.contains('poll')) return true;
+
+  final title = _firstNonEmptyValue([
+    entry['url_title'],
+    entry['page_title'],
+    entry['title'],
+    entry['display_name'],
+  ]);
+  if (title != null &&
+      poll.title.trim().isNotEmpty &&
+      title.trim() == poll.title.trim()) {
+    return true;
+  }
+
+  final pollId = poll.id.trim();
+  final pollUrl = poll.voteUrl?.trim() ?? '';
+  for (final key in const [
+    'vote_url',
+    'voteUrl',
+    'long_url',
+    'ori_url',
+    'h5_target_url',
+    'target_url',
+    'page_url',
+    'url',
+  ]) {
+    final value = entry[key]?.toString().trim() ?? '';
+    if (value.isEmpty) continue;
+    if (pollUrl.isNotEmpty && value == pollUrl) return true;
+    final lower = value.toLowerCase();
+    final host = Uri.tryParse(value)?.host.toLowerCase() ?? '';
+    if ((host == 'vote.weibo.com' || host == 'vote.weibo.cn') &&
+        (pollId.isEmpty || value.contains(pollId))) {
+      return true;
+    }
+    if (pollId.isNotEmpty && lower.contains('vote_id=$pollId')) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /// A desktop timeline represents many automatically generated cards as a
 /// type-39 smart link and omits the rendered image. The mobile status
 /// response supplies the corresponding `page_info` image after hydration.
 bool isAutomaticWebpageCardEntry(Map<String, dynamic> entry) {
-  if (_isLotteryLinkCard(entry)) return false;
+  if (_isLotteryLinkCard(entry) || weiboArticleUrlFromMetadata(entry) != null) {
+    return false;
+  }
   final urlType = int.tryParse(entry['url_type']?.toString() ?? '');
   if (urlType != 39) return false;
   final shortUrl = _firstNonEmptyValue([
@@ -601,6 +670,7 @@ List<WeiboPicModel> _parseEmbeddedImageCards(
   List<Map<String, dynamic>> urlStruct,
   List<WeiboPicModel> existingPics,
   Set<String> imageShortUrls,
+  WeiboPollModel? poll,
 ) {
   final parsedPics = <WeiboPicModel>[];
   final seenIdentities = <String>{};
@@ -624,12 +694,38 @@ List<WeiboPicModel> _parseEmbeddedImageCards(
 
     final identity = _embeddedImageIdentity(imageUrl);
     if (identity.isEmpty) return false;
+    if (pic.articleUrl != null) {
+      final existingIndex = existingPics.indexWhere(
+        (existing) => _embeddedImageIdentity(existing.originalUrl) == identity,
+      );
+      if (existingIndex >= 0) {
+        // Old history snapshots stored a cover as an ordinary image. Recover
+        // its native article target from the retained link metadata.
+        existingPics[existingIndex] = WeiboPicModel.fromJson({
+          ...existingPics[existingIndex].toJson(),
+          'is_webpage_card': true,
+          'article_url': pic.articleUrl,
+          'article_title': pic.articleTitle,
+        });
+      }
+    }
     if (seenIdentities.add(identity)) parsedPics.add(pic);
     return true;
   }
 
   for (final entry in urlStruct) {
-    if (_isLotteryLinkCard(entry)) continue;
+    if (_isLotteryLinkCard(entry) || _isPollLinkCardEntry(entry, poll)) {
+      continue;
+    }
+    final articleUrl = weiboArticleUrlFromMetadata(entry);
+    final articleTitle = entry['url_title']?.toString();
+    final articleFields = <String, dynamic>{
+      if (articleUrl != null) ...{
+        'article_url': articleUrl,
+        'article_title': articleTitle,
+        'is_webpage_card': true,
+      },
+    };
     final shortUrl = _firstNonEmptyValue([
       entry['short_url'],
       entry['url_ori'],
@@ -642,7 +738,7 @@ List<WeiboPicModel> _parseEmbeddedImageCards(
         if (rawPic is Map) {
           final picMap = Map<String, dynamic>.from(rawPic);
           isImageAttachment = addCandidate(WeiboPicModel.fromJson(
-                {...picMap, 'pid': picMap['pid'] ?? ''},
+                {...picMap, 'pid': picMap['pid'] ?? '', ...articleFields},
               )) ||
               isImageAttachment;
         }
@@ -651,8 +747,10 @@ List<WeiboPicModel> _parseEmbeddedImageCards(
 
     final picInfo = entry['pic_info'];
     if (picInfo is Map) {
-      isImageAttachment = addCandidate(
-              WeiboPicModel.fromJson(Map<String, dynamic>.from(picInfo))) ||
+      isImageAttachment = addCandidate(WeiboPicModel.fromJson({
+            ...Map<String, dynamic>.from(picInfo),
+            ...articleFields,
+          })) ||
           isImageAttachment;
     }
 
@@ -660,6 +758,11 @@ List<WeiboPicModel> _parseEmbeddedImageCards(
     final urlTitle = entry['url_title']?.toString().trim() ?? '';
     final cardImageUrl = _firstNormalizedMediaUrl([
       entry['card_image_url'],
+      if (articleUrl != null) ...[
+        _asDynamicMap(entry['page_pic'])?['url'],
+        if (entry['page_pic'] is String) entry['page_pic'],
+        entry['pic_url'],
+      ],
       if (urlType == 39 || urlTitle == '查看图片') entry['ori_url'],
     ]);
     final videoQualityUrls = entry['video_quality_urls'];
@@ -689,6 +792,8 @@ List<WeiboPicModel> _parseEmbeddedImageCards(
             width: width,
             height: height,
             isWebpageCard: true,
+            articleUrl: articleUrl,
+            articleTitle: articleTitle,
           )) ||
           isImageAttachment;
     }
@@ -1089,6 +1194,10 @@ class WeiboStatusModel {
   factory WeiboStatusModel.fromJson(Map<String, dynamic> json) {
     final userJson = json['user'] as Map<String, dynamic>? ?? {};
     final user = WeiboUserModel.fromJson(userJson);
+    final poll = WeiboPollModel.fromStatusJson(
+      json,
+      creatorName: user.screenName,
+    );
 
     // Parse Pictures
     final picInfos = json['pic_infos'] as Map<String, dynamic>?;
@@ -1098,9 +1207,13 @@ class WeiboStatusModel {
     if (picInfos != null && picInfos.isNotEmpty) {
       for (final pid in picIds) {
         final info = picInfos[pid.toString()];
-        if (info is Map<String, dynamic>) {
-          pics.add(WeiboPicModel.fromJson({...info, 'pid': pid.toString()}));
-        }
+        // Some responses include every PID but only the first nine metadata
+        // records. Keep the remaining official PIDs using the existing CDN
+        // fallback instead of silently discarding those images.
+        pics.add(WeiboPicModel.fromJson({
+          if (info is Map) ...Map<String, dynamic>.from(info),
+          'pid': pid.toString(),
+        }));
       }
     } else if (json['pics'] is List) {
       // `toJson()` stores normalized images under `pics`. Browsing history
@@ -1258,6 +1371,7 @@ class WeiboStatusModel {
           typedUrlStruct,
           pics,
           embeddedImageShortUrls,
+          poll,
         ),
       );
     }
@@ -1310,9 +1424,24 @@ class WeiboStatusModel {
           pageType == 'webpage' ||
           (pageInfo['object_type']?.toString().toLowerCase() == 'webpage' &&
               cardInfo != null);
-      if (isImageWebpage &&
+      final isPollPage = _isPollLinkCardEntry(pageInfo, poll) ||
+          pageType.contains('vote') ||
+          pageType.contains('poll') ||
+          (cardInfo != null &&
+              (cardInfo.containsKey('vote_object') ||
+                  cardInfo.containsKey('poll')));
+      final articleUrl = weiboArticleUrlFromMetadata(pageInfo) ??
+          (isImageWebpage || pageType == 'article'
+              ? typedUrlStruct
+                  .map(weiboArticleUrlFromMetadata)
+                  .whereType<String>()
+                  .firstOrNull
+              : null);
+      if (!isPollPage &&
+          (isImageWebpage || articleUrl != null) &&
           !_isLotteryLinkCard(pageInfo) &&
-          typedUrlStruct.any(isAutomaticWebpageCardEntry)) {
+          (articleUrl != null ||
+              typedUrlStruct.any(isAutomaticWebpageCardEntry))) {
         final pagePic = _asDynamicMap(pageInfo['page_pic']);
         final pageImageUrl = _firstNormalizedMediaUrl([
           pageInfo['page_pic'],
@@ -1353,14 +1482,29 @@ class WeiboStatusModel {
             cardHeight = height;
             break;
           }
-          final alreadyParsed = pics.any((pic) {
+          final existingIndex = pics.indexWhere((pic) {
             final existingUrl = pic.originalUrl.isNotEmpty
                 ? pic.originalUrl
                 : (pic.largeUrl.isNotEmpty ? pic.largeUrl : pic.thumbnail);
             return existingUrl.isNotEmpty &&
                 _embeddedImageIdentity(existingUrl) == imageIdentity;
           });
-          if (!alreadyParsed) {
+          final articleTitle = pageInfo['page_title']?.toString() ??
+              typedUrlStruct
+                  .where((entry) =>
+                      weiboArticleUrlFromMetadata(entry) == articleUrl)
+                  .map((entry) => entry['url_title']?.toString())
+                  .whereType<String>()
+                  .firstOrNull;
+          if (existingIndex >= 0 && articleUrl != null) {
+            pics[existingIndex] = WeiboPicModel.fromJson({
+              ...pics[existingIndex].toJson(),
+              'is_webpage_card': true,
+              'article_url': articleUrl,
+              'article_title': articleTitle,
+            });
+          }
+          if (existingIndex < 0) {
             pics.add(
               WeiboPicModel(
                 pid: _firstNonEmptyValue([
@@ -1379,11 +1523,17 @@ class WeiboStatusModel {
                 height: cardHeight,
                 isWebpageCard: true,
                 webpageCardBackgroundUrl: webpageCardBackgroundUrl,
+                articleUrl: articleUrl,
+                articleTitle: articleTitle,
               ),
             );
           }
           for (final entry in typedUrlStruct) {
-            if (!isAutomaticWebpageCardEntry(entry)) continue;
+            if (!isAutomaticWebpageCardEntry(entry) &&
+                (articleUrl == null ||
+                    weiboArticleUrlFromMetadata(entry) != articleUrl)) {
+              continue;
+            }
             final shortUrl = _firstNonEmptyValue([
               entry['short_url'],
               entry['url_ori'],
@@ -1612,8 +1762,7 @@ class WeiboStatusModel {
     final isLongText = json['isLongText'] == true ||
         json['isLongText'] == 1 ||
         json['is_long_text'] == true ||
-        json['is_long_text'] == 1 ||
-        json['continue_tag'] != null;
+        json['is_long_text'] == 1;
 
     final mblogid = json['mblogid']?.toString() ??
         json['idstr']?.toString() ??
@@ -1657,10 +1806,6 @@ class WeiboStatusModel {
       }
     }
 
-    final poll = WeiboPollModel.fromStatusJson(
-      json,
-      creatorName: user.screenName,
-    );
     final hotTopic = WeiboHotTopicModel.fromStatusJson(json);
 
     if (chaohuaCid == null || chaohuaCid.isEmpty) {

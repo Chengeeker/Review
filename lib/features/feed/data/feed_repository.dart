@@ -130,7 +130,12 @@ class FeedRepository {
       if (_needsOfficialEngagementHydration(json, status)) {
         final officialJson = await _fetchOfficialStatusCached(status);
         if (officialJson != null) {
-          status = WeiboStatusModel.fromJson({...json, ...officialJson});
+          final hydrated =
+              WeiboStatusModel.fromJson({...json, ...officialJson});
+          status = hydrated.copyWith(
+            pics: DetailRepository.mergeStatusPictures(
+                status.pics, hydrated.pics),
+          );
         }
       }
       if (status.isLiveBroadcast && !status.hasPlayableVideoStream) {

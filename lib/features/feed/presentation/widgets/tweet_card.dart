@@ -114,6 +114,18 @@ const int _minimumLongTextRunesForCollapse = 360;
 const int _minimumHiddenLongTextRunesForCollapse = 100;
 const int _minimumAdditionalLongTextLinesForCollapse = 5;
 
+bool _hasUnresolvedTextPreview(WeiboStatusModel status) {
+  // Multi-photo continuation can leave legacy snapshots marked as long text.
+  // Do not advertise a text expansion for a short, visibly complete caption.
+  // Source-side full-text resolution and detail loading remain unchanged.
+  if (status.pics.length <= 9) return true;
+  final text = _normalizeLongTextForComparison(status.textRaw, status);
+  return text.runes.length >= 140 ||
+      text.endsWith('…') ||
+      text.endsWith('...') ||
+      text.contains('展开全文');
+}
+
 bool _shouldCollapseLongText({
   required BuildContext context,
   required WeiboStatusModel status,
@@ -995,47 +1007,54 @@ class _TweetCardState extends ConsumerState<TweetCard> {
               const SizedBox(height: 10),
 
               // 2. Main Rich Text with Long Text Expand/Collapse Support
-              _buildMainText(context, weiboStyle, linkColor),
+              _buildMainText(
+                context,
+                weiboStyle,
+                linkColor,
+                contentAfterText: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 3. Media Grid (if original has pictures)
+                    if (status.pics.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      NineGridView(
+                        pics: status.pics,
+                        statusId: status.id,
+                        isDetail: isDetail,
+                        authorName: status.user.screenName,
+                        webpageCardCaption: _birthdayWebpageCardCaption(status),
+                      ),
+                    ] else if (status.hasVideo) ...[
+                      // 3.5 Native Video Preview Card
+                      const SizedBox(height: 10),
+                      _buildVideoPreviewCard(context, status),
+                    ],
 
-              // 3. Media Grid (if original has pictures)
-              if (status.pics.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                NineGridView(
-                  pics: status.pics,
-                  statusId: status.id,
-                  isDetail: isDetail,
-                  authorName: status.user.screenName,
-                  webpageCardCaption: _birthdayWebpageCardCaption(status),
+                    // 3.8 Official Weibo poll card
+                    if (poll != null) ...[
+                      const SizedBox(height: 10),
+                      _buildPollCard(context, poll),
+                    ],
+
+                    // 4. Retweeted Quote Card (if retweeted)
+                    if (status.retweetedStatus != null) ...[
+                      const SizedBox(height: 10),
+                      _buildRetweetCard(context, status.retweetedStatus!,
+                          weiboStyle, linkColor),
+                    ],
+
+                    // 4.5 Official hot-search topic card embedded in the status
+                    if (status.hotTopic != null) ...[
+                      const SizedBox(height: 10),
+                      _buildHotTopicCard(
+                        context,
+                        status.hotTopic!,
+                        weiboStyle.fontSize,
+                      ),
+                    ],
+                  ],
                 ),
-              ] else if (status.hasVideo) ...[
-                // 3.5 Native Video Preview Card
-                const SizedBox(height: 10),
-                _buildVideoPreviewCard(context, status),
-              ],
-
-              // 3.8 Official Weibo poll card
-              if (poll != null) ...[
-                const SizedBox(height: 10),
-                _buildPollCard(context, poll),
-              ],
-
-              // 4. Retweeted Quote Card (if retweeted)
-              if (status.retweetedStatus != null) ...[
-                const SizedBox(height: 10),
-                _buildRetweetCard(
-                    context, status.retweetedStatus!, weiboStyle, linkColor),
-              ],
-
-              // 4.5 Official hot-search topic card embedded in the status
-              if (status.hotTopic != null) ...[
-                const SizedBox(height: 10),
-                _buildHotTopicCard(
-                  context,
-                  status.hotTopic!,
-                  weiboStyle.fontSize,
-                ),
-              ],
-
+              ),
               const SizedBox(height: 12),
               const Divider(height: 1, thickness: 0.5),
               const SizedBox(height: 4),
@@ -1071,7 +1090,8 @@ class _TweetCardState extends ConsumerState<TweetCard> {
   }
 
   Widget _buildMainText(
-      BuildContext context, WeiboStyleSettings weiboStyle, Color linkColor) {
+      BuildContext context, WeiboStyleSettings weiboStyle, Color linkColor,
+      {Widget? contentAfterText}) {
     final status = widget.status;
     final isDetail = widget.isDetail;
     return LayoutBuilder(
@@ -1084,16 +1104,16 @@ class _TweetCardState extends ConsumerState<TweetCard> {
           color: textColor,
         );
         final hasMoreMainText = status.isLongText &&
-            (availableLongText == null ||
-                availableLongText.isEmpty ||
-                _shouldCollapseLongText(
-                  context: textContext,
-                  status: status,
-                  fullText: availableLongText,
-                  maxWidth: constraints.maxWidth,
-                  defaultStyle: defaultStyle,
-                  linkColor: linkColor,
-                ));
+            ((availableLongText == null || availableLongText.isEmpty)
+                ? _hasUnresolvedTextPreview(status)
+                : _shouldCollapseLongText(
+                    context: textContext,
+                    status: status,
+                    fullText: availableLongText,
+                    maxWidth: constraints.maxWidth,
+                    defaultStyle: defaultStyle,
+                    linkColor: linkColor,
+                  ));
         // If the official full text adds no rendered lines, show it in the
         // card immediately. A toggle is reserved for a real visual expansion.
         final isShowingFull =
@@ -1134,6 +1154,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
               SelectionArea(child: mainTextWidget)
             else
               mainTextWidget,
+            if (contentAfterText != null) contentAfterText,
             if (status.isLongText &&
                 !isDetail &&
                 (_isLoadingLongText || hasMoreMainText)) ...[
@@ -1477,19 +1498,19 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                   color: theme.colorScheme.onSurfaceVariant,
                 );
                 final hasMoreText = retweet.isLongText &&
-                    (availableLongText == null ||
-                        availableLongText.isEmpty ||
-                        _shouldCollapseLongText(
-                          context: textContext,
-                          status: retweet,
-                          fullText: availableLongText,
-                          maxWidth: constraints.maxWidth,
-                          defaultStyle: defaultStyle,
-                          linkColor: linkColor,
-                          removePollLink: false,
-                          prefixText: prefixText,
-                          prefixStyle: prefixStyle,
-                        ));
+                    ((availableLongText == null || availableLongText.isEmpty)
+                        ? _hasUnresolvedTextPreview(retweet)
+                        : _shouldCollapseLongText(
+                            context: textContext,
+                            status: retweet,
+                            fullText: availableLongText,
+                            maxWidth: constraints.maxWidth,
+                            defaultStyle: defaultStyle,
+                            linkColor: linkColor,
+                            removePollLink: false,
+                            prefixText: prefixText,
+                            prefixStyle: prefixStyle,
+                          ));
                 final isShowingFull = widget.isDetail ||
                     _isRetweetExpanded ||
                     (retweet.isLongText && !hasMoreText);
@@ -1530,6 +1551,20 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     retweetTextTapTarget,
+                    if (retweet.pics.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      NineGridView(
+                        pics: retweet.pics,
+                        statusId: retweet.id,
+                        isDetail: widget.isDetail,
+                        authorName: retweet.user.screenName,
+                        webpageCardCaption:
+                            _birthdayWebpageCardCaption(retweet),
+                      ),
+                    ] else if (retweet.hasVideo) ...[
+                      const SizedBox(height: 8),
+                      _buildVideoPreviewCard(context, retweet),
+                    ],
                     if (retweet.isLongText &&
                         !widget.isDetail &&
                         (_isLoadingRetweetLongText || hasMoreText)) ...[
@@ -1588,19 +1623,6 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                 );
               },
             ),
-            if (retweet.pics.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              NineGridView(
-                pics: retweet.pics,
-                statusId: retweet.id,
-                isDetail: widget.isDetail,
-                authorName: retweet.user.screenName,
-                webpageCardCaption: _birthdayWebpageCardCaption(retweet),
-              ),
-            ] else if (retweet.hasVideo) ...[
-              const SizedBox(height: 8),
-              _buildVideoPreviewCard(context, retweet),
-            ],
           ],
         ),
       ),
