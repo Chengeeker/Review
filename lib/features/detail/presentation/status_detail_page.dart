@@ -18,6 +18,7 @@ import '../../../core/widgets/app_avatar.dart';
 import '../../feed/data/models/weibo_status_model.dart';
 import '../../feed/presentation/widgets/tweet_card.dart';
 import '../../profile/presentation/user_profile_page.dart';
+import '../../../core/widgets/weibo_fans_icon.dart';
 import '../data/detail_repository.dart';
 import '../data/models/weibo_comment_model.dart';
 import '../data/models/weibo_attitude_model.dart';
@@ -1503,6 +1504,10 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                                   ),
                                 ),
                               ),
+                              if (comment.user.fansIconUrl.isNotEmpty) ...[
+                                const SizedBox(width: 4),
+                                WeiboFansIcon(url: comment.user.fansIconUrl),
+                              ],
                               if (comment.user.verified) ...[
                                 const SizedBox(width: 4),
                                 Icon(
@@ -1716,6 +1721,12 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                                                       ),
                                                     ),
                                                   ),
+                                                  if (sub.user.fansIconUrl
+                                                      .isNotEmpty)
+                                                    WeiboFansIcon(
+                                                      url: sub.user.fansIconUrl,
+                                                      height: 13,
+                                                    ),
                                                   if (sub.user.verified)
                                                     Icon(
                                                       Icons.verified_rounded,

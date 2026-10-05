@@ -740,6 +740,10 @@ class WeiboUserModel {
   final String avatarHd;
   final bool verified;
   final int verifiedType;
+
+  /// Per-blogger iron-fan badge returned for this user in a comment payload.
+  /// The image itself carries Weibo's current tier artwork and colors.
+  final String fansIconUrl;
   final String verifiedReason;
   final String description;
   final int followersCount;
@@ -757,6 +761,7 @@ class WeiboUserModel {
     this.avatarHd = '',
     this.verified = false,
     this.verifiedType = -1,
+    this.fansIconUrl = '',
     this.verifiedReason = '',
     this.description = '',
     this.followersCount = 0,
@@ -776,6 +781,7 @@ class WeiboUserModel {
   }
 
   factory WeiboUserModel.fromJson(Map<String, dynamic> json) {
+    final fansIcon = _asDynamicMap(json['fansIcon'] ?? json['fans_icon']);
     return WeiboUserModel(
       id: json['id']?.toString() ??
           json['idstr']?.toString() ??
@@ -794,6 +800,11 @@ class WeiboUserModel {
           (json['verified_type'] is int && (json['verified_type'] as int) >= 0),
       verifiedType:
           json['verified_type'] is int ? json['verified_type'] as int : -1,
+      fansIconUrl: _firstNonEmptyValue([
+            fansIcon?['icon_url'],
+            fansIcon?['iconUrl'],
+          ]) ??
+          '',
       verifiedReason: json['verified_reason']?.toString() ??
           json['verified_detail']?['desc']?.toString() ??
           '',
@@ -825,6 +836,7 @@ class WeiboUserModel {
       'avatar_hd': avatarHd,
       'verified': verified,
       'verified_type': verifiedType,
+      if (fansIconUrl.isNotEmpty) 'fansIcon': {'icon_url': fansIconUrl},
       'verified_reason': verifiedReason,
       'description': description,
       'followers_count': followersCount,

@@ -9,6 +9,7 @@ import '../../../../core/utils/haptic_feedback_util.dart';
 import '../../../../core/utils/weibo_text_parser.dart';
 import '../../../../core/utils/weibo_time_formatter.dart';
 import '../../../../core/widgets/app_avatar.dart';
+import '../../../../core/widgets/weibo_fans_icon.dart';
 import '../../../feed/data/models/weibo_status_model.dart';
 import '../../../profile/presentation/user_profile_page.dart';
 import '../../data/detail_repository.dart';
@@ -282,6 +283,10 @@ class _NestedCommentsSheetState extends ConsumerState<NestedCommentsSheet> {
                                 ),
                               ),
                             ),
+                            if (reply.user.fansIconUrl.isNotEmpty) ...[
+                              const SizedBox(width: 4),
+                              WeiboFansIcon(url: reply.user.fansIconUrl),
+                            ],
                             if (reply.user.verified) ...[
                               const SizedBox(width: 4),
                               Icon(

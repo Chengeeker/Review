@@ -2,6 +2,12 @@
 
 这里记录已经完成的版本变更及当次验证结果。当前行为和发布命令以 [DEVELOPMENT.md](../DEVELOPMENT.md) 为准；历史测试数量不代表以后构建的测试结果。更早、更细的实施记录保存在[旧手册归档](archive/Review-legacy-2026-09-23.md)。
 
+## 2.10.0+92（2026-10-05）
+
+- 补充评论用户铁粉等级标识：解析官方评论用户 `fansIcon.icon_url`（兼容 `fans_icon`），并在微博详情评论、完整楼中楼及收到的评论页面显示服务器提供的图标。图标使用现有磁盘缓存，不增加评论/用户资料请求；各级图案与颜色直接采用微博资源，不在客户端硬编码。微博客服中心[官方说明](https://kefu.weibo.com/faqdetail?id=21662)确认博主正文页评论区属于标识展示场景，并注明超话等级标识与铁粉标识互斥。
+- 按功能更新规则将版本名从 `2.9.12` 升至 `2.10.0`，Android `versionCode` 从 91 升至 92。针对 5 个改动 Dart 文件执行 `dart analyze`，无 error/warning，保留 3 条 info 级提示；未运行自动化测试。
+- arm64 Release APK 构建成功（307.7 秒），`aapt2 dump badging` 确认包名 `com.review`、版本名 `2.10.0`、`versionCode` 92、ABI `arm64-v8a`；APK Signature Scheme v2 校验通过。产物 `Review_v2.10.0.apk`（31,699,064 字节），SHA-256：`8CDA5AD5E5CA8A5C2468569DCE203BC57E4595A5FC3BDD75B940A09499B78869`。旧版 `Review_v2.9.12.apk` 已保留至 `build/previous-deliveries/`。未安装到 Android 真机验收。
+
 ## 2.9.12+91（2026-10-04）
 
 - 修复抽奖链接缩略图被当作第三张微博配图的问题：在共享解析层排除抽奖链接图片及自动卡片补全资格，保留正文链接与真实配图，生日/夺金卡片保持原逻辑。

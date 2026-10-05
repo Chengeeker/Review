@@ -9,6 +9,7 @@ import '../../../core/utils/weibo_text_parser.dart';
 import '../../../core/utils/weibo_time_formatter.dart';
 import '../../../core/utils/app_dialog.dart';
 import '../../../core/widgets/app_avatar.dart';
+import '../../../core/widgets/weibo_fans_icon.dart';
 import '../../auth/presentation/login_page.dart';
 import '../../detail/data/detail_repository.dart';
 import '../../detail/data/models/weibo_comment_model.dart';
@@ -684,6 +685,8 @@ class _CommentsListViewState extends ConsumerState<_CommentsListView>
                         c['text']?.toString() ??
                         '';
                     final nick = user['screen_name']?.toString() ?? '微博用户';
+                    final fansIconUrl =
+                        WeiboUserModel.fromJson(user).fansIconUrl;
                     final avatar = user['avatar_hd']?.toString() ??
                         user['profile_image_url']?.toString() ??
                         '';
@@ -696,9 +699,25 @@ class _CommentsListViewState extends ConsumerState<_CommentsListView>
 
                     return ListTile(
                       leading: AppAvatar(url: avatar, size: 40, name: nick),
-                      title: Text(nick,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 14)),
+                      title: Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              nick,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          if (fansIconUrl.isNotEmpty) ...[
+                            const SizedBox(width: 4),
+                            WeiboFansIcon(url: fansIconUrl),
+                          ],
+                        ],
+                      ),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
