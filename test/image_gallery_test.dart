@@ -1,4 +1,8 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:review/core/utils/spring_page_route.dart';
 import 'package:extended_image/extended_image.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:review/features/detail/presentation/widgets/image_gallery_page.dart';
@@ -9,6 +13,15 @@ const galleryTestPic = WeiboPicModel(
   thumbnail: 'https://example.com/gallery-test.jpg',
   large: 'https://example.com/gallery-test.jpg',
   original: 'https://example.com/gallery-test.jpg',
+);
+
+const portraitGalleryTestPic = WeiboPicModel(
+  pid: 'portrait-gallery-test',
+  thumbnail: 'https://example.com/portrait-gallery-test.jpg',
+  large: 'https://example.com/portrait-gallery-test.jpg',
+  original: 'https://example.com/portrait-gallery-test.jpg',
+  width: 9,
+  height: 16,
 );
 
 class RecordingNavigatorObserver extends NavigatorObserver {
@@ -80,6 +93,248 @@ void main() {
     // the 220 ms route transition with bounded pumps instead of settling all.
     await tester.pump(const Duration(milliseconds: 250));
     expect(matchingHero(), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('only the selected gallery image pairs with its source Hero',
+      (tester) async {
+    final heroScope = Object();
+    const pics = [galleryTestPic, galleryTestPic, galleryTestPic];
+    ImageGalleryHeroTag tagFor(int index) => ImageGalleryHeroTag.forPic(
+          scope: heroScope,
+          index: index,
+          pic: galleryTestPic,
+        );
+
+    await tester.pumpWidget(MaterialApp(
+      home: Builder(
+        builder: (context) => Scaffold(
+          body: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: List.generate(
+              pics.length,
+              (index) => ImageGalleryHeroThumbnail(
+                scope: heroScope,
+                index: index,
+                pic: pics[index],
+                child: GestureDetector(
+                  key: ValueKey('source-thumbnail-$index'),
+                  onTap: () => Navigator.of(context).push<void>(
+                    PageRouteBuilder<void>(
+                      opaque: false,
+                      transitionDuration: const Duration(milliseconds: 220),
+                      pageBuilder: (_, __, ___) => ImageGalleryPage(
+                        pics: pics,
+                        initialIndex: index,
+                        statusId: 'multi-hero-test',
+                        heroScope: heroScope,
+                      ),
+                    ),
+                  ),
+                  child: const SizedBox(
+                    width: 72,
+                    height: 72,
+                    child: ColoredBox(color: Colors.blue),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ));
+
+    int heroCount(int index) => find
+        .byWidgetPredicate(
+          (widget) => widget is Hero && widget.tag == tagFor(index),
+        )
+        .evaluate()
+        .length;
+
+    await tester.tap(find.byKey(const ValueKey('source-thumbnail-0')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(heroCount(0), 2, reason: 'the open image pairs with its source');
+    expect(heroCount(1), 1, reason: 'the adjacent cached page has no Hero');
+    expect(heroCount(2), 1);
+
+    await tester.tap(find.byKey(const ValueKey('gallery-thumbnail-1')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 180));
+    expect(find.text('2 / 3'), findsOneWidget);
+    expect(heroCount(0), 1, reason: 'the previous image stays at its source');
+    expect(heroCount(1), 2, reason: 'only the selected image pairs');
+    expect(heroCount(2), 1);
+
+    await tester.tap(find.byKey(const ValueKey('gallery-thumbnail-2')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 180));
+    expect(find.text('3 / 3'), findsOneWidget);
+    expect(heroCount(0), 1);
+    expect(heroCount(1), 1, reason: 'the previously visited page is cached');
+    expect(heroCount(2), 2, reason: 'return animates only the visible image');
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final pixels in [const Size(240, 120), const Size(120, 240)]) {
+    for (final zoom in [1.0, 1.8]) {
+      testWidgets(
+          'return endpoints match ExtendedImage crop for $pixels zoom $zoom',
+          (tester) async {
+        final recorder = ui.PictureRecorder();
+        final canvas = ui.Canvas(recorder);
+        // Patterned pixels expose wrong fit/crop, unlike a solid-colour image.
+        for (var x = 0; x < pixels.width; x += 10) {
+          for (var y = 0; y < pixels.height; y += 10) {
+            canvas.drawRect(
+                Rect.fromLTWH(x.toDouble(), y.toDouble(), 10, 10),
+                Paint()
+                  ..color =
+                      Color.fromARGB(255, x % 256, y % 256, (x + y) % 256));
+          }
+        }
+        final picture = recorder.endRecording();
+        final image = (await tester.runAsync(() =>
+            picture.toImage(pixels.width.toInt(), pixels.height.toInt())))!;
+        picture.dispose();
+        final navigatorKey = GlobalKey<NavigatorState>();
+        final sourceKey = GlobalKey();
+        final galleryKey = GlobalKey();
+        final boundaryKey = GlobalKey();
+        final galleryBoundaryKey = GlobalKey();
+        final tag = ImageGalleryHeroTag.forPic(
+            scope: Object(), index: 0, pic: galleryTestPic);
+        await tester.pumpWidget(MaterialApp(
+          navigatorKey: navigatorKey,
+          home: Scaffold(
+              body: Center(
+                  child: RepaintBoundary(
+            key: boundaryKey,
+            child: Hero(
+              key: sourceKey,
+              tag: tag,
+              flightShuttleBuilder: imageGalleryHeroFlightShuttleBuilder,
+              child: SizedBox(
+                  width: 100,
+                  height: 100,
+                  child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child:
+                          ExtendedRawImage(image: image, fit: BoxFit.cover))),
+            ),
+          ))),
+        ));
+        Future<List<int>> screenshot(GlobalKey key) async {
+          final boundary =
+              key.currentContext!.findRenderObject() as RenderRepaintBoundary;
+          final snapshot = await boundary.toImage(pixelRatio: 1);
+          final data =
+              await snapshot.toByteData(format: ui.ImageByteFormat.rawRgba);
+          snapshot.dispose();
+          return data!.buffer.asUint8List().toList();
+        }
+
+        final expected = await tester.runAsync(() => screenshot(boundaryKey));
+        navigatorKey.currentState!.push<void>(PhysicsSpringGalleryRoute(
+          child: Scaffold(
+              body: Center(
+                  child: Hero(
+            key: galleryKey,
+            tag: tag,
+            flightShuttleBuilder: imageGalleryHeroFlightShuttleBuilder,
+            child: RepaintBoundary(
+                key: galleryBoundaryKey,
+                child: SizedBox(
+                    width: 300,
+                    height: 400,
+                    child: ExtendedRawImage(
+                        image: image,
+                        fit: BoxFit.contain,
+                        gestureDetails: GestureDetails(
+                            totalScale: zoom,
+                            offset: const Offset(-25, -35))))),
+          ))),
+        ));
+        await tester.pumpAndSettle();
+        final expectedStart =
+            await tester.runAsync(() => screenshot(galleryBoundaryKey));
+        final startShuttle = imageGalleryHeroFlightShuttleBuilder(
+          galleryKey.currentContext!,
+          const AlwaysStoppedAnimation(1),
+          HeroFlightDirection.pop,
+          galleryKey.currentContext!,
+          sourceKey.currentContext!,
+        );
+        // Explicit endpoint painting lets us compare every pixel at handoff;
+        // the source and destination are real ExtendedRenderImage objects.
+        final shuttle = imageGalleryHeroFlightShuttleBuilder(
+          galleryKey.currentContext!,
+          const AlwaysStoppedAnimation(0),
+          HeroFlightDirection.pop,
+          galleryKey.currentContext!,
+          sourceKey.currentContext!,
+        );
+        navigatorKey.currentState!.pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.byKey(const ValueKey('gallery-return-image-plane')),
+            findsOneWidget);
+        await tester.pumpAndSettle();
+        await tester.pumpWidget(MaterialApp(
+            home: Center(
+                child: RepaintBoundary(
+          key: boundaryKey,
+          child: SizedBox(width: 300, height: 400, child: startShuttle),
+        ))));
+        await tester.pump();
+        expect(
+            await tester.runAsync(() => screenshot(boundaryKey)), expectedStart,
+            reason:
+                'first flight pixels must keep current zoom/pan and paint offset');
+        await tester.pumpWidget(MaterialApp(
+            home: Center(
+                child: RepaintBoundary(
+          key: boundaryKey,
+          child: SizedBox(width: 100, height: 100, child: shuttle),
+        ))));
+        await tester.pump();
+        expect(await tester.runAsync(() => screenshot(boundaryKey)), expected,
+            reason:
+                'last flight pixels must equal the rounded cover thumbnail');
+        await tester.pumpWidget(const SizedBox());
+        image.dispose();
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
+  testWidgets('return without decoded pixels keeps existing gallery fallback',
+      (tester) async {
+    final nav = GlobalKey<NavigatorState>();
+    final tag = ImageGalleryHeroTag.forPic(
+        scope: Object(), index: 0, pic: portraitGalleryTestPic);
+    await tester.pumpWidget(MaterialApp(
+        navigatorKey: nav,
+        home: Center(
+            child: Hero(
+                tag: tag,
+                flightShuttleBuilder: imageGalleryHeroFlightShuttleBuilder,
+                child: const SizedBox(width: 80, height: 80)))));
+    nav.currentState!.push<void>(PhysicsSpringGalleryRoute(
+        child: Center(
+            child: Hero(
+                tag: tag,
+                flightShuttleBuilder: imageGalleryHeroFlightShuttleBuilder,
+                child: const SizedBox(
+                    key: ValueKey('fallback-gallery'),
+                    width: 280,
+                    height: 420)))));
+    await tester.pumpAndSettle();
+    nav.currentState!.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.byKey(const ValueKey('fallback-gallery')), findsOneWidget);
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
 

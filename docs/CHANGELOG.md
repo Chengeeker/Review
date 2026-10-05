@@ -2,6 +2,34 @@
 
 这里记录已经完成的版本变更及当次验证结果。当前行为和发布命令以 [DEVELOPMENT.md](../DEVELOPMENT.md) 为准；历史测试数量不代表以后构建的测试结果。更早、更细的实施记录保存在[旧手册归档](archive/Review-legacy-2026-09-23.md)。
 
+## 2.14.5+103（2026-10-05）
+
+- 重做普通图片 Hero 返回的裁切交接：读取实际 `ExtendedRenderImage`（同时兼容 Flutter `RenderImage`），冻结已解码像素及当前缩放/平移的绘制区域，以来源缩略图实际 cover 区域和圆角为终点。完整图片平面与裁切边界分别连续插值，不在飞行中重新布局手势图片，也不在落点再次填充；保留当前图片唯一 Hero、自动网页卡片和视频的既有分支。
+- 不增加网络请求或依赖。临时克隆图片句柄共享已解码像素，退出飞行时释放。新增使用实际图片组件和正式画廊路由的像素级回归，横图/竖图、普通/放大平移状态分别比较返回起点和终点；不再仅验证缩放数值。
+- `flutter test --no-pub` 全量 220 项通过（含 19 项画廊测试）；改动文件 `dart analyze` 无问题。全项目分析无 error/warning，保留 51 条 info；`git diff --check` 通过。arm64 Release APK 构建成功，核验 `com.review`、`2.14.5`、versionCode 103、arm64-v8a 和 v2 签名。产物 `Review_v2.14.5.apk`（31,764,600 字节），SHA-256：`EC75A7CC2FD7BCA5D19EE7B31287D1F9D5B3B68FAADDA2DC8CEEFA804C3BE773`；旧根目录 APK 已移入 `build/previous-deliveries/Review_v2.14.4.apk`，可恢复。真机动画需复测，不能把测试通过等同于设备视觉验收。
+
+## 2.14.4+102（2026-10-05）
+
+- 修正多图 Hero 返回动画的末帧跳变：微博图片模型宽高可能缺失/不准，上一版会按错误比例计算缩略图 cover 缩放，最后一帧交接给来源网格时内容突然放大裁切。现在优先使用来源缩略图已解码的实际像素比例，模型比例仅作为回退；没有新增图片请求或依赖。
+- 新增实际 Hero 路由回归测试，故意让模型尺寸缺失、解码图为 2:1，并验证动画末帧使用真实来源裁切比例。
+- `flutter test --no-pub` 全量 217 项通过（含 16 项画廊测试）；改动的画廊实现与测试文件单独 `dart analyze` 无问题。全项目 `flutter analyze --no-pub` 无 error/warning，保留 51 条 info 级提示；`git diff --check` 通过。arm64 Release APK 构建成功；核验包名 `com.review`、版本 `2.14.4`、`versionCode` 102、ABI `arm64-v8a` 和 APK v2 签名。产物 `Review_v2.14.4.apk`（31,764,600 字节），SHA-256：`240B0DE31609DDFC729E0B0A9E304BF33C7BADB8EC5501287CB4F1D08FFEC877`。旧版 `Review_v2.14.3.apk` 已移入 `build/previous-deliveries/`；未安装到真机验收。
+
+## 2.14.3+101（2026-10-05）
+
+- 修复多图画廊返回动画重复飞回的问题：分页缓存的邻接图片不再挂载 Hero，仅当前显示的图片与来源缩略图配对；即使连续浏览多张再返回，也只对停留的那张执行 Hero 回程。
+- 新增路由回归测试：打开 3 张图的画廊并依次停留在第 1、2、3 张，逐一确认唯一的画廊 Hero 只与当前索引的来源图配对。
+- `flutter test --no-pub` 全量 216 项通过（含 15 项画廊测试）；改动的画廊实现与测试文件单独 `dart analyze` 无问题。全项目 `flutter analyze --no-pub` 无 error/warning，保留 51 条 info 级提示；`git diff --check` 通过。arm64 Release APK 构建成功；核验包名 `com.review`、版本 `2.14.3`、`versionCode` 101、ABI `arm64-v8a` 和 APK v2 签名。产物 `Review_v2.14.3.apk`（31,764,600 字节），SHA-256：`EAA220C8ED3E76046A15508C8FE1F3A0E09BB29065F120314C9ACFC56113375F`。旧版 `Review_v2.14.2.apk` 已移入 `build/previous-deliveries/`；未安装到真机验收。
+
+## 2.14.2+100（2026-10-05）
+
+- 进一步修复非方形图片的 Hero 返回动画：外框回缩时，画面从全屏 `contain` 状态连续缩放到来源缩略图的 `cover` 裁切状态；不再在开始或到达缩略图时突然变形。方图在方形网格中缩放因子为 1；微博自动网页卡片仍按完整比例显示，不套用 cover。
+- 复用正在飞行的画廊子树及图片缓存，无新图片请求或依赖。竖图回程中点/近终点缩放插值断言通过；画廊相关 14 项、全量 215 项测试通过。`flutter analyze --no-pub` 无 error/warning，保留 51 条 info 级提示；`git diff --check` 通过。arm64 Release APK 构建成功；核验包名 `com.review`、版本 `2.14.2`、`versionCode` 100、ABI `arm64-v8a` 和 APK v2 签名。产物 `Review_v2.14.2.apk`（31,764,600 字节），SHA-256：`12153D0CA6581B42604D30E98AC63F78135335F261F920774B09F9748ACE68FA`。旧版 `Review_v2.14.1.apk` 已移入 `build/previous-deliveries/`；未安装到真机验收。
+
+## 2.14.1+99（2026-10-05）
+
+- 修复图片画廊 Hero 返回动画：Flutter 默认 shuttle 在 pop 时采用目标缩略图子树，可能让正在全屏显示的图片在收缩前突然切成缩略图的尺寸/裁切效果。现在返回飞行期间保留全屏画廊子树，动画结束后再显露源缩略图；进入方向保持使用全屏目标子树。
+- 新增路由级 Widget 回归测试，验证 pop 飞行期间仍展示画廊子树，飞行完成后才恢复缩略图。`flutter test --no-pub` 全量 215 项通过（含 14 项画廊测试）；`flutter analyze --no-pub` 无 error/warning，保留 51 条 info 级提示；`git diff --check` 通过。arm64 Release APK 构建成功；核验包名 `com.review`、版本 `2.14.1`、`versionCode` 99、ABI `arm64-v8a` 和 APK v2 签名。产物 `Review_v2.14.1.apk`（31,764,596 字节），SHA-256：`E5885A3723BFE061B4DA94BD801D62DCB35DD09E7B3C2C081601262AA91BC047`。旧版 `Review_v2.14.0.apk` 已移入 `build/previous-deliveries/`；未安装到真机验收。
+
 ## 2.14.0+98（2026-10-05）
 
 - 为微博图片网格接入 Flutter 共享元素 `Hero` 动画：点击图片时从原缩略图位置放大进入全屏画廊，返回时缩回来源位置。来源网格使用独立 scope 和媒体身份配对，避免相同微博/图片误配；视频仍使用既有播放器行为，不引入新依赖。

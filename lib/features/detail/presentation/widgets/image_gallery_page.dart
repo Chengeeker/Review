@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 import 'package:dio/dio.dart';
 import 'package:extended_image/extended_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderImage, RenderClipRRect;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
@@ -23,11 +25,15 @@ class ImageGalleryHeroTag {
     required this.scope,
     required this.index,
     required this.mediaIdentity,
+    required this.imageAspectRatio,
+    required this.thumbnailUsesCover,
   });
 
   final Object scope;
   final int index;
   final String mediaIdentity;
+  final double imageAspectRatio;
+  final bool thumbnailUsesCover;
 
   factory ImageGalleryHeroTag.forPic({
     required Object scope,
@@ -38,6 +44,9 @@ class ImageGalleryHeroTag {
         scope: scope,
         index: index,
         mediaIdentity: '${pic.pid}\u0000${pic.previewUrl}',
+        imageAspectRatio:
+            pic.width > 0 && pic.height > 0 ? pic.width / pic.height : 1.0,
+        thumbnailUsesCover: !pic.isWebpageCard,
       );
 
   @override
@@ -50,6 +59,178 @@ class ImageGalleryHeroTag {
   @override
   int get hashCode =>
       Object.hash(identityHashCode(scope), index, mediaIdentity);
+}
+
+/// Keeps the gallery image as the flying widget in both directions.
+///
+/// Flutter's default Hero shuttle always uses the destination child's layout.
+/// On pop that is the small feed thumbnail, which can briefly replace the
+/// fullscreen image before the reverse flight starts. Use the fullscreen
+/// destination on push and the fullscreen source on pop instead.
+Widget imageGalleryHeroFlightShuttleBuilder(
+  BuildContext flightContext,
+  Animation<double> animation,
+  HeroFlightDirection flightDirection,
+  BuildContext fromHeroContext,
+  BuildContext toHeroContext,
+) {
+  final fromHero = fromHeroContext.widget as Hero;
+  final toHero = toHeroContext.widget as Hero;
+  if (flightDirection != HeroFlightDirection.pop) return toHero.child;
+
+  final tag = fromHero.tag;
+  final targetRenderObject = toHeroContext.findRenderObject();
+  if (tag is! ImageGalleryHeroTag ||
+      !tag.thumbnailUsesCover ||
+      targetRenderObject is! RenderBox ||
+      !targetRenderObject.hasSize ||
+      targetRenderObject.size.width <= 0 ||
+      targetRenderObject.size.height <= 0) {
+    return fromHero.child;
+  }
+
+  final source = _HeroImageGeometry.capture(fromHeroContext);
+  final target = _HeroImageGeometry.capture(toHeroContext);
+  if (source == null || target == null) return fromHero.child;
+  return _HeroReturnImageMorph(
+    animation: animation,
+    image: source.image.clone(),
+    source: source,
+    target: target,
+  );
+}
+
+/// Snapshot the complete image plane, not just the fitted/cropped viewport.
+/// ExtendedImage has its own RenderBox (it is NOT a Flutter RenderImage).
+class _HeroImageGeometry {
+  const _HeroImageGeometry(this.image, this.rect, this.radius);
+  final ui.Image image;
+  final Rect rect;
+  final BorderRadius radius;
+
+  static _HeroImageGeometry? capture(BuildContext context) {
+    final root = context.findRenderObject();
+    if (root is! RenderBox || !root.hasSize) return null;
+    final direction = Directionality.of(context);
+    _HeroImageGeometry? result;
+    BorderRadius radius = BorderRadius.zero;
+    void visit(RenderObject object) {
+      if (result != null) return;
+      if (object is RenderClipRRect) {
+        radius = object.borderRadius.resolve(direction);
+      }
+      ui.Image? image;
+      BoxFit? fit;
+      AlignmentGeometry alignment = Alignment.center;
+      Rect? gestureRect;
+      if (object is ExtendedRenderImage) {
+        image = object.image;
+        fit = object.fit;
+        alignment = object.alignment;
+        // Already painted gesture geometry includes current zoom and pan.
+        final gesture = object.gestureDetails;
+        // ExtendedImage stores these in the paint canvas coordinate space,
+        // including its paint offset. Normalize before mapping to the Hero.
+        if (gesture?.destinationRect != null && gesture?.layoutRect != null) {
+          gestureRect =
+              gesture!.destinationRect!.shift(-gesture.layoutRect!.topLeft);
+        }
+      } else if (object is RenderImage) {
+        image = object.image;
+        fit = object.fit;
+        alignment = object.alignment;
+      }
+      if (image != null && object is RenderBox && object.hasSize) {
+        final pixels = Size(image.width.toDouble(), image.height.toDouble());
+        final align = alignment.resolve(direction);
+        final fitted =
+            applyBoxFit(fit ?? BoxFit.scaleDown, pixels, object.size);
+        final crop = align.inscribe(fitted.source, Offset.zero & pixels);
+        final painted = gestureRect ??
+            align.inscribe(fitted.destination, Offset.zero & object.size);
+        // Expand the cropped source back into the complete pixel plane so
+        // interpolation never stretches the image to the viewport aspect ratio.
+        final sx = painted.width / crop.width;
+        final sy = painted.height / crop.height;
+        final full = Rect.fromLTWH(painted.left - crop.left * sx,
+            painted.top - crop.top * sy, pixels.width * sx, pixels.height * sy);
+        final transform = object.getTransformTo(root);
+        result = _HeroImageGeometry(
+            image, MatrixUtils.transformRect(transform, full), radius);
+        return;
+      }
+      object.visitChildren(visit);
+    }
+
+    visit(root);
+    return result;
+  }
+}
+
+/// Freeze the decoded image, then move its edges and the clipping viewport
+/// independently. Re-layout of a gesture image during flight changes its crop.
+class _HeroReturnImageMorph extends StatefulWidget {
+  const _HeroReturnImageMorph({
+    required this.animation,
+    required this.image,
+    required this.source,
+    required this.target,
+  });
+
+  final Animation<double> animation;
+  final ui.Image image;
+  final _HeroImageGeometry source;
+  final _HeroImageGeometry target;
+
+  @override
+  State<_HeroReturnImageMorph> createState() => _HeroReturnImageMorphState();
+}
+
+class _HeroReturnImageMorphState extends State<_HeroReturnImageMorph> {
+  @override
+  void dispose() {
+    widget.image.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+        key: const ValueKey('gallery-return-image-plane'),
+        painter: _HeroReturnPainter(
+            widget.image, widget.animation, widget.source, widget.target),
+        child: const SizedBox.expand(),
+      );
+}
+
+class _HeroReturnPainter extends CustomPainter {
+  _HeroReturnPainter(this.image, this.animation, this.source, this.target)
+      : super(repaint: animation);
+  final ui.Image image;
+  final Animation<double> animation;
+  final _HeroImageGeometry source;
+  final _HeroImageGeometry target;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final t = (1 - animation.value).clamp(0.0, 1.0);
+    final rect = Rect.lerp(source.rect, target.rect, t)!;
+    final radius = BorderRadius.lerp(source.radius, target.radius, t)!;
+    canvas.save();
+    canvas.clipRRect(radius.toRRect(Offset.zero & size));
+    canvas.drawImageRect(
+        image,
+        Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+        rect,
+        Paint()..filterQuality = FilterQuality.low);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _HeroReturnPainter oldDelegate) =>
+      oldDelegate.image != image ||
+      oldDelegate.source != source ||
+      oldDelegate.target != target ||
+      oldDelegate.animation != animation;
 }
 
 /// Wraps a tapped source thumbnail with the same tag used by [ImageGalleryPage].
@@ -74,6 +255,7 @@ class ImageGalleryHeroThumbnail extends StatelessWidget {
           index: index,
           pic: pic,
         ),
+        flightShuttleBuilder: imageGalleryHeroFlightShuttleBuilder,
         child: child,
       );
 }
@@ -458,13 +640,18 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
 
   Widget _withGalleryHero(int index, WeiboPicModel pic, Widget child) {
     final scope = widget.heroScope;
-    if (scope == null || pic.isVideo) return child;
+    // PageView keeps neighboring pages alive. If each retained page has a
+    // Hero, popping the route can launch multiple flights back to the grid.
+    // Only the page currently shown in the gallery should pair with its
+    // source thumbnail.
+    if (scope == null || pic.isVideo || index != _currentIndex) return child;
     return Hero(
       tag: ImageGalleryHeroTag.forPic(
         scope: scope,
         index: index,
         pic: pic,
       ),
+      flightShuttleBuilder: imageGalleryHeroFlightShuttleBuilder,
       child: child,
     );
   }
