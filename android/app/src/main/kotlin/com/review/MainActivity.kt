@@ -21,14 +21,82 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.Executors
+import com.review.weiboauth.WeiboAuthManager
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.sharelite/cookies"
+    private val WEIBO_AUTH_CHANNEL = "com.review/weibo_auth"
     private val MESSAGE_NOTIFICATIONS_CHANNEL = "com.review/message_notifications"
     private val MESSAGE_NOTIFICATION_WORK = "review_message_notifications"
     private var methodChannel: MethodChannel? = null
+    private val weiboAuthExecutor = Executors.newSingleThreadExecutor()
+    @Volatile private var weiboAuthManager: WeiboAuthManager? = null
     private var initialUrl: String? = null
     private var notificationPermissionResult: MethodChannel.Result? = null
+
+    private fun getWeiboAuthManager(): WeiboAuthManager {
+        weiboAuthManager?.let { return it }
+        return synchronized(this) {
+            weiboAuthManager ?: WeiboAuthManager(applicationContext).also { weiboAuthManager = it }
+        }
+    }
+
+    private fun submitWeiboAuth(
+        result: MethodChannel.Result,
+        operation: (WeiboAuthManager) -> Any?,
+    ) {
+        weiboAuthExecutor.execute {
+            try {
+                val value = operation(getWeiboAuthManager())
+                runOnUiThread { result.success(value) }
+            } catch (error: Throwable) {
+                completeWeiboAuthError(result, error)
+            }
+        }
+    }
+
+    private fun completeWeiboAuthError(result: MethodChannel.Result, error: Throwable) {
+        val serverMsg = generateSequence(error) { it.cause }
+            .mapNotNull { (it as? com.review.weiboauth.WeiboApi.ApiFailure)?.serverMsg?.takeIf { msg -> msg.isNotBlank() } }
+            .firstOrNull()
+
+        val causes = generateSequence(error) { it.cause }.take(3).toList()
+        val errorTypes = causes.joinToString(" → ") { it.javaClass.simpleName }
+        val category = generateSequence(error) { it.cause }
+            .mapNotNull { (it as? com.review.weiboauth.WeiboApi.ApiFailure)?.category }
+            .firstOrNull()
+            ?: error.message?.takeIf {
+                it in setOf(
+                    "sms_send_rejected",
+                    "sms_challenge_missing",
+                    "captcha_required",
+                    "session_fields_missing",
+                    "http_or_response_error",
+                )
+            } ?: "native_auth_failed"
+
+        val message = when {
+            !serverMsg.isNullOrBlank() -> serverMsg
+            category == "sms_send_rejected" -> "微博未能发送验证码，请检查手机号或稍后重试"
+            category == "sms_challenge_missing" -> "微博没有返回验证码校验信息，请稍后重试"
+            category == "captcha_required" -> "微博要求额外安全验证，请稍后重试或先使用官方客户端验证"
+            category == "session_fields_missing" -> "微博未返回完整登录会话，请重试"
+            category == "http_or_response_error" -> "微博服务暂时不可用，请检查网络后重试"
+            else -> when {
+                causes.any { it is LinkageError } ->
+                    "微博 Android 登录组件加载失败（$errorTypes），请截图反馈"
+                causes.any { it is java.io.IOException } ->
+                    "连接微博验证码服务失败（$errorTypes），请确认该服务可访问"
+                else -> "微博登录初始化或请求失败（$errorTypes），请截图反馈"
+            }
+        }
+        runOnUiThread { result.error("WEIBO_AUTH_$category", message, null) }
+    }
+
+    private fun loginInputError(result: MethodChannel.Result, message: String) {
+        result.error("INVALID_ARGUMENT", message, null)
+    }
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
@@ -615,6 +683,56 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WEIBO_AUTH_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "requestSmsCode" -> {
+                        val phone = call.argument<String>("phone")?.filter { it.isDigit() }.orEmpty()
+                        val area = call.argument<String>("area")?.filter { it.isDigit() }.orEmpty()
+                        if (phone.length !in 5..20 || area.length !in 1..6) {
+                            loginInputError(result, "请输入有效的国家区号和手机号")
+                        } else {
+                            submitWeiboAuth(result) { it.requestSmsCode(phone, area) }
+                        }
+                    }
+                    "loginWithSms" -> {
+                        val phone = call.argument<String>("phone")?.filter { it.isDigit() }.orEmpty()
+                        val area = call.argument<String>("area")?.filter { it.isDigit() }.orEmpty()
+                        val number = call.argument<String>("number").orEmpty()
+                        val smsCode = call.argument<String>("smsCode")?.filter { it.isDigit() }.orEmpty()
+                        if (phone.length !in 5..20 || area.length !in 1..6 || number.isBlank() || number.length > 256 || smsCode.length !in 4..12) {
+                            loginInputError(result, "手机号、验证码或登录校验信息无效")
+                        } else {
+                            submitWeiboAuth(result) { it.loginWithSms(phone, area, number, smsCode) }
+                        }
+                    }
+                    "loginWithPassword" -> {
+                        val account = call.argument<String>("account")?.trim().orEmpty()
+                        val password = call.argument<String>("password").orEmpty()
+                        if (account.isEmpty() || account.length > 128 ||
+                            account.any { it.isISOControl() } ||
+                            password.isEmpty() || password.length > 256 ||
+                            password.any { it.isISOControl() }
+                        ) {
+                            loginInputError(result, "请输入有效的微博账号和密码")
+                        } else {
+                            submitWeiboAuth(result) { it.loginWithPassword(account, password) }
+                        }
+                    }
+                    "acceptSession" -> submitWeiboAuth(result) { it.acceptPendingSession() }
+                    "discardPendingSession" -> submitWeiboAuth(result) {
+                        it.discardPendingSession()
+                        true
+                    }
+                    "restoreSession" -> submitWeiboAuth(result) { it.restoreSession() }
+                    "logout" -> submitWeiboAuth(result) {
+                        it.logout()
+                        true
+                    }
+                    else -> result.notImplemented()
+                }
+            }
 
         val notificationChannel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,

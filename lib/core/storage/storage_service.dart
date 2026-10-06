@@ -74,10 +74,8 @@ class StorageService {
   static const String keySearchHistory = 'search_history_list'; // List<String>
   static const String keyHotSearchVerticalLayout =
       'hot_search_vertical_layout'; // bool, default false
-  static const String keyImageSavePathType =
-      'image_save_path_type'; // 0: Pictures/Review/, 1: Pictures/Review/{myNickname}, 2: Pictures/Review/{authorNickname}
-  static const String keyVideoSavePathType =
-      'video_save_path_type'; // 0: Pictures/Review/, 1: Pictures/Review/{myNickname}, 2: Pictures/Review/{authorNickname}
+  static const String keyImageSavePathType = 'image_save_path_type'; // 0: Pictures/Review/, 1: Pictures/Review/{myNickname}, 2: Pictures/Review/{authorNickname}
+  static const String keyVideoSavePathType = 'video_save_path_type'; // 0: Pictures/Review/, 1: Pictures/Review/{myNickname}, 2: Pictures/Review/{authorNickname}
   static const String keyWebDavUrl = 'webdav_url';
   static const String keyWebDavUsername = 'webdav_username';
   static const String keyWebDavPassword = 'webdav_password';
@@ -355,11 +353,15 @@ class StorageService {
       _prefs.getStringList(keyBrowsingHistoryStatuses) ?? [];
 
   Future<bool> recordViewedStatusJson(
-      String statusId, String statusJson) async {
+    String statusId,
+    String statusJson,
+  ) async {
     if (statusId.isEmpty || statusJson.isEmpty) return false;
     final list = List<String>.from(getBrowsingHistoryStatusJsons());
-    list.removeWhere((item) =>
-        item.contains('"id":"$statusId"') || item.contains('"id":$statusId'));
+    list.removeWhere(
+      (item) =>
+          item.contains('"id":"$statusId"') || item.contains('"id":$statusId'),
+    );
     list.insert(0, statusJson);
     if (list.length > 60) {
       list.removeRange(60, list.length);

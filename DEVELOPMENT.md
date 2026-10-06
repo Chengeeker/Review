@@ -1,6 +1,6 @@
 # Review 开发与技术架构文档
 
-> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-10-05；当前应用版本：`2.14.5+103`。
+> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-10-07；当前应用版本：`2.19.7+131`。
 >
 > `README.md` 用于项目介绍；本文档维护当前实现，不记录登录 Cookie、Token、密码或其他凭据。
 
@@ -44,7 +44,7 @@ Review 是 Flutter 编写的微博网页端风格客户端。凡是涉及微博�
 2. **热搜**：微博热搜分类榜单。
 3. **设置**：主题、微博样式、存储、账号和关于应用。
 
-时间线顶部可以打开侧边栏、切换微博分组、进入搜索和快捷发布。底部导航可以使用普通 Material 3 导航栏或悬浮胶囊导航栏，具体由设置决定。
+时间线顶部可以打开侧边栏、切换微博分组、进入搜索和快捷发布。应用使用 Material 3，底部导航支持贴底栏和标准材质悬浮栏，可在个性化设置中开关悬浮底栏。
 
 ### 2.2 时间线和微博卡片
 
@@ -52,7 +52,7 @@ Review 是 Flutter 编写的微博网页端风格客户端。凡是涉及微博�
 - 支持微博已有的“全部关注”“特别关注”“好友圈”以及微博账号已有的个人分组和热门频道。应用不会把本地虚构分组当成微博云端分组，分组管理页对不能写入官方的本地新分组会明确提示不支持。
 - 首页首次请求遇到空响应时只做一次短延迟重试；刷新得到空响应时不覆盖已有内容，避免短暂网络问题把可用时间线替换为“暂无微博内容”。加载更多使用 `max_id` 继续向历史分页，并做去重和屏蔽用户过滤。
 - 卡片支持微博文本、富文本链接、表情、图片九宫格、视频、Live Photo、投票、超话标识、橙色热搜话题、转发微博、长文展开和操作菜单。
-- 超过 9 张配图的列表卡片（含转发、主页和浏览记录）固定显示前 9 张，第 9 张叠加深色蒙层与 `+剩余数量`；点击该格从第 9 张进入完整画廊，不展开列表、不显示图片“展开全文”。详情仍直接显示全部图片，画廊始终接收完整列表。`continue_tag` 不作为长文字标记；旧快照误标长文且超过 9 图的短正文少于 140 字、没有省略号/展开标记、也没有全文数据时，列表不显示无依据的文字展开入口，源端全文补全与详情补取不变。已有全文继续按既有长文门槛判断。文字展开按钮放在正文与附件内容下方，只控制文字。`pic_ids` 有完整 PID 但 `pic_infos` 只含前 9 张时，用已有 PID 图片地址回退保留后续图片。详情和列表补全以桌面配图顺序为准，并合入移动端独有图片；生日/荣誉卡片继续按图层合并规则处理。
+- 超过 9 张配图的列表卡片（含转发、主页和浏览记录）固定显示前 9 张，第 9 张叠加深色蒙层与 `+剩余数量`；点击该格从第 9 张进入完整画廊，不展开列表、不显示图片“展开全文”。详情仍直接显示全部图片，画廊始终接收完整列表。`continue_tag` 不作为长文字标记；旧快照误标长文且超过 9 图的短正文少于 140 字、没有省略号/展开标记、也没有全文数据时，列表不显示无依据的文字展开入口，源端全文补全与详情补取不变。已标记长文默认保留微博 `text_raw` 预览；只有标准化全文实际更长时显示“展开全文”，点击后才展开，主微博和转发微博一致。文字展开按钮放在正文与附件内容下方，只控制文字。`pic_ids` 有完整 PID 但 `pic_infos` 只含前 9 张时，用已有 PID 图片地址回退保留后续图片。详情和列表补全以桌面配图顺序为准，并合入移动端独有图片；生日/荣誉卡片继续按图层合并规则处理。
 - 可见范围行（详情页始终预留；普通卡片仅非公开微博显示）保持 24dp 固定布局槽，图标和文字在槽位内上移 4dp，增加与作者头像的视觉间距，不改变卡片总高度。
 - 微博头像、图片网格、视频封面、搜索/超话图片等网络图片统一复用 `extended_image` 的磁盘缓存；同一完整 URL 命中缓存时，应用重启后可从临时缓存读取，不保证不同尺寸、域名或查询参数的 URL 共享缓存。启动后异步整理 `getTemporaryDirectory()/cacheimage`，仅处理该目录下 MD5 命名的缓存文件：超过 60 天或总量超过 512 MiB 时按文件修改时间从旧到新清理，跳过最近 1 分钟写入的文件。不会清理已保存到相册的媒体、账号资料或其他临时目录。系统仍可自行清除临时缓存；图片显示加载占位不等于实际重新下载。
 - 微博自动生成的荣誉/会员/活动网页卡片，会识别官方 `url_objects[].object.object` 的 `pic_url`/`image.url`，以及桌面时间线/详情中的 `url_struct`（`url_type=39`）经移动端状态接口补充的 `page_info.page_pic`。这类卡片可能由透明前景图和 `media_pic_url`/嵌套 `pic_info.pic_big` 背景图组成；分层卡片的列表比例优先采用背景画布的宽高，缺少尺寸时按常见横向卡片比例回退，避免拿透明前景的窄长尺寸裁切整张卡片。列表图层使用等比完整显示，透明卡片使用白色画布，详情画廊也等比完整显示。对应短链接从正文中移除，点击卡片只打开渲染后的图片，不再跳回个人主页。主页解析使用最多 6 路并发和按微博 ID 的内存缓存，避免这些卡片逐条串行请求。带真实视频播放地址的卡片仍走视频播放器，超话等普通主题卡片不转成图片。
@@ -61,7 +61,7 @@ Review 是 Flutter 编写的微博网页端风格客户端。凡是涉及微博�
 - 抽奖链接的导航缩略图不属于微博配图：按链接自身的抽奖标题、lottery 对象类型或微博抽奖域名识别，不将其 `card_image_url`、链接内 `pic_info/pic_infos` 或移动端 `page_info` 缩略图加入图片网格；仍保留“抽奖详情”正文链接及顶层真实配图。此判断不依据整篇正文是否出现“抽奖”，也不按图片大小删除图片；生日/夺金等自动卡片继续按原逻辑合成。列表、详情和浏览记录共用模型解析规则，不新增网络请求。
 - 详情页补全自动卡片时，将移动端图层与桌面详情已有卡片合并；移动端只返回透明前景图时保留已有完整背景与画布尺寸，避免生日/荣誉卡片从完整卡片退化成只有头像。官方自动卡片短链接移除后，不显示重复链接正文；生日网页卡片从 `url_struct.url_title` 读取祝福标题，并将标题覆盖渲染在卡片白底图片的下方留白处，列表卡片和详情页保持一致，点击图片仍打开渲染后的图片。是否包含日期由微博返回标题决定，客户端不根据当前设备日期猜造文案。
 - 浏览记录复用同一 `TweetCard`，历史快照通过 `WeiboStatusModel.toJson/fromJson` 往返时保留 `pics`（包括自动卡片前景、背景和卡片标记），不能只解析微博 API 的 `pic_infos`。旧快照带有 `url_type=39` 自动卡片链接但缺少卡片图片时，浏览记录后台复用主页的 `FeedRepository.parseStatuses` 有界补全；成功后在原历史位置更新快照，不改浏览顺序。普通状态不发起这类补全，失败也不阻塞列表打开。
-- 长文判断在前台列表状态发布前完成：时间线和当前可见的用户主页在 `FeedRepository` 解析状态时，仅对微博源标记为长文且缺少全文的主微博/转发微博请求官方全文接口，补齐 `fullTextRaw` 后才将整批状态交给列表；卡片首帧据全文统一判断显示全文或“展开全文”，滚动期间不再异步替换正文。后台个人主页视频/相册缓冲及浏览记录中的旧快照不因此批量触发长文请求；解析失败保留原预览和手动展开/重试入口，用户主动展开时仍可补取全文。`DetailRepository` 按微博 ID 合并并发请求，最多同时执行 2 个全文请求，并保留最多 96 条最近使用的非空全文于进程内缓存。只有全文规范化后达到 360 个 Unicode 字符、预览遗漏至少 100 个字符、且全文至少比预览多 5 个实际富文本行时才折叠；普通长度及临界长度直接显示全文。
+- 长文在前台列表状态发布前预取：时间线和当前可见的用户主页在 `FeedRepository` 解析状态时，仅对微博源标记为长文且缺少全文的主微博/转发微博请求官方全文接口，补齐 `fullTextRaw` 后才将整批状态交给列表；默认仍显示微博 `text_raw` 预览，只有用户点击“展开全文”才显示全文。比较前统一清理卡片说明、投票链接和空白；全文没有实际新增正文时不显示展开按钮。后台个人主页视频/相册缓冲及浏览记录中的旧快照不因此批量触发长文请求；解析失败保留原预览和手动展开/重试入口。`DetailRepository` 按微博 ID 合并并发请求，最多同时执行 2 个全文请求，并保留最多 96 条最近使用的非空全文于进程内缓存。不按长度或布局行数自动展开，也不在卡片 build 时创建 `TextPainter` 测量正文。
 - 独立微博视频链接（`h5.video.weibo.com/show/...`、`video.weibo.com/show?fid=...`、`weibo.com/tv/show/...` 以及移动端 `s/video/show` 变体）会调用微博官方视频组件接口获取签名媒体地址，再复用原生视频播放器；请求先使用不携带本地账号 Cookie 的公开接口，受限视频才回退到登录会话，不会把 H5 视频网页壳交给内置浏览器。针对当前移动端状态接口返回的 `url_objects` 视频卡片，应用会把其 `object_id`、封面、清晰度和已签名的 `weibocdn.com` 媒体地址合并到现有链接模型，并优先直接播放官方媒体地址；只有没有直接媒体地址时才回退 H5 组件解析。短链接、HTTP/HTTPS、HTML 实体和长文中的官方视频锚点也会统一规范化，避免视频短链接或 HTML `href` 被清理后又被当作普通网页打开。
 - 转发微博的原内容卡片可直接进入原微博；原微博通过 `page_info/media_info` 返回的视频，即使没有图片列表，也会在转发卡片中复用普通微博的视频预览和播放器。
 - 卡片菜单支持复制正文、收藏/取消收藏、复制链接、查看用户主页、屏蔽博主，以及在有权限时删除自己的微博。
@@ -146,6 +146,7 @@ lib/
 ├── core/
 │   ├── auth/              # 登录状态和凭据管理
 │   ├── constants/         # 微博接口、版本和分类常量
+│   ├── design_system/     # Material 3 导航栏、卡片和偏好控件
 │   ├── network/           # Dio 客户端、访客 Sub Token
 │   ├── services/          # 链接路由和 WebDAV
 │   ├── storage/           # SharedPreferences 与安全导出白名单
@@ -153,7 +154,7 @@ lib/
 │   ├── utils/             # 触感、解析、时间、弹窗、路由、表情
 │   └── widgets/           # 公共头像、热搜标签、分组卡片和内嵌浏览器
 └── features/
-    ├── auth/              # 登录 WebView
+    ├── auth/              # 短信验证码、账号密码登录与 Cookie 导入
     ├── compose/           # 发布微博、媒体上传、发布选择器
     ├── detail/            # 详情、评论、互动、图片画廊
     ├── drawer_features/   # 侧边栏、收藏、消息、超话等
@@ -164,14 +165,14 @@ lib/
     └── settings/          # 设置、存储、WebDAV、账号和关于
 ```
 
-主要依赖以 `pubspec.yaml` 为准：Flutter/Dart SDK（Dart `^3.5.0`）、`flutter_riverpod ^2.5.1`、`dio ^5.7.0`、`dynamic_color ^1.7.0`、`extended_image ^8.2.1`、`easy_refresh ^3.4.0`、`shared_preferences ^2.3.2`、`webview_flutter ^4.10.0`、`webview_flutter_android ^4.10.0`、`image_picker ^1.1.2`、`video_player ^2.9.2`、`url_launcher ^6.3.0`、`qr_flutter ^4.1.0`、`path_provider ^2.1.4`、`crypto ^3.0.6` 和 `intl ^0.20.3`。项目没有使用 `webdav_client` 依赖；WebDAV 是基于 Dio 的项目内实现。
+主要依赖以 `pubspec.yaml` 为准：Flutter `>=3.47.0` / Dart `^3.13.0`、`flutter_riverpod ^2.5.1`、`dio ^5.7.0`、`dynamic_color ^1.9.0`、`extended_image ^8.2.1`、`easy_refresh ^3.4.0`、`shared_preferences ^2.3.2`、`webview_flutter ^4.10.0`、`webview_flutter_android ^4.10.0`、`image_picker ^1.1.2`、`video_player ^2.9.2`、`url_launcher ^6.3.0`、`qr_flutter ^4.1.0`、`path_provider ^2.1.4`、`crypto ^3.0.6` 和 `intl ^0.20.3`。项目没有使用 `webdav_client` 依赖；WebDAV 是基于 Dio 的项目内实现。
 
 ## 5. 状态管理
 
 - 使用 Riverpod 管理认证、主题、微博样式、主时间线和依赖注入。
 - `FeedController` 维护当前分组、状态列表、分页游标、加载/错误状态和滚动位置；`FeedRepository` 只负责微博接口读取和写入。
 - `AuthProvider` 保存当前登录状态、用户基本信息和凭据检测结果；认证失败不会在模糊错误下擅自清空凭据或反复跳转登录。
-- `ThemeProvider` 与 `WeiboStyleProvider` 分别维护应用主题/触感/字体/刷新率和微博卡片排版偏好。
+- `ThemeProvider` 与 `WeiboStyleProvider` 分别维护应用主题、悬浮底栏开关、触感/字体/刷新率和微博卡片排版偏好。主题支持明暗模式、Material 3 预置色与 Android Monet 动态色。
 - 页面层只根据状态渲染；服务端操作完成后再更新状态。网络失败、未登录或服务端未返回字段时，需要保留可解释的错误/空状态，而不是创建本地假数据。
 
 ## 6. 网络、会话与接口边界
@@ -213,9 +214,10 @@ lib/
 
 ## 7. 交互、手势和原生通道
 
-### 7.1 Material 3 和触感
+### 7.1 Material 3 与触感
 
-- `AppTheme` 基于 Material 3，支持明暗主题、动态取色、自定义色盘、纯黑模式、字体粗细和悬浮底栏。
+- 个性化页面提供跟随系统/浅色/深色、纯黑深色、Material 3 预置主题色与 Monet 动态取色选项。关闭动态取色时使用用户选定的预置色；打开后使用 Android 提供的动态色，未提供时回退到预置色。
+- 底部导航使用 Material 3，可在贴底栏与标准材质悬浮栏之间切换。历史 Miuix/玻璃材质偏好不再读取或导出；升级后按“使用悬浮底栏”开关渲染对应的 Material 3 样式。
 - Material 水波纹通过 `HapticSplashFactory` 提供全局一次轻触；业务回调会消费同一次手势的自动反馈，不会重复震动。取消点击不会额外触发，Live 图播放/暂停按钮使用普通水波纹并只在动作入口触发一次轻触。
 - 触感工具保留约 40ms 的硬件抖动冷却，并使用 300ms 的同手势消费窗口，避免全局反馈与业务反馈叠加；没有 Material 水波纹的 GestureDetector 仍可由业务回调独立触发。公共头像组件的点击入口会消费全局水波纹反馈，确保只触发一次轻触；微博正文 `@用户` 使用内联点击识别器，因此在其跳转回调中调用 `HapticFeedbackUtil.light()`，遵守全局触感开关和防重复规则；所有下拉刷新入口统一通过 `HapticFeedbackUtil.refresh` 触发一次轻触。发布页定位按钮不再在业务方法开头重复触发轻触；成功选中地点后仅保留一次中等反馈。
 - 公共头像点击区域至少为 48dp，并声明头像按钮语义；头像占位符按 Unicode code point 取首字符。Toast 根据安全区和键盘高度调整位置，并通过 live region 向读屏器公布内容。
@@ -230,9 +232,11 @@ lib/
 `ImageGalleryPage` 支持双击放大、捏合缩放、横向分页、Live Photo 播放切换、下载原图/Live 视频和合并保存到系统相册。
 
 - 从微博图片网格点击普通图片时，通过 Flutter `Hero` 将对应缩略图连续放大到全屏画廊；返回时反向缩回来源位置。配对标识按来源网格实例、媒体下标和图片身份生成，只有当前画廊页挂载 Hero，避免缓存邻页一起飞回。普通图片回程读取两端实际 `ExtendedRenderImage` 或 `RenderImage` 的解码像素、fit、alignment、布局变换及圆角；手势图使用已绘制的 destinationRect/layoutRect 保存当前缩放和平移，先去除绘制偏移再映射到 Hero 坐标。冻结完整图片平面后，逐帧插值图片四边与裁切圆角，让图片在途中逐渐收敛到来源的实际 cover 区域；不再重新布局手势子树并叠加统一缩放。临时 image.clone() 只共享既有像素句柄，飞行卸载即 dispose，不新增请求或缓存。未解码时保持原子树回退；自动网页卡片保留完整显示分支，视频不参与该 Hero。现有路由、分页、滚轮和媒体生命周期不变，无新增动画依赖。回归使用正式画廊路由及 ExtendedRawImage，对横图/竖图和放大平移状态逐像素比较回程起点与圆角目标；设备观感仍须真机复测。
-- 所有多图/混合媒体画廊（2 项及以上，不限于超过 9 张）显示横向缩略图滚轮：当前项正常显示并有白边，其他项覆盖半透明白色蒙层，视频叠加播放图标。缩略图仅限制解码宽度 160px、高度按原图比例计算，再以 `BoxFit.cover` 裁切。滚轮使用 `ClampingScrollPhysics` 和关闭逐页吸附；手指拖动及松手后的惯性期间，主图直接镜像滚轮的连续页位置，不把多页变化放入逐页动画队列，因此快滑到末尾时主图不会在后面慢慢追赶。主图每次跨过一张图时触发 `HapticFeedbackUtil.selectionTick()`；该滚动专用触感使用 12ms 节流，不改变全局普通操作 40ms 节流。停稳时主图和滚轮同步用 `easeOutCubic` 在 120ms 内吸附到最近项；滚动期间暂停视频/Live Photo 的激活，最终选中后才恢复，避免快滑时逐个初始化媒体。主图手动翻页会接管同步并打断旧滚轮惯性。缩略条位于底部安全区上方 32dp，高 64dp；主图预留底部 120dp 加安全区，与缩略条至少间隔 24dp，不占底栏。单项不显示缩略条；清屏隐藏缩略条但保留其当前位置。继续惰性构建、复用缓存，不预加载全部原图/视频。
+- 所有多图/混合媒体画廊（2 项及以上，不限于超过 9 张）显示横向缩略图滚轮：当前项正常显示并有白边，其他项覆盖半透明白色蒙层，视频叠加播放图标。缩略图仅限制解码宽度 160px、高度按原图比例计算，再以 `BoxFit.cover` 裁切。滚轮使用 `ClampingScrollPhysics` 和关闭逐页吸附；手指拖动及松手后的惯性期间，主图直接镜像滚轮的连续页位置，不把多页变化放入逐页动画队列，因此快滑到末尾时主图不会在后面慢慢追赶。主图每次跨过一张图时触发 `HapticFeedbackUtil.selectionTick()`；该滚动专用触感使用 12ms 节流，不改变全局普通操作 40ms 节流。停稳时主图和滚轮同步用 `easeOutCubic` 在 120ms 内吸附到最近项；滚动期间暂停视频/Live Photo 的激活，最终选中后才恢复，避免快滑时逐个初始化媒体。主图手动翻页会接管同步并打断旧滚轮惯性。缩略条位于底部安全区上方 32dp，高 64dp；`ExtendedImageGesturePageView` 始终使用全屏视口，顶栏和缩略条只叠加在图片上层。控件显隐不再改变视口尺寸，因此不会重置图片缩放、平移或中心位置。手势缩放最低为 fit 尺寸 1.0，避免缩到适配尺寸以下后重置居中造成多余空白；统一居中初始对齐以保留手指焦点缩放。单项不显示缩略条；单张静态图片按整个屏幕居中。收起控件时只隐藏叠层，继续惰性构建、复用缓存，不预加载全部原图/视频。
 - 图片夹视频复用现有 `WeiboVideoPlayerPage` 的嵌入模式，不另写播放器：从网格点击图片或视频进入同一完整媒体顺序；当前项为视频时使用真实视频地址播放，非当前视频只展示封面。显式当前下标通知确保分页保留的屏外子项也卸载播放器，初始化回调检查 mounted 和控制器身份，避免切走后后台自动播放。嵌入模式不重复显示返回栏、不修改画廊屏幕方向；单视频仍可独立打开。播放器横滑进度手势移除，横滑交给画廊切换内容；进度条、双击快进/快退及纵滑亮度/音量继续保留。离开视频后释放播放资源，视频保存使用视频地址而不是封面。
 - 图片自身不再因斜向滑动误触发“滑出销毁”；单指横向分页由页面处理。
+- 画廊主图视口始终覆盖整个屏幕；顶栏按钮在状态栏安全区内叠加，缩略条在底部安全区上方 32dp 叠加。显示或隐藏这些控件不会重新约束主图，因此图片保持当前屏幕位置、缩放和平移；单张静态图片也按整个屏幕居中。
+- 返回和下载按钮各为 44dp 圆形半透明灰色玻璃控件，保留 48dp 点击区域，带柔和的浅色高光描边。Impeller 上仅在圆形裁切内以 `BackdropFilter` 轻微模糊并用局部 fragment shader 作凸面折射；shader 用空气/玻璃折射率与球冠法线的 Snell 角计算位移，并限制在 0.45 个 shader 单位内。不会逐帧截屏或处理全屏纹理；shader 不支持或加载失败时回退到原生模糊和描边。
 - 预览屏幕按宽度分为左、中、右三等份：点击中间区域切换清屏，点击左右区域退出预览。
 - 清屏时隐藏返回键、页码/Live 状态、下载按钮和 Android 顶部状态栏；再次点击中间区域恢复。系统底部导航栏保持可用。
 - 退出时恢复 edge-to-edge 状态。由于目标 SDK 为 36，顶部状态栏通过 `MainActivity` 的 `WindowInsetsController` 原生通道控制，不能只依赖 Flutter 的 `SystemUiMode.manual`。
@@ -256,26 +260,95 @@ lib/
 ### 8.1 WebDAV 备份
 
 - WebDAV 页面要求服务器地址使用 HTTPS（本机 `localhost`/`127.0.0.1` 除外），通过 Basic Auth 访问用户配置的目录。
-- 备份文件包含应用外观、微博样式、分组偏好、媒体存储路径、搜索历史等允许导出的个性化设置。
+- 备份文件包含应用主题（明暗模式、动态取色、M3 主题色和悬浮底栏开关）、微博样式、分组偏好、媒体存储路径、搜索历史等允许导出的个性化设置。
 - 明确不导出：微博 Cookie、SUB/SUBP、访问 Token、登录标记、UID/昵称/头像等账号凭据，以及 WebDAV 密码。
 - 恢复时只接受 `allowedExportKeys` 白名单中的值，不能借备份文件恢复登录凭据。
 - 导出包内部的格式字段 `version` 当前是数据格式版本 `1.0`，不等同于应用版本 `2.4.0`。自定义字体粗细的运行时设置由主题本地读取；当前导出白名单未包含自定义字体权重两个内部键，不能在文档中宣称它已随备份同步。
 
 ### 8.2 账号相关操作
 
-- 登录支持网页 WebView、扫码/验证码等微博网页端流程，以及导入已有凭据。
-- WebView 登录会显式允许 Android 第三方 Cookie。官方 `wapsso` 登录页以 `https://weibo.com` 为落地目标；新浪 `crossdomain` 地址只标记“等待落地”，不再启动最长 30 秒的静默凭据验证，因此“完成登录”按钮不会被后台任务禁用或吞掉。跨域主框架响应发生 HTTP 错误，或用户点击完成时仍处于等待落地状态，会立即给出反馈并跳到微博主页；只有 `weibo.com`/`weibo.cn` 页面真正完成加载后才自动验证 Cookie。凭据检测优先读取当前桌面微博域，再读取移动端、SSO 和 WebView Cookie 作用域，并设置总超时；失败提示仅列出 Cookie 名称和当前页面，不显示任何 Cookie 值。桌面配置响应统一通过 `desktopConfigShowsLoggedIn`/`desktopSessionUid` 解析，兼容 UID 位于 `data.uid`、`data.idstr`、`user.id`、`user.idstr` 等当前响应结构。微博官方桌面或移动配置接口任一明确确认会话后即可提交登录状态；仅从资料页或分组推断出 UID 不构成有效登录，且新移动会话不得沿用旧账号的桌面 Cookie。
+- 登录页使用 Review 原生 Flutter 页面，不展示微博登录 WebView；标题为“账号登录”，右上角始终显示“Cookie 导入”。短信验证码是默认且主要登录流程，不要求用户先设置微博密码；另可切换到账号密码登录。
+- `AuthNotifier.setAndVerifyCookie` 继续复用官方桌面与移动配置接口验证导入 Cookie 或 native 登录返回的 Cookie；桌面/移动任一路径明确确认 UID 才提交登录。仅从资料页或分组推断 UID 不构成有效登录；移动会话未同步到桌面时不得保留另一账号的桌面 Cookie。诊断失败只显示 Cookie 名称和页面，不显示 Cookie 值。
 - 设置页可以检测凭据有效性、导出账号凭据/Cookie（这是用户明确点击后的本地查看/复制功能）和退出登录。
 - “导出账号凭据”与“WebDAV 个性化备份”是两条不同路径；前者是敏感信息导出，后者明确排除敏感信息。
 - 退出登录会清理本地会话 Cookie、Token、登录标记和账号基本信息；不会删除用户的主题、微博样式和其他个性化设置。
 
+### 8.3 Android 私有登录与原生会话架构（实机验证通过）
+
+> **交接文档归档说明**：此前用于排查闪退与发码问题的临时交接文档 `docs/WEIBO_ANDROID_LOGIN_HANDOFF.md` 已正式废弃，其所载之全部用户需求、技术细节、Smali 逆向分析、三阶段攻坚根因与验收标准已完整并入本文档。后续开发与维护以本文档为唯一准则。
+
+#### 1. 用户体验与安全约束
+
+- **短信验证码是默认且首选路径**：界面为原生 Flutter Material 3 页面，不嵌入展示微博官方 WebView。支持未预设微博密码的账号直接登录。
+- **账号密码为次要切换路径**：支持标准账号与密码登录；登录页右上角始终固定保留“Cookie 导入”入口。输入框与按钮尺寸采用紧凑设计。
+- **凭据零泄露原则**：短信验证码和挑战凭据 `number` 仅在内存及单次 MethodChannel 调用期间流转，绝不落盘、绝不进入日志；密码通过原生方法加密计算，明文密码绝不落盘、不入日志；登录成功下发的 `WeiboSession` 通过 Android Keystore AES-GCM 安全持久化。
+
+#### 2. 模块与源码映射架构
+
+- **Flutter 登录前端**：`lib/features/auth/presentation/login_page.dart`，负责短信与密码表单状态流转、输入校验、MethodChannel 调用与登录成功后的关注流切换。
+- **原生通信通道**：`android/app/src/main/kotlin/com/review/MainActivity.kt`，注册 MethodChannel `com.review/weibo_auth`，处理 `requestSmsCode`、`loginWithSms`、`loginWithPassword`、`acceptSession`、`discardPendingSession`、`restoreSession` 和 `logout`。
+- **Native 会话管理器**：`android/app/src/main/java/com/review/weiboauth/WeiboAuthManager.java`，负责调度底层 API、会话暂存提交、以及与系统 `android.webkit.CookieManager` 的双向凭据同步与清理。
+- **底层 API 请求装配**：`android/app/src/main/java/com/review/weiboauth/WeiboApi.java`，管理端点 `account/login_sendcode`、`account/login`、`account/getoauth`，计算 `cum` 校验码，装配 Query 与 Form 表单，并透传服务端真实错误。
+- **Native 会话实体模型**：`android/app/src/main/java/com/review/weiboauth/WeiboSession.java`，负责解析服务端响应、深度提取多层嵌套 Cookie、宽容解析有效期，并执行必要且充分的会话字段校验。
+- **Native 运行时与 So 包装**：`android/app/src/main/java/com/review/weiboauth/NativeRuntime.java`，负责 JNI 初始化与 So 库封装（`wbutil`、`weibosdkcore`、`SecShare`、`wbgjb`），计算 OAuth 签名与安全哈希。
+- **设备标识与 JNI 反射桩**：`android/app/src/main/java/com/sina/deviceidjnisdk/DeviceId.java`，提供 `genCheckId`、`appendCheckId` 等 JNI 查找目标，避免底层崩溃。
+- **代理包管理器**：`android/app/src/main/java/com/review/weiboauth/FakePackageManager.java`，直接继承 `android.content.pm.PackageManager`，安全代理所有 94 个抽象方法，彻底解耦测试框架。
+- **加密持久化存储**：`android/app/src/main/java/com/review/weiboauth/EncryptedSessionStore.java`，使用 Android Keystore 生成并管理 256 位 AES-GCM 密钥，将原生会话加密保存在私有 SharedPreferences 中。
+- **双端凭据验证桥接**：`lib/core/auth/auth_provider.dart`，通过 `AuthNotifier.setAndVerifyCookie` 调用微博桌面端和移动端真实配置接口验证 UID，验证通过后方可正式提交登录。
+
+#### 3. 为什么之前不行，为什么现在可以（三阶段技术攻坚全景剖析）
+
+##### 阶段一：解决底层 JNI 致命崩溃（SIGSEGV / Native Abort，2.19.0–2.19.4）
+
+- **之前为什么不行（崩溃根因）**：
+  在构造公共登录参数 `commonLoginQuery` 时，Review 此前错误将 `android_id` 设为 `nativeRuntime.deviceId()`，触发调用 `DeviceId.getInstance().getDeviceId(application)`。而在底层 `libweibosdkcore.so` 内部，native 函数 `getDeviceIdNative` 会通过 JNI 反射查找并调用 Java 方法 `com.sina.deviceidjnisdk.DeviceId.genCheckId(String, String, String)`。由于 Review 遗留的 `DeviceId.java` 缺失该方法，JNI `GetMethodID` 返回 `NULL`，随后的底层调用直接触发 ART 虚拟机的 SIGSEGV / Native Abort 致命崩溃，Java 层 `try-catch` 完全无法捕获。此外，`FakePackageManager` 此前继承自 `android.test.mock.MockPackageManager`，在许多生产 ROM 上因缺少该测试库而直接触发 `NoClassDefFoundError`。
+- **现在为什么可以（解决方案）**：
+  1. 深入逆向分析并核对上游 Share 反编译源码（`UB.smali` 第 1053 行与 `aQ.1.smali` 第 106-118 行），发现上游请求中的 `android_id` 根本不是 `DeviceId`，而是直接通过系统 `Settings.Secure.getString(context.getContentResolver(), Settings.Secure.ANDROID_ID)` 获取。改回系统获取后，彻底切断了进入危险 JNI 调用的入口。
+  2. 在 `DeviceId.java` 中防御性补齐了 `genCheckId(String, String, String)`、`appendCheckId`、`checkMyPermission` 等所有 JNI 反射签名，并在库加载点增加安全防护，杜绝任何潜在的 JNI 反射缺失崩溃。
+  3. `FakePackageManager` 彻底抛弃继承 `android.test.mock.MockPackageManager`，改为直接继承 `android.content.pm.PackageManager` 并安全代理所有 94 个抽象方法；从 `build.gradle.kts` 和 `AndroidManifest.xml` 中完全移除了测试库依赖。
+  4. 在 `MainActivity.kt` 的 `submitWeiboAuth` 中建立了全局 `Throwable` 异常捕获兜底，底层 JNI 崩溃彻底消除。
+
+##### 阶段二：解决微博服务端拒发验证码（400/拒绝，2.19.5）
+
+- **之前为什么不行（拒发根因）**：
+  1. **区号传递错误**：中国大陆区号（`"86"` 或 `"0086"`）被错误放进 `query.put("area", "86")`。核对上游 Share 源码（`wd.1.smali` 第 217-270 行），中国大陆区号在 `account/login_sendcode` 和 `account/login` 请求中**必须显式设置为空字符串 `""`**，手机号保持 11 位数字。直接传递 `"86"` 会被微博服务端直接判定参数不合规并拒绝下发短信。
+  2. **非法硬编码 `aid` 污染**：此前在 Query 和 Form 中多处写死了伪造的 `aid="7501641714"`。核对上游 Share（`mA.2.smali` 与 `WeiboWebAuthorizeActivity.smali`），`"7501641714"` 仅是 AidTask 的固定 App ID，绝非设备 AID；Share 在未获取到真实设备 AID 时完全不传该参数。写死伪造 aid 会导致微博服务端设备 token 校验失败。
+  3. **`ua` 格式残缺**：此前 `ua` 缺少末尾的 `+ Build.VERSION.RELEASE`，不符合微博客户端标准格式 `MANUFACTURER-MODEL__weibo__11.6.3__android__android<RELEASE>`。
+  4. **服务端错误信息被遮蔽**：此前丢弃了服务端返回的真实 `msg` / `errmsg`，前端使用固定文案掩盖了真实拒发原因。
+- **现在为什么可以（解决方案）**：
+  1. 在发码与登录请求中自动将 `"86"` / `"0086"` 规范化为空字符串 `""`。
+  2. 彻底移除所有写死的伪造 `aid` 传参。
+  3. `ua` 规范补全 Android 系统版本号 `Build.VERSION.RELEASE`。
+  4. 全链路透传服务端返回的真实 `msg` / `errmsg` / `error`。发码链路 100% 畅通，真机测试成功收到短信验证码。
+
+##### 阶段三：解决登录会话校验拦截（`session_fields_missing`，2.19.6）
+
+- **之前为什么不行（拦截根因）**：
+  1. **`hasRequiredFields` 严重误判（核心拦截点）**：核对上游 Share 源码（`sd.1.smali` 短信验证码登录回调 `ThirdPartyLoginActivity$O00000Oo` 第 80-137 行），短信登录接口仅提取 `access_token`、`expires_in`、`uid`、`gsid` 和 `cookie`，**根本不包含也从不要求 `sut`**（`sut` 是单点登录凭据，仅在账号密码登录 `yd.1.smali` 中存在）。Review 此前在 `WeiboSession.java` 的 `hasRequiredFields()` 中硬编码要求 `present(sut)` 以及根对象的 `present(expire)`，导致所有短信登录即使微博服务端返回 200 OK 并下发完整有效凭据，也会 100% 被误判为 `session_fields_missing`，拦截并提示“微博未返回完整登录会话”。
+  2. **`expire` 字段误判**：服务端有效期保存在 `oauth2.0.expires`（或 `expires_in`）以及 `cookie.expire` 中，根对象无字符串 `expire`。此前硬编码检查根对象导致二次误判。
+  3. **Cookie 多层嵌套结构解析缺失**：核对上游 Share（`oo0o00o0.7.smali` 与 `Gz.smali`），微博服务端的 `cookie` 字段是一个包含各域名映射（`.weibo.cn`、`.weibo.com` 等）的 JSON 对象。此前 Review 直接调用 `response.optString("cookie")`，返回了整个对象的 JSON 字符串，无法被 Flutter 端的 `AuthNotifier.setAndVerifyCookie`（要求 `SUB=...` 格式）识别。
+  4. **缺少系统 CookieManager 同步**：登录成功后未将 Cookie 注入系统 WebView，导致原生环境凭据不同步。
+- **现在为什么可以（解决方案）**：
+  1. 将 `WeiboSession.java` 的会话校验条件修正为真实必要充分条件：`present(uid) && (present(cookie) || present(accessToken) || present(gsid))`。
+  2. 实现多层 JSON Cookie 递归与键值提取逻辑，优先提取包含 `SUB=` 的登录 Cookie；若 Cookie 仍为空但 `gsid` 以 `_2A` 开头，自动回退兜底为 `"SUB=" + gsid`，确保传递给 Flutter 端的始终是规范的标准 Cookie 字符串。
+  3. 宽容解析有效期，按优先级从根对象、`oauth2.0.expires`、`oauth2.0.expires_in`、`cookie.expire` 中提取。
+  4. 在 `WeiboAuthManager.java` 中增加 `syncCookieManager(cookie)` 和 `clearCookieManager()`，在登录成功与恢复会话时将 Cookie 同步写入系统 `android.webkit.CookieManager` 并 `flush()`，退出登录时彻底清理，保证 WebView 与原生通道凭据完全一致。
+  5. 2.19.6+130 经真实 Android 设备验证，输入验证码登录一次性顺利通过，成功进入应用并加载关注流！
+
+#### 4. 验证与运维结论
+
+- **实机验收结果**：`2.19.6+130` 已在真实 Android 设备上完整验证通过：短信发码畅通、输入验证码登录一次性通过并成功加载关注流、会话正常保持与恢复。
+- **原生刷新机制**：`account/getoauth` 作为 GET 请求，仅在原生 `lastRefreshAt` 达到 21,000,000 ms（约 5 小时 50 分钟）后触发刷新。应用冷启动时通过 `EncryptedSessionStore` 本地恢复，不因单次瞬时网络波动判定会话失效。
+- **账号退出规范**：退出登录同步清理 native 加密会话、Review 本地 Cookie/Token/账号状态以及原生 `CookieManager` 中的所有 Cookie。手动导入 Cookie 成功后亦会清理之前的 native session，杜绝账号凭据交织。
+- **认证日志脱敏（2.19.7）**：只记录 HTTP 状态、会话字段是否存在和异常类型；不得记录登录响应 JSON、Cookie、Token、异常消息或请求表单。服务端错误提示可供用户界面展示，但不得写入日志。
+
 ## 9. 设置页当前范围
 
-- **个性化**：明暗模式、动态颜色、自定义色盘、纯黑/悬浮胶囊底栏、触感反馈、字体粗细和屏幕刷新率。
+- **个性化**：明暗模式、Material 3 预置色与 Monet 动态取色、纯黑深色模式（开关仅显示名称）、悬浮底栏、触感反馈、字体粗细和屏幕刷新率。
 - **微博样式**：相对/绝对时间、星期/年份/时区/秒数、发布设备、卡片背景布局、正文字号、行间距、链接颜色、备注和名字、主页背景图、用户活动图标、大图片模式、图片圆角、菜单位置、IP 属地显示方式、主页赞过的微博。
 - **存储**：图片/视频保存路径和本地历史数据；当前不提供“退出时自动清理缓存”或“立即清理缓存”入口。
 - **WebDAV 备份**：配置、测试、备份和恢复，遵守上面的安全白名单。
-- **账号和关于**：登录、凭据检测、凭据导出、关于应用、退出登录。关于应用入口保持现有位置，版本名直接读取 `ApiConstants.appVersion`，当前显示 `2.14.4`。
+- **账号和关于**：短信验证码登录（默认）、账号密码登录、Cookie 导入、凭据检测、凭据导出、关于应用、退出登录。关于应用版本名直接读取 `ApiConstants.appVersion`。
 - **订阅消息提醒**：系统通知授权、总开关及 @、点赞、回复、私信分类开关；后台任务只在本机读取计数，通知不展示消息正文。
 
 ## 10. 测试、构建和发布
@@ -302,11 +375,12 @@ $env:JAVA_HOME = $taskJavaHome
 $env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
 $env:TEMP = $taskTempDir
 $env:TMP = $taskTempDir
+$env:JAVA_TOOL_OPTIONS = "-Djdk.net.unixdomain.tmpdir=$taskTempDir"
 $env:Path = "$taskJavaHome\bin;$env:Path"
 & 'D:\flutter_sdk\bin\flutter.bat' build apk --target-platform android-arm64 --release --no-tree-shake-icons --android-skip-build-dependency-validation --no-pub
 ```
 
-本机 JDK 17 在默认用户临时目录曾出现 `Selector` 本地通信管道错误；上面的临时目录只在当前 PowerShell 进程生效。Release 构建使用 `--no-pub` 保持 `pubspec.lock` 锁定的依赖和镜像来源不变；有意更新依赖时，单独运行 `flutter pub get` 并审查锁文件变更后再构建。签名从 Git 忽略的本地 `android/key.properties` 和密钥文件读取，口令不写入文档。
+本机 JDK 17 在默认用户临时目录曾因 `PipeImpl` 无法建立 Unix-domain loopback 管道而报 `Unable to establish loopback connection`；`JAVA_TOOL_OPTIONS` 中的 `-Djdk.net.unixdomain.tmpdir` 必须指向已创建的项目内目录，上面的临时目录只在当前 PowerShell 进程生效，构建后可清理。Release 构建使用 `--no-pub` 保持 `pubspec.lock` 锁定的依赖和镜像来源不变；有意更新依赖时，单独运行 `flutter pub get` 并审查锁文件变更后再构建。签名从 Git 忽略的本地 `android/key.properties` 和密钥文件读取，口令不写入文档。
 
 构建结果通常位于：
 

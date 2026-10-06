@@ -2,6 +2,186 @@
 
 这里记录已经完成的版本变更及当次验证结果。当前行为和发布命令以 [DEVELOPMENT.md](../DEVELOPMENT.md) 为准；历史测试数量不代表以后构建的测试结果。更早、更细的实施记录保存在[旧手册归档](archive/Review-legacy-2026-09-23.md)。
 
+## 2.19.7+131（2026-10-07）
+
+- 修复微博登录诊断日志泄露会话数据的问题：`WeiboApi` 不再输出完整响应 JSON；会话字段缺失时只记录 HTTP 状态和字段存在情况；CookieManager 同步/清理失败时只记录异常类型，不记录异常消息。HTTP 日志不含响应体、Cookie、Token 或表单参数。
+- 按 Bug 修复规则将版本更新到 `2.19.7+131`。ARM64 Release 构建成功（327.0 秒）；`aapt2` 核验包名 `com.review`、版本 `2.19.7`、versionCode `131`、target SDK `36`、ABI `arm64-v8a`；APK v2 签名验证通过，签名身份与 `2.19.6` 相同，4-byte 与 16 KB zipalign 检查通过。
+- 交付 `Review_v2.19.7.apk`（31,985,921 字节），SHA-256：`98BCF32E335A981DFAB6F5300807627B78CE0CDF018D1852F2A53324CFA6A1FF`；之前根目录的 APK 已移入 `build/previous-deliveries/` 保留回退，根目录仅留当前 APK。未运行 Flutter 测试；本次没有设备登录验收。
+
+## 2.19.6+130（2026-10-07）
+
+- 解决真机测试 2.19.5 成功收到短信验证码后，输入验证码点击“登录”提示“微博未返回完整登录会话，请重试”的拦截误判问题：
+  1. **`hasRequiredFields` 误判拦截修复**：对比上游 Share 源码（`sd.1.smali` 短信验证码登录回调 `ThirdPartyLoginActivity$O00000Oo` 第 80-137 行），短信验证码登录响应中**根本不包含也无需 `sut`**（`sut` 是 SSO 单点登录凭据，仅在账号密码登录 `yd.1.smali` 中下发）。此前 Review 硬编码要求 `present(sut)` 以及根对象 `present(expire)`，导致所有短信登录即使微博服务端返回 200 OK 并下发完整凭据，也会 100% 被判为 `session_fields_missing` 并拒绝进入应用。2.19.6 将会话校验条件修正为必要充分条件：`present(uid) && (present(cookie) || present(accessToken) || present(gsid))`。
+  2. **Cookie 多层嵌套结构深度解析**：核对上游 Share（`oo0o00o0.7.smali` 与 `Gz.smali`），微博服务端的 `cookie` 字段为包含各域名（`.weibo.cn`、`.weibo.com` 等）映射的 JSON 对象。Review 实现了多层 JSON Cookie 递归与键值提取，自动提取包含 `SUB=` 的登录 Cookie 并支持 `gsid` 回退兜底，确保 Flutter 端能直接获得合规的标准 Cookie 字符串。
+  3. **原生 CookieManager 双向同步**：登录成功与恢复会话时将 Cookie 同步写入系统 `android.webkit.CookieManager` 并 `flush()`，退出登录时彻底清理，保证 WebView 与原生通道凭据完全一致。
+  4. **字段缺失诊断**：会话校验不通过时只记录字段存在状态；禁止把原始 JSON 写入日志，因为其中可能包含 Cookie 或 Token。
+- `test/auth_session_test.dart` 14/14 通过；`git diff --check` 通过。arm64 Release 构建成功（424.8 秒）；`aapt2` 核验 `com.review`、版本 `2.19.6`、versionCode `130`、target SDK `36`；APK v2 签名通过且证书与 2.19.5 相同，4-byte 及 page zipalign 检查通过。
+- 交付 `Review_v2.19.6.apk`（31,985,921 字节），SHA-256：`BA58CF10027FFE7CAAE97F8D7FC2471FAE1B0C4869F8473F76849761B851883D`；`Review_v2.19.5.apk` 归档到 `build/previous-deliveries/`。随后用户在真实设备确认短信验证码发送、输入验证码登录、关注流加载与会话恢复通过。
+
+## 2.19.5+129（2026-10-07）
+
+- 解决真机测试 2.19.4 成功消除 JNI 闪退后，点击“获取验证码”被微博服务端拒发验证码的问题：
+  1. **规范化 `area` 参数**：对照上游 Share 反编译源码（`wd.1.smali` 第 217-270 行），中国大陆区号（`"86"` 或 `"0086"`）在 `account/login_sendcode` 和 `account/login` 请求中显式设置为空字符串 `""`，手机号保持 11 位数字。此前 Review 错误地将 `"86"` 放入 `query.put("area", "86")`，导致微博服务端因参数不合规拒发短信。2.19.5 在发码和登录请求中自动将 `"86"` / `"0086"` 规范化为 `""`。
+  2. **移除非法伪造的 `aid="7501641714"`**：核对上游 Share（`mA.2.smali` 与 `WeiboWebAuthorizeActivity.smali`），`"7501641714"` 是 AidTask 的应用 ID，绝非设备 AID；若 AidTask 未缓存真实设备 AID，Share 在 query 与 form 中完全不传 `aid`。此前 Review 在多处写死了伪造的 `aid="7501641714"`，导致微博服务端设备 token 校验失败。2.19.5 彻底移除了伪造的 `aid` 传参。
+  3. **`ua` 参数补全系统版本号**：核对上游 `PB.smali` 第 41-48 行，标准 ua 格式为 `MANUFACTURER-MODEL__weibo__11.6.3__android__android<RELEASE>`。此前 Review 缺少末尾的 `Build.VERSION.RELEASE`，已补齐。
+  4. **透传服务端真实错误描述 (`msg`)**：核对上游 Share（`oo0o00O0.6.smali` 与 `zd.smali`），发码失败时直接提取并向用户展示服务端返回的 `msg`（如“操作过于频繁，请稍后再试”）。此前 Review 抛弃了该字段并用硬编码兜底文案掩盖了真实拒发原因。2.19.5 已将服务端 `msg` / `errmsg` / `error` 全程透传至前端提示与错误日志。
+- `test/auth_session_test.dart` 14/14 通过；`git diff --check` 通过。arm64 Release 构建成功（360.6 秒）；`aapt2` 核验 `com.review`、版本 `2.19.5`、versionCode `129`、target SDK `36`；APK v2 签名通过且证书与 2.19.4 相同，4-byte 及 page zipalign 检查通过。
+- 交付 `Review_v2.19.5.apk`（31,985,921 字节），SHA-256：`8B281ADCFC9500F6745F506604C2F6475C640C5CF4617021E5EC310F8A0B121B`；`Review_v2.19.4.apk` 归档到 `build/previous-deliveries/`，项目根目录仅保留当前 APK。由于未连接真机，短信验证码发码与登录仍需在 2.19.5 上进行真实设备验收。
+
+## 2.19.4+128（2026-10-07）
+
+- 彻底定位并修复真机点击“获取验证码”闪退（SIGSEGV / Native Abort）的根因：
+  1. `WeiboApi.commonLoginQuery()` 此前错误将 `android_id` 设为 `nativeRuntime.deviceId()`，触发调用 `DeviceId.getInstance().getDeviceId(application)`。`libweibosdkcore.so` 的 native 函数 `getDeviceIdNative` 通过 JNI 查找并调用 `DeviceId.genCheckId(String, String, String)`。Review 遗留的 `DeviceId.java` 缺少该方法，导致 JNI `GetMethodID` 返回 `NULL`，随后的 JNI 调用在 ART 虚拟机底层直接发生 SIGSEGV 崩溃，Java 层 `try-catch` 无法捕获。对照上游 Share 反编译源码（`UB.smali` 与 `aQ.1.smali`），`android_id` 本应直接读取系统 `Settings.Secure.ANDROID_ID`。现已将 `android_id` 恢复为系统获取。
+  2. 在 `DeviceId.java` 中完整补齐 `genCheckId(String, String, String)`、`appendCheckId`、`checkMyPermission` 等 JNI 回调签名，并在库加载和调用点增加防御性捕获，杜绝后续任何由于反射符号缺失引发的底层崩溃。
+  3. `FakePackageManager` 彻底摆脱 `android.test.mock.MockPackageManager`（该测试库在很多生产 ROM 上被剥离，会引发 `NoClassDefFoundError`），改为直接继承 `android.content.pm.PackageManager` 并安全代理所有抽象方法；从 `build.gradle.kts` 和 `AndroidManifest.xml` 中完全移除了 `android.test.mock`。
+  4. `WeiboApi.java` 中 `cum` 为空时不再追加空参数；`MainActivity.kt` 的 `submitWeiboAuth` 增加全局 `catch (error: Throwable)` 兜底。
+- `test/auth_session_test.dart` 14/14 通过；`git diff --check` 通过。arm64 Release 构建成功（408.0 秒）；`aapt2` 核验 `com.review`、版本 `2.19.4`、versionCode `128`、target SDK `36`；APK v2 签名通过且证书与 2.19.3 相同，4-byte 及 page zipalign 检查通过。
+- 交付 `Review_v2.19.4.apk`（31,985,921 字节），SHA-256：`5E2A80213A7CD1C4766C43793F18E384C75285EED54D4787FEDFB9D1A60DB4F3`；`Review_v2.19.3.apk` 归档到 `build/previous-deliveries/`，项目根目录仅保留当前 APK。由于未连接真机，短信验证码发码与登录仍需在 2.19.4 上进行真实设备验收。
+
+## 2.19.3+127（2026-10-06）
+
+- 用户在 2.19.2 设备包上确认点击获取验证码仍闪退。按 Share 上游的按需加载路径修正 Review：短信发码不再提前加载仅供密码加密和 OAuth 签名使用的 `SecShare`、`wbgjb`；`WeiboApplication`、`DeviceId`、`SAUtils`、`WeicoSecurityUtils` 包装类各自加载所需库。四个 ARM64 登录库与 `Zelayan/share` 当前仓库二进制逐字节一致。
+- `test/auth_session_test.dart` 14/14 通过；全量 `flutter test --no-pub` 为 212 项通过、6 项失败，均是 `test/widget_test.dart` 的微博长文“展开全文”断言。`git diff --check` 通过。arm64 Release 构建成功（366.5 秒）；`aapt2` 核验 `com.review`、版本 `2.19.3`、versionCode `127`、target SDK `36`；APK v2 签名通过且证书与 2.19.2 相同，16 KB `zipalign` 检查通过。
+- 交付 `Review_v2.19.3.apk`（31,985,945 字节），SHA-256：`A21B79D6BEBC53AFC0D7B3E6205BB8396292BFBBC7FB4B3A66F4A329F97F726E`；`Review_v2.19.2.apk` 归档到 `build/previous-deliveries/`，项目根目录仅保留当前 APK。未连接 Android 设备，真实微博发码/登录仍需实机验收。
+
+## 2.19.2+126（2026-10-06）
+
+- 对照 Share 上游 `DeviceId` 调用，将设备标识 native 方法的 Context 从 `FakePackageContext` 改为初始化后的 `WeiboApplication`，与上游 `WSUtils.getApplication()` 调用一致；移除 NativeRuntime 中不再使用的 fake-context 成员。
+- `test/auth_session_test.dart` 14/14 通过；全量 `flutter test --no-pub` 为 206 项通过、6 项失败，均是微博长文“展开全文”断言；`git diff --check` 通过。arm64 Release 构建成功（457.9 秒）；`aapt2` 核验 `com.review`、版本 `2.19.2`、versionCode `126`、target SDK `36`、ABI `arm64-v8a`；APK v2 签名通过且证书与 2.19.1 相同，16 KB zipalign 通过。交付 `Review_v2.19.2.apk`（31,985,945 字节），SHA-256：`5EA1DAD2278DD5DD780D048D1D6EE504D7A6A7B7BC5DAF0B4E590F0DA0F5C511`；`Review_v2.19.1.apk` 归档到 `build/previous-deliveries/`，根目录仅保留当前 APK。
+- 后续用户实测 2.19.2 仍在点击获取验证码时闪退；Context 调整并未解决问题，参见 2.19.3 和[登录复盘](RETROSPECTIVE.md#登录方式切换2190)。
+
+## 2.19.1+125（2026-10-06）
+
+- 修复微博短信登录点击“获取验证码”时报 `UnsatisfiedLinkError`：`libwbutil.so` 在 `JNI_OnLoad` 中注册整组 8 个 `WeiboApplication` native 方法和 2 个 `EncryptSharedPreferences` native 方法；Review 原先只声明了部分方法且缺少后一个类，导致库加载失败，请求尚未发出。现已补齐精确签名；同时修正 `SecShare` 的 `SAUtils.secP` Java 包名以匹配库导出符号。
+- 验证：`test/auth_session_test.dart` 14 项通过；arm64 Release 编译成功（592.1 秒）；`aapt2` 核验包名 `com.review`、版本 `2.19.1`、versionCode `125`、target SDK `36`；APK v2 签名通过、签名身份与 `2.19.0` 相同，16 KB zipalign 通过。依赖锁文件原有版本和镜像保持不变。
+- 交付 `Review_v2.19.1.apk`（31,330,581 字节），SHA-256：`6520673F3D855BAAB72C270404C422C8A1F697D7F99CF81E5CD60031F53D88CD`；`Review_v2.19.0.apk` 归档至 `build/previous-deliveries/`，项目根目录只保留当前包。
+- 当前未连接 Android 设备；真实微博短信发送、验证码验证及会话验收尚待设备测试。
+
+## 2.19.0+124（2026-10-06）
+
+- 登录页默认使用短信验证码，并新增账号密码切换入口；两种方式可互相切换，右上角 Cookie 导入保持可用。缩小表单最大宽度、水平留白、输入框内边距和主按钮高度。
+- 密码登录通过 Android native `account/login`，由 Share 兼容 native 方法生成 `p=secP(password)` 和 `s=newCalculateS(account+password)`；密码只用于此次登录请求，清空 Flutter 输入框，不记录或持久化。登录结果继续走 Review Cookie/UID 验证和 Keystore 会话保存。
+- 验证：登录定向 analyze 无诊断；`auth_session_test.dart` 14 项通过。全项目 analyze 输出 44 条 info；全量测试仍有 6 项 `test/widget_test.dart` 中的微博长文“展开全文”断言失败。`dart format` 与 `git diff --check` 通过。
+- 原生兜底错误现在只暴露最多三层异常类型，并区分 native 组件加载错误与网络传输错误；异常消息和请求数据不向界面泄露，便于定位登录初始化失败。
+- arm64 Release 构建成功（325.6 秒）；核验 `com.review`、版本 `2.19.0`、versionCode `124`、target SDK `36` 和 ABI `arm64-v8a`；16 KB zipalign 及 APK v2 签名通过，签名证书与上一版一致。交付 `Review_v2.19.0.apk`（31,985,945 字节），SHA-256：`2681B35A53F34B01A52BA4317E2C6BC7F86E73C4244E6BD70FE01208F82E8140`；`Review_v2.18.0.apk` 已归档至 `build/previous-deliveries/`，根目录只保留当前包。
+- 未连接 Android 设备；验证码、账号密码的微博真实登录及 Review 会话仍需实机验收。
+
+## 2.18.0+123（2026-10-06）
+
+- 登录页改用 Review 原生 Material 3 界面，默认通过微博 Android 私有接口短信验证码登录，不要求用户预先设置微博密码；顶栏右侧保留“Cookie 导入”。native 登录返回的完整 session 只有在 Review 校验 Cookie/UID 后才写入 Android Keystore AES-GCM 存储，退出登录清理 native session。
+- 应用启动时尝试恢复 native session，且仅在距上次刷新达到 5 小时 50 分钟后调用 `account/getoauth`。当前 Review 微博 API 继续用 Cookie 兼容层；完整普通 API session 迁移和真实设备/账号验收仍未完成。
+- `dart format`、`git diff --check`、登录相关定向 analyze 和 `test/auth_session_test.dart`（12 项）通过。全量 analyze 有 44 条 lint/info；全量测试有 6 项在微博卡片全文展开文案断言失败，认证测试通过。arm64 Release 构建成功（347.8 秒）；`aapt2` 核验 `com.review`、版本 `2.18.0`、versionCode `123`、target SDK `36`、ABI `arm64-v8a`；16 KB zipalign 和 APK v2 签名通过，证书与上一版一致。交付 `Review_v2.18.0.apk`（31,985,945 字节），SHA-256：`A81B0DFD5EFEE34EFF2D063415A00C3414E1EA3F53C961B6922E20793B988319`；旧版已移至 `build/previous-deliveries/`，根目录只留当前包。未连接 Android 设备，短信和真实登录仍需实机验收。
+
+## 2.17.3+122（2026-10-06）
+
+- 画廊 PageView 始终保持全屏视口，顶栏和缩略条以覆盖层显示；显隐控件不再改变主图约束，避免放大后的图片突然移动。单张静态图片因此以整个屏幕为中心；多图照片保留当前缩放和平移状态。
+- `dart format`、`git diff --check` 和画廊/版本常量静态分析通过；未运行测试。arm64 Release 构建成功（306.7 秒）；核验 `com.review`、版本 `2.17.3`、versionCode `122`、target SDK `36`、ABI `arm64-v8a`、16 KB zipalign 和 APK v2 签名通过，签名与上一版一致；APK 含局部玻璃按钮 shader。交付 `Review_v2.17.3.apk`（31,766,761 字节），SHA-256：`E1C2024E38302AADB7B2A75E19BF5B84AA741C73AFC95D9F5A5BD25720320D65`；`Review_v2.17.2.apk` 已移至 `build/previous-deliveries/`，根目录只留当前包。未连接真机。
+
+## 2.17.2+121（2026-10-06）
+
+- 参照用户的相册截图缩小画廊玻璃按钮：圆形视觉外径从 48dp 减为 44dp，保留 48dp 点击区域；降低背景模糊、球冠高度、折射位移上限和高光描边强度。
+- `dart format` 与 `git diff --check` 通过；`flutter analyze --no-pub`（画廊和版本常量）无问题，未运行测试。arm64 Release 构建成功（376.3 秒）；核验 `com.review`、版本 `2.17.2`、versionCode `121`、target SDK `36`、ABI `arm64-v8a`、16 KB zipalign 和 APK v2 签名通过，证书与上一版一致；APK 包含画廊局部 shader，不含 Miuix 或全局玻璃资源。交付 `Review_v2.17.2.apk`（31,832,297 字节），SHA-256：`42827C9561942D01696F4FA062B706DF60A743D7520C4FC5DBC7E49AC0C34E8D`；`Review_v2.17.1.apk` 已移至 `build/previous-deliveries/`，根目录只留当前包。未连接真机。
+
+## 2.17.1+120（2026-10-06）
+
+- 将 Material 3 悬浮底栏宽度从 280dp 收至 264dp，保留 64dp 高度与每项 48dp 触控区域。
+- 图片画廊顶栏的返回和下载控件改为 48dp 圆形灰色半透明玻璃按钮，增加高光描边；Impeller 用球冠法线和空气/玻璃 Snell 折射角驱动局部凸面位移，最大 1.25 shader 单位。滤镜限制在圆形按钮内，不做全屏截图或纹理捕获；shader 不可用时保留模糊和描边回退。全局液态玻璃及 Miuix 仍保持移除。
+- `flutter analyze --no-pub` 全项目无 error/warning，列出 45 条 info；本轮 19 个 Dart 文件无 error/warning，仅 FeedView 有 1 条已有的 `axisAlignment` 弃用 info。`git diff --check` 通过，未运行测试。arm64 Release 构建成功（228.7 秒）；核验 `com.review`、版本 `2.17.1`、versionCode `120`、target SDK `36`、ABI `arm64-v8a`、16 KB zipalign 与 APK v2 签名通过，签名与上一版一致；APK 仅包含新的局部 `gallery_glass_button.frag`，没有 Miuix 或全局玻璃 shader。交付 `Review_v2.17.1.apk`（31,766,709 字节），SHA-256：`69A698AF19A9F14C7B4120AA579D59A99F5BF0D7F0E9FC631D1370832A63800E`；`Review_v2.17.0.apk` 已移至 `build/previous-deliveries/`，根目录仅留当前包。未连接真机。
+
+## 2.17.0+119（2026-10-06）
+
+- 按用户决定移除 Miuix 界面和液态玻璃导航，删除对应组件分支、主题桥接、着色器、设置项与 `flutter_miuix` 依赖。现有 Material 3、悬浮底栏开关、预置色与 Monet 动态取色继续保留。
+- 旧版保存的 Miuix/玻璃偏好不再读取或写入；升级后导航使用 Material 3 标准样式。此前的实现记录留在回顾文档中，仅供历史追溯。
+- `flutter analyze --no-pub` 全项目无 error/warning（45 条 info）；本次改动的 11 个目标无 error/warning，仅 FeedView 有 1 条已有的 `axisAlignment` 弃用 info；`git diff --check` 通过，未运行测试。arm64 Release 构建成功（411.8 秒）；核验包名 `com.review`、版本 `2.17.0`、versionCode `119`、target SDK `36`、ABI `arm64-v8a`、16 KB zipalign 与 APK v2 签名通过，签名与 2.16.9 一致；APK 无 Miuix 或玻璃 shader 资源。交付 `Review_v2.17.0.apk`（31,764,464 字节），SHA-256：`9EE518125EA00FF76D3541A197E56A3B7FB4BF822D40CA7D74C5F46C1C7CF8D2`；`Review_v2.16.9.apk` 已移至 `build/previous-deliveries/`，根目录仅留当前包。未连接真机。
+
+## 2.16.9+118（2026-10-06）
+
+- 按 Kyant 上游 SDF 透镜公式修正采样方向，背景沿外法线向外取样，恢复凸起折射；将拖动位置收敛到一个弹簧控制器，速度形变直接由触摸速度更新，释放后弹簧复位，减少每个触摸事件重启的动画控制器。
+- `flutter analyze --no-pub`（导航栏与版本常量）无问题，`git diff --check` 通过；未运行测试。arm64 Release 构建成功（225.0 秒）；核验 `com.review`、版本 `2.16.9`、versionCode `118`、target SDK `36`、arm64-v8a、16 KB zipalign 与 APK v2 签名通过，签名与上一版一致。交付 `Review_v2.16.9.apk`（32,184,335 字节），SHA-256：`96C9D292CEC215019E69905C9C431927ECB5E3876CD77011E999A92AA5CBE1AA`；旧包已归档至 `build/previous-deliveries/Review_v2.16.8.apk`。没有连接真机，运行时卡顿改善与折射观感仍需设备验收。
+
+## 2.16.8+117（2026-10-06）
+
+- 按照 `legado-with-MD3` / Kyant Backdrop 的实际透镜机制重做选中层：SDF 圆弧映射仅折射胶囊内侧边缘，将完整导航图标行放到透镜采样层下，去掉遮挡折射的前景重绘；选中宽度与导航槽一致，使用弹簧跟手、78/56 按压缩放及方向性速度拉伸。M3 与 Miuix 共用该玻璃渲染路径。
+- `flutter analyze --no-pub`（导航栏与版本常量）无问题，`git diff --check` 通过；未运行测试。arm64 Release 构建成功（217.1 秒），核验 `com.review`、版本 `2.16.8`、versionCode `117`、target SDK `36`、arm64-v8a、16 KB zipalign 和 APK v2 签名通过；签名与上一版一致。交付 `Review_v2.16.8.apk`（32,184,339 字节），SHA-256：`8F183EBA600D9C4B22012DCE83EE464B1F4F743491B12B769203E923CD4250AA`；旧包已归档至 `build/previous-deliveries/Review_v2.16.7.apk`，根目录只保留当前 APK。没有连接真机，动态观感与帧率仍需设备验收。
+
+## 2.16.7+116（2026-10-06）
+
+- 修正 M3/Miuix 液态玻璃透镜的凸起折射与明暗层次；将 Miuix 文字语义字号映射到当前 Material 主题，并统一玻璃导航标签为 12sp；修复底栏斜向拖拽离开边界后回弹到原选项；纯黑开关简化为“纯黑深色模式”。
+- `flutter analyze --no-pub`（主题桥接、导航栏、个性化页、版本常量）无问题，`git diff --check` 通过；本轮未运行测试。arm64 Release 构建成功（210.1 秒），已确认液态玻璃 shader 存在于 APK；核验 `com.review`、版本 `2.16.7`、versionCode `116`、target SDK `36`、arm64-v8a、16 KB zipalign 与 APK v2 签名通过，证书与 2.16.6 一致。交付 `Review_v2.16.7.apk`（32,184,539 字节），SHA-256：`D13802D9B45533BA94A4E7D16732816E4CF8993C25C93C3BB8C97D6ACE662795`；旧包已归档至 `build/previous-deliveries/Review_v2.16.6.apk`。无真机交互验收。
+
+## 2.16.6+115（2026-10-06）
+
+- 按反馈移除单图/单视频画廊的底部预留：没有缩略条时仅避开顶部按钮区域，主图视口可延伸到屏幕底部；多图画廊的缩略条间距保持不变。
+- `dart analyze`（画廊与版本常量）无问题，`git diff --check` 通过；本轮未运行测试。arm64 Release APK 核验 `com.review`、版本 `2.16.6`、versionCode `115`、target SDK `36`、arm64-v8a、16 KB zipalign 和 APK v2 签名通过。产物 `Review_v2.16.6.apk`（32,184,539 字节），SHA-256：`D4A39A858C647634E1F106767B5EBDA27D220634126279DA20AF7AE18AA72DF0`；旧根目录 APK 已移至 `build/previous-deliveries/Review_v2.16.5.apk`。未连接真机。
+
+## 2.16.5+114（2026-10-06）
+
+- 修复单图打开后位置偏下：无缩略条时为画廊底部增加与顶部相等的安全区 inset+68dp 留白，使主图视口对称居中；多图画廊原布局不变。
+- 修正 M3 和 Miuix 液态玻璃透镜的凹陷观感：边缘折射由沿外法线采样改为向透镜内侧采样，增强中心放大，并使用上缘高光、下缘阴影表现凸起；Impeller 实时背景采样路径与非 Impeller 回退不变。
+- `dart analyze`（画廊与版本常量）无问题，`git diff --check` 通过；本轮未运行测试。arm64 Release APK 核验 `com.review`、版本 `2.16.5`、versionCode `114`、target SDK `36`、arm64-v8a、16 KB zipalign 和 APK v2 签名通过。产物 `Review_v2.16.5.apk`（32,184,539 字节），SHA-256：`B7941B2E282386D92B3A6874FDF47BCCC52EF1B3F79D4AF1C4E7144F3274B939`；旧根目录 APK 已移至 `build/previous-deliveries/Review_v2.16.4.apk`。未连接真机，单图居中效果仍需设备复测。
+
+## 2.16.4+113（2026-10-06）
+
+- 重做 M3/Miuix 液态玻璃选中透镜的 Impeller 渲染：使用 Flutter GPU `ImageFilter.shader` 对实时 backdrop 做放大、边缘折射、速度色散和高光，避免 Miuix backdrop 每帧同步截图/离屏纹理合成；保留旧渲染后端回退、弹簧跟手、跨项拖动、重复点击和触感反馈，不新增依赖。
+- 修复 Miuix 热搜分类栏左/右滑时的延迟：移除带 275ms 自动居中动画的 MiuixTabRow 路径，改用 TabController 连续页面进度驱动分段指示器和文字颜色，八个分类等宽显示。
+- `flutter analyze --no-pub` 覆盖本轮 3 个 Dart 文件，无问题；`git diff --check` 通过，未运行测试。arm64 Release 构建成功（179.9 秒）；核验 `com.review`、版本 `2.16.4`、versionCode `113`、target SDK `36`、ABI `arm64-v8a`、16 KB zipalign 与 APK v2 签名通过，签名证书与上一版一致。交付 `Review_v2.16.4.apk`（32,184,347 字节），SHA-256：`83C463AB3905E99756BBD0400CDDE46DE7EDD883A9CEFB75B9F3CD3E9D46B0B8`；旧根目录 APK 已移至 `build/previous-deliveries/Review_v2.16.3.apk`。没有连接真机，玻璃观感、帧率和热搜跟手仍需设备验收。
+
+## 2.16.3+112（2026-10-06）
+
+- 按反馈将画廊主图可视范围恢复为返回/下载按钮行下沿至缩略条上沿；多图底部间距从 24dp 减为 8dp。缩放最低/回弹下限设为 fit 尺寸 1.0，避免 ExtendedImage 在低于适配尺寸时强制居中造成焦点偏移和底部空白；长图不再强制 topCenter 对齐。
+- `dart analyze`（画廊与版本常量）无问题，`git diff --check` 通过；本轮未运行测试。arm64 Release APK 核验 `com.review`、版本 `2.16.3`、versionCode `112`、arm64-v8a 和 APK v2 签名。产物 `Review_v2.16.3.apk`（32,179,831 字节），SHA-256：`C5A13FD314D823A92F5EB34697C68B41F6F121E49C43747F8255990ADB69FFF1`；旧 APK 已归档至 `build/previous-deliveries/Review_v2.16.2.apk`。真机视觉效果待用户复测。
+
+## 2.16.2+111（2026-10-06）
+
+- 按用户反馈把图片画廊主图上边界再上移到状态栏安全区下沿。顶部返回/下载控件继续悬浮在主图上方，便于实机对比状态栏边界方案。
+- `dart analyze lib/features/detail/presentation/widgets/image_gallery_page.dart` 无问题，`git diff --check` 通过；本轮未运行测试。arm64 Release APK 核验 `com.review`、版本 `2.16.2`、versionCode `111`、arm64-v8a 和 APK v2 签名。产物 `Review_v2.16.2.apk`（32,179,827 字节），SHA-256：`E7D033815F269A108886C99B1569E595147866EAA8258975075C5DCC17937F6E`；旧 APK 已归档至 `build/previous-deliveries/Review_v2.16.1.apk`。真机视觉效果待用户复测。
+
+## 2.16.1+110（2026-10-06）
+
+- 根据实机截图反馈，将画廊顶部图片边界从按钮下方再留 12dp，收紧到返回/下载控件下边缘；状态栏安全区仍保留。这样竖图可更靠近顶部操作区，同时不会进入控件后方。
+- 其他布局、手势和媒体行为不变。改动画廊文件静态分析通过、`git diff --check` 通过；本轮未运行测试。arm64 Release APK 核验 `com.review`、版本 `2.16.1`、versionCode `110`、arm64-v8a 和 APK v2 签名。产物 `Review_v2.16.1.apk`（32,179,827 字节），SHA-256：`172EF6F542C9E4A44BD1A608F93B2120992B8C21072C94FD0B4D718071B89F93`；旧根目录 APK 已归档至 `build/previous-deliveries/Review_v2.16.0.apk`。尚未进行设备画面验收。
+
+## 2.16.0+109（2026-10-06）
+
+- 加深 Miuix 设计语言覆盖：主时间线与热搜切换到 Miuix Scaffold/TopAppBar，热搜分类使用 MiuixTabRow；设置大厅的分组入口使用 MiuixArrowPreference 和 Miuix 卡片，时间线微博卡片使用带 Squircle 与按压下沉反馈的 MiuixCard。Material 3 仍走原 Material 组件路径，共用业务数据、路由和回调。
+- 参考 Legado 将设计引擎作为真实组件分支的做法：Miuix 主题桥接继续服务未迁移页面，新增页面优先使用 Review 语义组件，不复制业务页。
+- `dart analyze` 覆盖本轮改动的 7 个 Dart 文件，无 error/warning；仅有原有 `FeedView.axisAlignment` 弃用 info。`git diff --check` 通过，未运行测试。arm64 Release 构建成功（130.6 秒）；核验包名 `com.review`、版本 `2.16.0`、versionCode `109`、target SDK `36`、ABI `arm64-v8a`，16 KB zipalign 与 APK v2 签名通过，证书与上一版一致。交付 `Review_v2.16.0.apk`（32,179,827 字节），SHA-256：`D870066C39B7FAA5C6884C3F8464037F55E8C6097450FCDCD6A240396A988F97`；`Review_v2.15.4.apk` 已移至 `build/previous-deliveries/`，根目录仅留当前 APK。当前未连接 Android 设备，Miuix 页面观感、触感及帧率需真机验收。
+
+## 2.15.4+108（2026-10-06）
+
+- 修正图片画廊主图可视区域：顶栏显示时在状态栏安全区下方再留 80dp（顶栏 68dp、呼吸间距 12dp），主图在顶部控制区与底部缩略条之间按剩余高度等比适配。竖图不再顶到状态栏或被按钮压住，图片中心也会因上下空间不对称自然下移；清屏后恢复全屏视口。
+- 未改变图片手势、缩放锚点、分页、缩略条/视频控制器或 Hero 回程行为，不新增依赖与图像解码。
+- `dart analyze lib/features/detail/presentation/widgets/image_gallery_page.dart` 无问题，`git diff --check` 通过；本轮未运行测试。arm64 Release APK 构建成功，核验 `com.review`、版本 `2.15.4`、versionCode 108、arm64-v8a 和 v2 签名。产物 `Review_v2.15.4.apk`（32,179,831 字节），SHA-256：`1EDC2689ABC02A14273DDEE192E45506E2FF0FABF62FB94FA86604531FA8499C`；旧根目录 APK 已移入 `build/previous-deliveries/Review_v2.15.3.apk`。当前没有设备画面验收。
+
+## 2.15.3+107（2026-10-06）
+
+- 参照 Legado 的浮动玻璃底栏改进 M3/Miuix Liquid Glass：选中透镜现在折射局部合成的页面与放大图标背景，按压时高度按 78/56 比例膨胀，快速拖动会拉伸水滴、增强折射和高光；新增捕获限于 320×88dp、1x，不重复捕获全屏页面。
+- `flutter analyze --no-pub lib/core/design_system/components/review_navigation_bar.dart` 无问题；全项目分析无 error/warning、保留 45 条既有 info；`git diff --check` 通过，未运行测试。arm64 Release 构建成功（105.6 秒），核验包名 `com.review`、版本 `2.15.3`、`versionCode` 107、`targetSdkVersion` 36、ABI `arm64-v8a`；16 KB zipalign 与 APK v2 签名通过，证书与上一版一致。交付 `Review_v2.15.3.apk`（32,114,295 字节），SHA-256：`877E308919183C3084D24A20CE1ECD2ECAB8C6B81EADBE7B7211E7C080DD5F98`；旧版已归档至 `build/previous-deliveries/Review_v2.15.2.apk`。当前未连接 Android 设备，液态玻璃动画与性能尚未真机验收。
+
+## 2.15.2+106（2026-10-06）
+
+- 修正 Miuix 标准悬浮导航栏尺寸过小：三项按栏宽均分，宽屏为 280×64dp，窄屏自适应，并保留库的系统底部安全间距。
+- 修复 Miuix 标准/液态玻璃导航与两种设计语言的液态玻璃导航没有触感反馈的问题；全部经过 `HapticFeedbackUtil`，遵守全局触感开关和节流规则。
+- 为 M3、Miuix 液态玻璃底栏增加同一动态折射选中透镜：复用页面背景捕获，弹簧双边跟随选择和拖拽，保留原导航手势及重复点击回调。
+- 恢复微博长文的时间线预览：默认使用微博 `text_raw`，仅当标准化全文确实比预览更长时显示“展开全文”；点击后才展开已获取的全文，主微博和转发微博一致。移除导致多数长文自动铺开的折叠门槛及逐帧行测量。
+- `flutter analyze --no-pub` 无 error/warning，保留 45 条既有 info；`git diff --check` 通过，本轮未运行测试。arm64 Release 构建成功（324.9 秒）；核对包名 `com.review`、版本 `2.15.2`、`versionCode` 106、`targetSdkVersion` 36，`zipalign` 与 APK v2 签名校验通过，签名证书与上一版一致。产物 `Review_v2.15.2.apk`（32,114,295 字节），SHA-256：`0B4348AB0959FF7A018EA9D60E3F92A815C2DFBE62270E76CA14E976FE03D4F2`；旧根目录 APK 已移至 `build/previous-deliveries/Review_v2.15.1.apk`。未进行真机观感验收。
+
+## 2.15.1+105（2026-10-06）
+
+- 修复 Miuix 标准悬浮底栏被 Scaffold 拉伸后垂直居中的问题：按库现有的 52dp 内容高度和底部间距约束外层尺寸。
+- M3 与 Miuix 液态玻璃底栏改用同一弹性玻璃导航指示器；M3 使用自身主题色，Miuix 使用提高对比度的中性色，恢复明显的移动水滴选中效果。
+- Miuix 内置配色与 M3 色盘独立选择、独立持久化，Miuix 默认使用蓝色系；Monet 仍是两种风格共用开关，系统动态色可用时两边分别从系统主色生成色板。新增的 Miuix 色索引加入 WebDAV 个性化备份白名单。
+- `ReviewThemeBridge` 扩展为全局 Miuix 兼容层，覆盖仍在共享功能页使用的 Flutter 卡片、列表、对话框、底部菜单、按钮、输入控件和常用状态控件；业务页面与微博逻辑仍共用。
+- `flutter analyze --no-pub` 无 error/warning，保留 45 条既有 info；`git diff --check` 通过。本轮未运行测试，也未在真机验收交互和材质观感。
+- arm64 Release 构建成功（413.1 秒）；核对包名 `com.review`、版本 `2.15.1`、`versionCode` 105、`targetSdkVersion` 36、ABI `arm64-v8a`，`zipalign` 和 APK v2 签名校验通过。产物 `Review_v2.15.1.apk`（32,114,291 字节），SHA-256：`75806A035FF22B38A2DBE11AD940FF3E9C8430A5ED1AC74F3680A514A300E3AC`；旧根目录 `Review_v2.15.0.apk` 已归档到 `build/previous-deliveries/`，根目录只保留当前 APK。
+
+## 2.15.0+104（2026-10-06）
+
+- 个性化设置在“明暗模式”下方新增 Material 3 / Miuix 界面风格切换；沿用同一套业务页面与状态。底栏支持 M3/Miuix 的贴底导航、标准悬浮导航和液态玻璃悬浮导航。液态玻璃选项仅在悬浮底栏开启时展示，关闭悬浮栏会保留已选材质。
+- 新增 Miuix 色彩桥接、Miuix 通用页面/卡片/选择项组件及 Liquid Glass 背景捕获；两个新偏好键加入个性化备份白名单，现有账号凭据白名单规则不变。引入 `flutter_miuix ^1.3.0` 并更新兼容 SDK 下限至 Flutter `>=3.47.0` / Dart `^3.13.0`。
+- `flutter test --no-pub` 全量 228 项通过；新增设计系统回归覆盖旧用户默认值、备份白名单、Miuix 明暗/纯黑调色、悬浮玻璃条件、六种导航组合、设置入口、重复点击与跨 Tab 拖动。改动文件 `dart analyze` 无问题；全项目分析无 error/warning，保留 45 条 info。
+- arm64 Release APK 构建成功；核验包名 `com.review`、版本 `2.15.0`、versionCode `104`、ABI `arm64-v8a` 和 APK v2 签名。产物 `Review_v2.15.0.apk`（32,114,291 字节），SHA-256：`480A6817102811C4FDCF5E2759833562A8CE633926884892006C92A77FA805D7`；旧根目录 APK 已移入 `build/previous-deliveries/Review_v2.14.5.apk`。未在真机验收视觉与性能。
+
 ## 2.14.5+103（2026-10-05）
 
 - 重做普通图片 Hero 返回的裁切交接：读取实际 `ExtendedRenderImage`（同时兼容 Flutter `RenderImage`），冻结已解码像素及当前缩放/平移的绘制区域，以来源缩略图实际 cover 区域和圆角为终点。完整图片平面与裁切边界分别连续插值，不在飞行中重新布局手势图片，也不在落点再次填充；保留当前图片唯一 Hero、自动网页卡片和视频的既有分支。

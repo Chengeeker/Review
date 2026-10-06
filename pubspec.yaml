@@ -1,10 +1,11 @@
 name: review
-description: "A modern, lightweight Weibo third-party client built with Flutter and Material You (MD3)."
+description: "A modern, lightweight Weibo client with Material 3."
 publish_to: 'none'
-version: 2.14.5+103
+version: 2.19.7+131
 
 environment:
-  sdk: ^3.5.0
+  sdk: ^3.13.0
+  flutter: ">=3.47.0"
 
 dependencies:
   flutter:
@@ -13,7 +14,7 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.8
   flutter_riverpod: ^2.5.1
-  dynamic_color: ^1.7.0
+  dynamic_color: ^1.9.0
   extended_image: ^8.2.1
   easy_refresh: ^3.4.0
   dio: ^5.7.0
@@ -36,5 +37,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  shaders:
+    - shaders/gallery_glass_button.frag
   assets:
     - assets/icons/

@@ -1,8 +1,11 @@
 import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../../core/auth/auth_provider.dart';
+import '../../../../core/design_system/components/review_card.dart';
 import '../../../../core/storage/storage_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/card_display_provider.dart';
@@ -66,16 +69,13 @@ String _normalizeLongTextForComparison(
       .replaceAll('&nbsp;', ' ')
       .replaceAll('&#160;', ' ')
       .replaceAll('&#xA0;', ' ')
-      .replaceAllMapped(
-        RegExp(r'<img\b[^>]*>', caseSensitive: false),
-        (match) {
-          final alt = RegExp(
-            r'''\balt\s*=\s*(?:"([^"]*)"|'([^']*)')''',
-            caseSensitive: false,
-          ).firstMatch(match.group(0)!);
-          return alt?.group(1) ?? alt?.group(2) ?? '';
-        },
-      )
+      .replaceAllMapped(RegExp(r'<img\b[^>]*>', caseSensitive: false), (match) {
+        final alt = RegExp(
+          r'''\balt\s*=\s*(?:"([^"]*)"|'([^']*)')''',
+          caseSensitive: false,
+        ).firstMatch(match.group(0)!);
+        return alt?.group(1) ?? alt?.group(2) ?? '';
+      })
       .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
       .replaceAll(RegExp(r'<[^>]*>'), '')
       .replaceAll(RegExp(r'[\s\u200B\u200C\u200D\u2060\uFEFF]+'), ' ')
@@ -110,10 +110,6 @@ String _removeBirthdayCardCaptionFromBody(
       .replaceAll(RegExp(r'[\s\u200B\u200C\u200D\u2060\uFEFF]+$'), '');
 }
 
-const int _minimumLongTextRunesForCollapse = 360;
-const int _minimumHiddenLongTextRunesForCollapse = 100;
-const int _minimumAdditionalLongTextLinesForCollapse = 5;
-
 bool _hasUnresolvedTextPreview(WeiboStatusModel status) {
   // Multi-photo continuation can leave legacy snapshots marked as long text.
   // Do not advertise a text expansion for a short, visibly complete caption.
@@ -127,15 +123,9 @@ bool _hasUnresolvedTextPreview(WeiboStatusModel status) {
 }
 
 bool _shouldCollapseLongText({
-  required BuildContext context,
   required WeiboStatusModel status,
   required String fullText,
-  required double maxWidth,
-  required TextStyle defaultStyle,
-  required Color linkColor,
   bool removePollLink = true,
-  String prefixText = '',
-  TextStyle? prefixStyle,
 }) {
   final normalizedFullText = _normalizeLongTextForComparison(
     fullText,
@@ -148,126 +138,7 @@ bool _shouldCollapseLongText({
     removePollLink: removePollLink,
   );
   if (normalizedFullText == normalizedPreview) return false;
-
-  final fullTextRunes = normalizedFullText.runes.length;
-  final previewRunes = normalizedPreview.runes.length;
-  final hiddenRunes = fullTextRunes - previewRunes;
-
-  // Line-count deltas around Weibo's preview boundary are sensitive to
-  // wrapping and paragraph breaks. Only collapse a genuinely long post when
-  // the omitted part is itself substantial; short and borderline posts show
-  // their complete text instead of a nearly-useless expand/collapse control.
-  if (fullTextRunes < _minimumLongTextRunesForCollapse ||
-      hiddenRunes < _minimumHiddenLongTextRunesForCollapse) {
-    return false;
-  }
-
-  final previewLines = _measureVisibleTextLines(
-    context: context,
-    status: status,
-    rawText: status.textRaw,
-    maxWidth: maxWidth,
-    defaultStyle: defaultStyle,
-    linkColor: linkColor,
-    removePollLink: removePollLink,
-    prefixText: prefixText,
-    prefixStyle: prefixStyle,
-  );
-  final fullTextLines = _measureVisibleTextLines(
-    context: context,
-    status: status,
-    rawText: fullText,
-    maxWidth: maxWidth,
-    defaultStyle: defaultStyle,
-    linkColor: linkColor,
-    removePollLink: removePollLink,
-    prefixText: prefixText,
-    prefixStyle: prefixStyle,
-  );
-
-  return fullTextLines >=
-      previewLines + _minimumAdditionalLongTextLinesForCollapse;
-}
-
-int _measureVisibleTextLines({
-  required BuildContext context,
-  required WeiboStatusModel status,
-  required String rawText,
-  required double maxWidth,
-  required TextStyle defaultStyle,
-  required Color linkColor,
-  required bool removePollLink,
-  required String prefixText,
-  required TextStyle? prefixStyle,
-}) {
-  var visibleText = _trimTimelineTrailingWhitespace(rawText);
-  if (removePollLink) {
-    visibleText = _removeEmbeddedPollLink(visibleText, status);
-  }
-  visibleText = _removeBirthdayCardCaptionFromBody(visibleText, status);
-
-  final spans = <InlineSpan>[];
-  if (prefixText.isNotEmpty) {
-    spans.add(TextSpan(text: prefixText, style: prefixStyle));
-  }
-  spans.addAll(
-    WeiboTextParser.parse(
-      rawText: visibleText,
-      context: context,
-      urlStruct: status.urlStruct,
-      htmlText: status.textHtml,
-      linkColor: linkColor,
-      defaultStyle: defaultStyle,
-      interactive: false,
-    ),
-  );
-
-  final textScaler = MediaQuery.textScalerOf(context);
-  final textSpan = TextSpan(children: spans);
-  final placeholders = <PlaceholderDimensions>[];
-  void collectPlaceholders(InlineSpan span) {
-    if (span is WidgetSpan) {
-      // WeiboTextParser renders emotion images at 1.25em with 1 logical pixel
-      // of horizontal padding on either side.
-      final baseFontSize = defaultStyle.fontSize ?? 15;
-      final emojiSize = baseFontSize * 1.25;
-      final scale = baseFontSize == 0
-          ? 1.0
-          : textScaler.scale(baseFontSize) / baseFontSize;
-      placeholders.add(
-        PlaceholderDimensions(
-          size: Size((emojiSize + 2) * scale, emojiSize * scale),
-          alignment: span.alignment,
-          baseline: span.baseline,
-        ),
-      );
-    } else if (span is TextSpan) {
-      for (final child in span.children ?? const <InlineSpan>[]) {
-        collectPlaceholders(child);
-      }
-    }
-  }
-
-  for (final span in spans) {
-    collectPlaceholders(span);
-  }
-
-  final painter = TextPainter(
-    text: textSpan,
-    textDirection: Directionality.of(context),
-    textScaler: textScaler,
-    locale: Localizations.maybeLocaleOf(context),
-  );
-  if (placeholders.isNotEmpty) {
-    painter.setPlaceholderDimensions(placeholders);
-  }
-  final availableWidth = maxWidth.isFinite && maxWidth > 0
-      ? maxWidth
-      : MediaQuery.of(context).size.width;
-  painter.layout(maxWidth: availableWidth);
-  final lineCount = painter.computeLineMetrics().length;
-  painter.dispose();
-  return lineCount;
+  return normalizedFullText.runes.length > normalizedPreview.runes.length;
 }
 
 /// Material You (MD3) Weibo Status Card (支持时间智能格式化、全域微博样式个性化响应与长文本智能展开)
@@ -275,11 +146,7 @@ class TweetCard extends ConsumerStatefulWidget {
   final WeiboStatusModel status;
   final bool isDetail;
 
-  const TweetCard({
-    super.key,
-    required this.status,
-    this.isDetail = false,
-  });
+  const TweetCard({super.key, required this.status, this.isDetail = false});
 
   void showMoreOptions(
     BuildContext context,
@@ -291,7 +158,8 @@ class TweetCard extends ConsumerStatefulWidget {
     final colorScheme = Theme.of(context).colorScheme;
     final auth = ref.read(authProvider);
 
-    final isMyTweet = auth.isLoggedIn &&
+    final isMyTweet =
+        auth.isLoggedIn &&
         ((auth.uid != null &&
                 auth.uid!.isNotEmpty &&
                 (auth.uid == status.user.id || auth.uid == status.id)) ||
@@ -331,8 +199,10 @@ class TweetCard extends ConsumerStatefulWidget {
                 },
               ),
               ListTile(
-                leading: Icon(Icons.delete_outline_rounded,
-                    color: colorScheme.error),
+                leading: Icon(
+                  Icons.delete_outline_rounded,
+                  color: colorScheme.error,
+                ),
                 title: Text('删除微博', style: TextStyle(color: colorScheme.error)),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -369,16 +239,19 @@ class TweetCard extends ConsumerStatefulWidget {
             ),
             ListTile(
               leading: Icon(
-                  isFavorited ? Icons.star_rounded : Icons.star_outline_rounded,
-                  color: isFavorited ? const Color(0xFFFF8200) : null),
+                isFavorited ? Icons.star_rounded : Icons.star_outline_rounded,
+                color: isFavorited ? const Color(0xFFFF8200) : null,
+              ),
               title: Text(isFavorited ? '取消收藏' : '收藏微博'),
               onTap: () async {
                 Navigator.pop(ctx);
                 final wasFavorited = isFavorited;
                 final success = await ref
                     .read(feedRepositoryProvider)
-                    .toggleFavorite(status.id,
-                        currentlyFavorited: wasFavorited);
+                    .toggleFavorite(
+                      status.id,
+                      currentlyFavorited: wasFavorited,
+                    );
                 if (context.mounted) {
                   if (success) {
                     onFavoriteChanged?.call(!wasFavorited);
@@ -386,8 +259,10 @@ class TweetCard extends ConsumerStatefulWidget {
                         .read(feedControllerProvider.notifier)
                         .syncFavoriteLocally(status.id, !wasFavorited);
                   }
-                  AppToast.show(context,
-                      success ? (wasFavorited ? '已取消收藏' : '已收藏') : '操作失败，请重试');
+                  AppToast.show(
+                    context,
+                    success ? (wasFavorited ? '已取消收藏' : '已收藏') : '操作失败，请重试',
+                  );
                 }
               },
             ),
@@ -420,8 +295,10 @@ class TweetCard extends ConsumerStatefulWidget {
             if (!isMyTweet)
               ListTile(
                 leading: Icon(Icons.block_outlined, color: colorScheme.error),
-                title:
-                    Text('屏蔽该博主', style: TextStyle(color: colorScheme.error)),
+                title: Text(
+                  '屏蔽该博主',
+                  style: TextStyle(color: colorScheme.error),
+                ),
                 onTap: () async {
                   Navigator.pop(ctx);
                   await ref
@@ -447,10 +324,13 @@ class TweetCard extends ConsumerStatefulWidget {
         content: const Text('删除后该条微博将不可恢复。'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.error),
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
             onPressed: () async {
               Navigator.pop(ctx);
               final success = await ref
@@ -539,7 +419,8 @@ class _TweetCardState extends ConsumerState<TweetCard> {
       _showPollResults = false;
       _selectedPollOptionIds.clear();
     }
-    final mainStatusChanged = oldWidget.status.id != widget.status.id ||
+    final mainStatusChanged =
+        oldWidget.status.id != widget.status.id ||
         oldWidget.status.needsLongText != widget.status.needsLongText ||
         oldWidget.isDetail != widget.isDetail;
     if (mainStatusChanged &&
@@ -549,7 +430,8 @@ class _TweetCardState extends ConsumerState<TweetCard> {
         widget.isDetail) {
       _fetchMainLongText();
     }
-    final oldRetweetId = oldWidget.status.retweetedStatus?.mblogid ??
+    final oldRetweetId =
+        oldWidget.status.retweetedStatus?.mblogid ??
         oldWidget.status.retweetedStatus?.id;
     final retweet = widget.status.retweetedStatus;
     final retweetId = retweet?.mblogid ?? retweet?.id;
@@ -581,8 +463,10 @@ class _TweetCardState extends ConsumerState<TweetCard> {
         .syncLikeLocally(widget.status.id, nextLiked, nextCount);
 
     final repo = ref.read(feedRepositoryProvider);
-    final success =
-        await repo.toggleLike(widget.status.id, currentlyLiked: wasLiked);
+    final success = await repo.toggleLike(
+      widget.status.id,
+      currentlyLiked: wasLiked,
+    );
     if (!success && mounted) {
       setState(() {
         _liked = wasLiked;
@@ -673,13 +557,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
     });
   }
 
-  Future<void> _toggleMainExpand({
-    required BuildContext context,
-    required double maxWidth,
-    required WeiboStyleSettings weiboStyle,
-    required Color linkColor,
-    required bool hasMoreContent,
-  }) async {
+  Future<void> _toggleMainExpand() async {
     if (_isLoadingLongText) return;
     HapticFeedbackUtil.light();
     if (_isExpanded) {
@@ -689,39 +567,17 @@ class _TweetCardState extends ConsumerState<TweetCard> {
 
     final availableLongText = _loadedLongText ?? widget.status.fullTextRaw;
     if (availableLongText != null && availableLongText.isNotEmpty) {
-      if (hasMoreContent) {
-        setState(() => _isExpanded = true);
-      }
+      setState(() => _isExpanded = true);
       return;
     }
 
     await _fetchMainLongText(
       forceRetry: true,
-      shouldExpandWhenLoaded: (fullText) =>
-          context.mounted &&
-          _shouldCollapseLongText(
-            context: context,
-            status: widget.status,
-            fullText: fullText,
-            maxWidth: maxWidth,
-            defaultStyle: TextStyle(
-              fontSize: weiboStyle.fontSize,
-              height: weiboStyle.fontLineHeight,
-              color: Theme.of(context).colorScheme.onSurface,
-            ),
-            linkColor: linkColor,
-          ),
+      shouldExpandWhenLoaded: (_) => true,
     );
   }
 
-  Future<void> _toggleRetweetExpand({
-    required BuildContext context,
-    required WeiboStatusModel retweet,
-    required double maxWidth,
-    required WeiboStyleSettings weiboStyle,
-    required Color linkColor,
-    required bool hasMoreContent,
-  }) async {
+  Future<void> _toggleRetweetExpand({required WeiboStatusModel retweet}) async {
     if (_isLoadingRetweetLongText) return;
     HapticFeedbackUtil.light();
     if (_isRetweetExpanded) {
@@ -731,36 +587,14 @@ class _TweetCardState extends ConsumerState<TweetCard> {
 
     final availableLongText = _loadedRetweetLongText ?? retweet.fullTextRaw;
     if (availableLongText != null && availableLongText.isNotEmpty) {
-      if (hasMoreContent) {
-        setState(() => _isRetweetExpanded = true);
-      }
+      setState(() => _isRetweetExpanded = true);
       return;
     }
 
     await _fetchRetweetLongText(
       retweet: retweet,
       forceRetry: true,
-      shouldExpandWhenLoaded: (longText) =>
-          context.mounted &&
-          _shouldCollapseLongText(
-            context: context,
-            status: retweet,
-            fullText: longText,
-            maxWidth: maxWidth,
-            defaultStyle: TextStyle(
-              fontSize: weiboStyle.fontSize - 1,
-              height: weiboStyle.fontLineHeight,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-            linkColor: linkColor,
-            removePollLink: false,
-            prefixText: '@${retweet.user.screenName}：',
-            prefixStyle: TextStyle(
-              fontWeight: context.adjustWeight(FontWeight.bold),
-              fontSize: weiboStyle.fontSize - 1,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ),
+      shouldExpandWhenLoaded: (_) => true,
     );
   }
 
@@ -783,10 +617,10 @@ class _TweetCardState extends ConsumerState<TweetCard> {
     final cardMargin = isDetail
         ? EdgeInsets.zero
         : (isFloating
-            ? const EdgeInsets.symmetric(horizontal: 10, vertical: 6)
-            : (layout == 'card_rounded'
-                ? const EdgeInsets.symmetric(horizontal: 8, vertical: 4)
-                : EdgeInsets.zero));
+              ? const EdgeInsets.symmetric(horizontal: 10, vertical: 6)
+              : (layout == 'card_rounded'
+                    ? const EdgeInsets.symmetric(horizontal: 8, vertical: 4)
+                    : EdgeInsets.zero));
 
     final cardElevation = isDetail
         ? 0.0
@@ -797,273 +631,278 @@ class _TweetCardState extends ConsumerState<TweetCard> {
       side: (isNormal && !isDetail)
           ? BorderSide(
               color: Theme.of(context).dividerColor.withValues(alpha: 0.15),
-              width: 0.5)
+              width: 0.5,
+            )
           : BorderSide.none,
     );
 
-    final cardWidget = Card(
+    final cardWidget = ReviewCard(
       margin: cardMargin,
       elevation: cardElevation,
       shape: cardShape,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(isRounded ? 22 : 0),
-        enableFeedback: false,
-        onTap: isDetail
-            ? null
-            : () {
-                try {
-                  final storage = ref.read(storageServiceProvider);
-                  storage.recordViewedStatusJson(
-                      status.id, jsonEncode(status.toJson()));
-                } catch (_) {}
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (ctx) => StatusDetailPage(status: status),
-                  ),
+      enableFeedback: false,
+      onTap: isDetail
+          ? null
+          : () {
+              try {
+                final storage = ref.read(storageServiceProvider);
+                storage.recordViewedStatusJson(
+                  status.id,
+                  jsonEncode(status.toJson()),
                 );
-              },
-        onLongPress: isDetail
-            ? null
-            : () {
-                _showMoreOptions(context);
-              },
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 0. Top Pinned or Title Banner (置顶 / 热门 / 赞过)
-              if (status.isTop || status.titleText == '置顶') ...[
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2.5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF4CAF50).withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color:
-                              const Color(0xFF4CAF50).withValues(alpha: 0.35),
-                          width: 0.6,
-                        ),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.push_pin_rounded,
-                            size: 11,
-                            color: Color(0xFF388E3C),
-                          ),
-                          SizedBox(width: 3),
-                          Text(
-                            '置顶',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF2E7D32),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+              } catch (_) {}
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (ctx) => StatusDetailPage(status: status),
                 ),
-                const SizedBox(height: 6),
-              ] else if (status.titleText == '热门' ||
-                  status.titleText?.contains('热门') == true) ...[
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2.5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFF5722).withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color:
-                              const Color(0xFFFF5722).withValues(alpha: 0.35),
-                          width: 0.6,
-                        ),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.local_fire_department_rounded,
-                            size: 12,
-                            color: Color(0xFFFF5722),
-                          ),
-                          SizedBox(width: 2.5),
-                          Text(
-                            '热门',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFFFF5722),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-              ] else if (status.titleText != null &&
-                  status.titleText!.isNotEmpty &&
-                  status.visibilityLabel == null) ...[
-                Row(
-                  children: [
-                    Icon(
-                      status.titleText!.contains('赞')
-                          ? Icons.favorite_rounded
-                          : Icons.repeat_rounded,
-                      size: 13,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .primary
-                          .withValues(alpha: 0.8),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      status.titleText!,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(context)
-                            .colorScheme
-                            .primary
-                            .withValues(alpha: 0.8),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-              ],
-
-              // 1. Author Header Row (Clickable to UserProfilePage)
-              // Keep the compose-page short labels ("粉丝"/"好友" etc.)
-              // separate from the content label. On cards, restricted posts
-              // need an explicit scope, and the timeline should show it too.
-              if (isDetail ||
-                  (status.visibilityType != null &&
-                      status.visibilityType != 0 &&
-                      status.visibilityLabel != null))
-                _buildVisibilityBanner(context, status),
-              _buildHeaderRow(context, status.user, weiboStyle),
-
-              // 1.5 Super Topic (超话) Badge
-              if (status.chaohuaTitle != null &&
-                  status.chaohuaTitle!.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () {
-                    HapticFeedbackUtil.light();
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (ctx) => ChaohuaDetailPage(
-                          containerid: status.chaohuaContainerId ?? '',
-                          title: status.chaohuaTitle!,
-                          avatar: status.chaohuaAvatar,
-                        ),
-                      ),
-                    );
-                  },
-                  child: Container(
+              );
+            },
+      onLongPress: isDetail ? null : () => _showMoreOptions(context),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 0. Top Pinned or Title Banner (置顶 / 热门 / 赞过)
+            if (status.isTop || status.titleText == '置顶') ...[
+              Row(
+                children: [
+                  Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 9, vertical: 3.5),
+                      horizontal: 8,
+                      vertical: 2.5,
+                    ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFF8200).withValues(alpha: 0.12),
+                      color: const Color(0xFF4CAF50).withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: const Color(0xFFFF8200).withValues(alpha: 0.3),
-                        width: 0.8,
+                        color: const Color(0xFF4CAF50).withValues(alpha: 0.35),
+                        width: 0.6,
                       ),
                     ),
-                    child: Row(
+                    child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.diamond_rounded,
-                            size: 13, color: Color(0xFFFF8200)),
-                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.push_pin_rounded,
+                          size: 11,
+                          color: Color(0xFF388E3C),
+                        ),
+                        SizedBox(width: 3),
                         Text(
-                          status.chaohuaTitle!,
-                          style: const TextStyle(
-                            fontSize: 12,
+                          '置顶',
+                          style: TextStyle(
+                            fontSize: 11,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFFFF8200),
+                            color: Color(0xFF2E7D32),
                           ),
                         ),
-                        const SizedBox(width: 2),
-                        const Icon(Icons.chevron_right_rounded,
-                            size: 14, color: Color(0xFFFF8200)),
                       ],
                     ),
                   ),
-                ),
-              ],
-              const SizedBox(height: 10),
-
-              // 2. Main Rich Text with Long Text Expand/Collapse Support
-              _buildMainText(
-                context,
-                weiboStyle,
-                linkColor,
-                contentAfterText: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 3. Media Grid (if original has pictures)
-                    if (status.pics.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      NineGridView(
-                        pics: status.pics,
-                        statusId: status.id,
-                        isDetail: isDetail,
-                        authorName: status.user.screenName,
-                        webpageCardCaption: _birthdayWebpageCardCaption(status),
+                ],
+              ),
+              const SizedBox(height: 6),
+            ] else if (status.titleText == '热门' ||
+                status.titleText?.contains('热门') == true) ...[
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2.5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF5722).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: const Color(0xFFFF5722).withValues(alpha: 0.35),
+                        width: 0.6,
                       ),
-                    ] else if (status.hasVideo) ...[
-                      // 3.5 Native Video Preview Card
-                      const SizedBox(height: 10),
-                      _buildVideoPreviewCard(context, status),
-                    ],
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.local_fire_department_rounded,
+                          size: 12,
+                          color: Color(0xFFFF5722),
+                        ),
+                        SizedBox(width: 2.5),
+                        Text(
+                          '热门',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFFF5722),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+            ] else if (status.titleText != null &&
+                status.titleText!.isNotEmpty &&
+                status.visibilityLabel == null) ...[
+              Row(
+                children: [
+                  Icon(
+                    status.titleText!.contains('赞')
+                        ? Icons.favorite_rounded
+                        : Icons.repeat_rounded,
+                    size: 13,
+                    color: Theme.of(context).colorScheme.primary
+                        .withValues(alpha: 0.8),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    status.titleText!,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).colorScheme.primary
+                          .withValues(alpha: 0.8),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+            ],
 
-                    // 3.8 Official Weibo poll card
-                    if (poll != null) ...[
-                      const SizedBox(height: 10),
-                      _buildPollCard(context, poll),
-                    ],
+            // 1. Author Header Row (Clickable to UserProfilePage)
+            // Keep the compose-page short labels ("粉丝"/"好友" etc.)
+            // separate from the content label. On cards, restricted posts
+            // need an explicit scope, and the timeline should show it too.
+            if (isDetail ||
+                (status.visibilityType != null &&
+                    status.visibilityType != 0 &&
+                    status.visibilityLabel != null))
+              _buildVisibilityBanner(context, status),
+            _buildHeaderRow(context, status.user, weiboStyle),
 
-                    // 4. Retweeted Quote Card (if retweeted)
-                    if (status.retweetedStatus != null) ...[
-                      const SizedBox(height: 10),
-                      _buildRetweetCard(context, status.retweetedStatus!,
-                          weiboStyle, linkColor),
-                    ],
-
-                    // 4.5 Official hot-search topic card embedded in the status
-                    if (status.hotTopic != null) ...[
-                      const SizedBox(height: 10),
-                      _buildHotTopicCard(
-                        context,
-                        status.hotTopic!,
-                        weiboStyle.fontSize,
+            // 1.5 Super Topic (超话) Badge
+            if (status.chaohuaTitle != null &&
+                status.chaohuaTitle!.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () {
+                  HapticFeedbackUtil.light();
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (ctx) => ChaohuaDetailPage(
+                        containerid: status.chaohuaContainerId ?? '',
+                        title: status.chaohuaTitle!,
+                        avatar: status.chaohuaAvatar,
+                      ),
+                    ),
+                  );
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 3.5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFF8200).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: const Color(0xFFFF8200).withValues(alpha: 0.3),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.diamond_rounded,
+                        size: 13,
+                        color: Color(0xFFFF8200),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        status.chaohuaTitle!,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFFFF8200),
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        size: 14,
+                        color: Color(0xFFFF8200),
                       ),
                     ],
-                  ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 12),
-              const Divider(height: 1, thickness: 0.5),
-              const SizedBox(height: 4),
-
-              // 6. Bottom Action Bar (Repost, Comment, Like, More Options)
-              _buildActionBar(
-                  context, Theme.of(context).colorScheme, weiboStyle),
             ],
-          ),
+            const SizedBox(height: 10),
+
+            // 2. Main Rich Text with Long Text Expand/Collapse Support
+            _buildMainText(
+              context,
+              weiboStyle,
+              linkColor,
+              contentAfterText: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 3. Media Grid (if original has pictures)
+                  if (status.pics.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    NineGridView(
+                      pics: status.pics,
+                      statusId: status.id,
+                      isDetail: isDetail,
+                      authorName: status.user.screenName,
+                      webpageCardCaption: _birthdayWebpageCardCaption(status),
+                    ),
+                  ] else if (status.hasVideo) ...[
+                    // 3.5 Native Video Preview Card
+                    const SizedBox(height: 10),
+                    _buildVideoPreviewCard(context, status),
+                  ],
+
+                  // 3.8 Official Weibo poll card
+                  if (poll != null) ...[
+                    const SizedBox(height: 10),
+                    _buildPollCard(context, poll),
+                  ],
+
+                  // 4. Retweeted Quote Card (if retweeted)
+                  if (status.retweetedStatus != null) ...[
+                    const SizedBox(height: 10),
+                    _buildRetweetCard(
+                      context,
+                      status.retweetedStatus!,
+                      weiboStyle,
+                      linkColor,
+                    ),
+                  ],
+
+                  // 4.5 Official hot-search topic card embedded in the status
+                  if (status.hotTopic != null) ...[
+                    const SizedBox(height: 10),
+                    _buildHotTopicCard(
+                      context,
+                      status.hotTopic!,
+                      weiboStyle.fontSize,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Divider(height: 1, thickness: 0.5),
+            const SizedBox(height: 4),
+
+            // 6. Bottom Action Bar (Repost, Comment, Like, More Options)
+            _buildActionBar(context, Theme.of(context).colorScheme, weiboStyle),
+          ],
         ),
       ),
     );
@@ -1077,10 +916,8 @@ class _TweetCardState extends ConsumerState<TweetCard> {
             height: 8,
             color: Theme.of(context).brightness == Brightness.dark
                 ? const Color(0xFF101114)
-                : Theme.of(context)
-                    .colorScheme
-                    .surfaceContainerHighest
-                    .withValues(alpha: 0.35),
+                : Theme.of(context).colorScheme.surfaceContainerHighest
+                      .withValues(alpha: 0.35),
           ),
         ],
       );
@@ -1090,12 +927,15 @@ class _TweetCardState extends ConsumerState<TweetCard> {
   }
 
   Widget _buildMainText(
-      BuildContext context, WeiboStyleSettings weiboStyle, Color linkColor,
-      {Widget? contentAfterText}) {
+    BuildContext context,
+    WeiboStyleSettings weiboStyle,
+    Color linkColor, {
+    Widget? contentAfterText,
+  }) {
     final status = widget.status;
     final isDetail = widget.isDetail;
     return LayoutBuilder(
-      builder: (textContext, constraints) {
+      builder: (textContext, _) {
         final availableLongText = _loadedLongText ?? status.fullTextRaw;
         final textColor = Theme.of(textContext).colorScheme.onSurface;
         final defaultStyle = TextStyle(
@@ -1103,28 +943,24 @@ class _TweetCardState extends ConsumerState<TweetCard> {
           height: weiboStyle.fontLineHeight,
           color: textColor,
         );
-        final hasMoreMainText = status.isLongText &&
+        final hasMoreMainText =
+            status.isLongText &&
             ((availableLongText == null || availableLongText.isEmpty)
                 ? _hasUnresolvedTextPreview(status)
                 : _shouldCollapseLongText(
-                    context: textContext,
                     status: status,
                     fullText: availableLongText,
-                    maxWidth: constraints.maxWidth,
-                    defaultStyle: defaultStyle,
-                    linkColor: linkColor,
                   ));
-        // If the official full text adds no rendered lines, show it in the
-        // card immediately. A toggle is reserved for a real visual expansion.
-        final isShowingFull =
-            isDetail || _isExpanded || (status.isLongText && !hasMoreMainText);
+        final isShowingFull = isDetail || _isExpanded;
         final rawTextToDisplay = isShowingFull
             ? (availableLongText ?? status.effectiveText)
             : status.textRaw;
         // The birthday greeting belongs inside its generated image card, not
         // duplicated as a separate body line above it.
-        final bodyWithoutCardCaption =
-            _removeBirthdayCardCaptionFromBody(rawTextToDisplay, status);
+        final bodyWithoutCardCaption = _removeBirthdayCardCaptionFromBody(
+          rawTextToDisplay,
+          status,
+        );
         // Timeline text can end in a server-supplied newline, which Text.rich
         // lays out as a distracting empty line; detail text is preserved.
         final visibleText = _removeEmbeddedPollLink(
@@ -1161,18 +997,12 @@ class _TweetCardState extends ConsumerState<TweetCard> {
               const SizedBox(height: 4),
               InkWell(
                 borderRadius: BorderRadius.circular(6),
-                onTap: _isLoadingLongText
-                    ? null
-                    : () => _toggleMainExpand(
-                          context: textContext,
-                          maxWidth: constraints.maxWidth,
-                          weiboStyle: weiboStyle,
-                          linkColor: linkColor,
-                          hasMoreContent: hasMoreMainText,
-                        ),
+                onTap: _isLoadingLongText ? null : _toggleMainExpand,
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 4,
+                    horizontal: 2,
+                  ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -1245,10 +1075,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
   /// Detail responses fill the visibility metadata asynchronously. Keep a
   /// fixed-height slot so the author header and body do not jump when the
   /// official response arrives; only the slot's contents change.
-  Widget _buildVisibilityBanner(
-    BuildContext context,
-    WeiboStatusModel status,
-  ) {
+  Widget _buildVisibilityBanner(BuildContext context, WeiboStatusModel status) {
     final label = status.visibilityLabel;
     final colorScheme = Theme.of(context).colorScheme;
     return SizedBox(
@@ -1268,10 +1095,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                   const SizedBox(width: 6),
                   Text(
                     label,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: colorScheme.primary,
-                    ),
+                    style: TextStyle(fontSize: 14, color: colorScheme.primary),
                   ),
                 ],
               ),
@@ -1293,7 +1117,8 @@ class _TweetCardState extends ConsumerState<TweetCard> {
       language: 'zh',
     );
 
-    final showIp = weiboStyle.showIpLocationMode == 'all' ||
+    final showIp =
+        weiboStyle.showIpLocationMode == 'all' ||
         (weiboStyle.showIpLocationMode == 'detail_only' && widget.isDetail);
 
     return Row(
@@ -1305,7 +1130,10 @@ class _TweetCardState extends ConsumerState<TweetCard> {
             Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (ctx) => UserProfilePage(
-                    user: user, uid: user.id, screenName: user.screenName),
+                  user: user,
+                  uid: user.id,
+                  screenName: user.screenName,
+                ),
               ),
             );
           },
@@ -1327,7 +1155,10 @@ class _TweetCardState extends ConsumerState<TweetCard> {
               Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (ctx) => UserProfilePage(
-                      user: user, uid: user.id, screenName: user.screenName),
+                    user: user,
+                    uid: user.id,
+                    screenName: user.screenName,
+                  ),
                 ),
               );
             },
@@ -1361,8 +1192,11 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                     ],
                     if (weiboStyle.showUserActivityIcon && user.verified) ...[
                       const SizedBox(width: 4),
-                      Icon(Icons.verified,
-                          size: 14, color: colorScheme.primary),
+                      Icon(
+                        Icons.verified,
+                        size: 14,
+                        color: colorScheme.primary,
+                      ),
                     ],
                   ],
                 ),
@@ -1419,10 +1253,13 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                         },
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 5, vertical: 1),
+                            horizontal: 5,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
-                            color: colorScheme.secondaryContainer
-                                .withValues(alpha: 0.85),
+                            color: colorScheme.secondaryContainer.withValues(
+                              alpha: 0.85,
+                            ),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
@@ -1471,8 +1308,9 @@ class _TweetCardState extends ConsumerState<TweetCard> {
         width: double.infinity,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color:
-              theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          color: theme.colorScheme.surfaceContainerHighest.withValues(
+            alpha: 0.5,
+          ),
           borderRadius: BorderRadius.circular(retweetRadius),
           border: Border.all(
             color: theme.colorScheme.outlineVariant.withValues(alpha: 0.2),
@@ -1483,7 +1321,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             LayoutBuilder(
-              builder: (textContext, constraints) {
+              builder: (textContext, _) {
                 final availableLongText =
                     _loadedRetweetLongText ?? retweet.fullTextRaw;
                 final prefixText = '@${retweet.user.screenName}：';
@@ -1497,23 +1335,16 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                   height: weiboStyle.fontLineHeight,
                   color: theme.colorScheme.onSurfaceVariant,
                 );
-                final hasMoreText = retweet.isLongText &&
+                final hasMoreText =
+                    retweet.isLongText &&
                     ((availableLongText == null || availableLongText.isEmpty)
                         ? _hasUnresolvedTextPreview(retweet)
                         : _shouldCollapseLongText(
-                            context: textContext,
                             status: retweet,
                             fullText: availableLongText,
-                            maxWidth: constraints.maxWidth,
-                            defaultStyle: defaultStyle,
-                            linkColor: linkColor,
                             removePollLink: false,
-                            prefixText: prefixText,
-                            prefixStyle: prefixStyle,
                           ));
-                final isShowingFull = widget.isDetail ||
-                    _isRetweetExpanded ||
-                    (retweet.isLongText && !hasMoreText);
+                final isShowingFull = widget.isDetail || _isRetweetExpanded;
                 final textToDisplay = isShowingFull
                     ? (availableLongText ?? retweet.effectiveText)
                     : retweet.textRaw;
@@ -1558,8 +1389,9 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                         statusId: retweet.id,
                         isDetail: widget.isDetail,
                         authorName: retweet.user.screenName,
-                        webpageCardCaption:
-                            _birthdayWebpageCardCaption(retweet),
+                        webpageCardCaption: _birthdayWebpageCardCaption(
+                          retweet,
+                        ),
                       ),
                     ] else if (retweet.hasVideo) ...[
                       const SizedBox(height: 8),
@@ -1572,14 +1404,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                       InkWell(
                         onTap: _isLoadingRetweetLongText
                             ? null
-                            : () => _toggleRetweetExpand(
-                                  context: textContext,
-                                  retweet: retweet,
-                                  maxWidth: constraints.maxWidth,
-                                  weiboStyle: weiboStyle,
-                                  linkColor: linkColor,
-                                  hasMoreContent: hasMoreText,
-                                ),
+                            : () => _toggleRetweetExpand(retweet: retweet),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(vertical: 2),
                           child: Row(
@@ -1635,9 +1460,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
       storage.recordViewedStatusJson(retweet.id, jsonEncode(retweet.toJson()));
     } catch (_) {}
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (ctx) => StatusDetailPage(status: retweet),
-      ),
+      MaterialPageRoute(builder: (ctx) => StatusDetailPage(status: retweet)),
     );
   }
 
@@ -1670,10 +1493,9 @@ class _TweetCardState extends ConsumerState<TweetCard> {
     if (_isSubmittingPoll) return;
     setState(() => _isSubmittingPoll = true);
 
-    final result = await ref.read(feedRepositoryProvider).setPollVote(
-          voteId: poll.id,
-          optionIds: optionIds,
-        );
+    final result = await ref
+        .read(feedRepositoryProvider)
+        .setPollVote(voteId: poll.id, optionIds: optionIds);
     if (!mounted) return;
 
     setState(() {
@@ -1718,12 +1540,12 @@ class _TweetCardState extends ConsumerState<TweetCard> {
     if (_isLoadingPollResult) return null;
     setState(() => _isLoadingPollResult = true);
 
-    final statusId =
-        widget.status.mid.isNotEmpty ? widget.status.mid : widget.status.id;
-    final refreshed = await ref.read(feedRepositoryProvider).getPollResult(
-          statusId: statusId,
-          pollId: poll.id,
-        );
+    final statusId = widget.status.mid.isNotEmpty
+        ? widget.status.mid
+        : widget.status.id;
+    final refreshed = await ref
+        .read(feedRepositoryProvider)
+        .getPollResult(statusId: statusId, pollId: poll.id);
     if (!mounted) return refreshed;
 
     setState(() {
@@ -1738,7 +1560,8 @@ class _TweetCardState extends ConsumerState<TweetCard> {
     final options = _showAllPollOptions || poll.options.length <= 3
         ? poll.options
         : poll.options.take(3).toList();
-    final showResult = _hasPollResultData(poll) &&
+    final showResult =
+        _hasPollResultData(poll) &&
         (_showPollResults || poll.hasVoted || poll.isEnded);
     final participantCount = poll.participantCount;
 
@@ -1782,9 +1605,9 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                 onPressed: _isSubmittingPoll
                     ? null
                     : () => _submitPollVote(
-                          poll,
-                          _selectedPollOptionIds.toList(),
-                        ),
+                        poll,
+                        _selectedPollOptionIds.toList(),
+                      ),
                 child: Text(_isSubmittingPoll ? '提交中…' : '提交投票'),
               ),
             ),
@@ -1861,7 +1684,8 @@ class _TweetCardState extends ConsumerState<TweetCard> {
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final percent = option.percent ?? _calculatePollPercent(poll, option);
-    final selected = !showResult &&
+    final selected =
+        !showResult &&
         poll.isMultiChoice &&
         _selectedPollOptionIds.contains(option.id);
 
@@ -1871,11 +1695,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
       enableFeedback: false,
       onTap: showResult || poll.hasVoted || poll.isEnded
           ? null
-          : () => _handlePollOptionTap(
-                poll,
-                option,
-                showResult: showResult,
-              ),
+          : () => _handlePollOptionTap(poll, option, showResult: showResult),
       child: Container(
         width: double.infinity,
         constraints: const BoxConstraints(minHeight: 48),
@@ -1886,8 +1706,8 @@ class _TweetCardState extends ConsumerState<TweetCard> {
             color: showResult
                 ? colorScheme.outlineVariant.withValues(alpha: 0.7)
                 : selected
-                    ? colorScheme.primary
-                    : colorScheme.outline.withValues(alpha: 0.8),
+                ? colorScheme.primary
+                : colorScheme.outline.withValues(alpha: 0.8),
           ),
           color: selected
               ? colorScheme.primary.withValues(alpha: 0.10)
@@ -1944,20 +1764,14 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                 child: Text(
                   option.text,
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: colorScheme.primary,
-                  ),
+                  style: TextStyle(fontSize: 16, color: colorScheme.primary),
                 ),
               ),
       ),
     );
   }
 
-  double _calculatePollPercent(
-    WeiboPollModel poll,
-    WeiboPollOption option,
-  ) {
+  double _calculatePollPercent(WeiboPollModel poll, WeiboPollOption option) {
     final total = poll.options.fold<int>(0, (sum, item) => sum + item.votes);
     if (total <= 0) return 0;
     return option.votes * 100 / total;
@@ -2143,7 +1957,8 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                   videoUrl: streamUrl,
                   statusId: status.id,
                   coverUrl: coverUrl,
-                  title: status.videoTitle ??
+                  title:
+                      status.videoTitle ??
                       (status.effectiveText.length > 30
                           ? '${status.effectiveText.substring(0, 30)}...'
                           : status.effectiveText),
@@ -2168,15 +1983,20 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                     errorBuilder: (_, __, ___) => Container(
                       color: colorScheme.surfaceContainerHighest,
                       child: const Center(
-                          child: Icon(Icons.video_library_rounded, size: 36)),
+                        child: Icon(Icons.video_library_rounded, size: 36),
+                      ),
                     ),
                   )
                 else
                   Container(
                     color: Colors.black87,
                     child: const Center(
-                        child: Icon(Icons.video_library_rounded,
-                            size: 36, color: Colors.white70)),
+                      child: Icon(
+                        Icons.video_library_rounded,
+                        size: 36,
+                        color: Colors.white70,
+                      ),
+                    ),
                   ),
 
                 // Center Play Button
@@ -2189,8 +2009,11 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.white70, width: 1.5),
                     ),
-                    child: const Icon(Icons.play_arrow_rounded,
-                        color: Colors.white, size: 34),
+                    child: const Icon(
+                      Icons.play_arrow_rounded,
+                      color: Colors.white,
+                      size: 34,
+                    ),
                   ),
                 ),
 
@@ -2200,8 +2023,10 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                   left: 0,
                   right: 0,
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.bottomCenter,
@@ -2216,16 +2041,19 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                           Text(
                             playCountStr,
                             style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w500),
+                              color: Colors.white,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w500,
+                            ),
                           )
                         else
                           const SizedBox.shrink(),
                         if (duration != null && duration.isNotEmpty)
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.black54,
                               borderRadius: BorderRadius.circular(4),
@@ -2233,9 +2061,10 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                             child: Text(
                               duration,
                               style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold),
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
                           ),
                       ],

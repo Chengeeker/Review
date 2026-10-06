@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../utils/haptic_feedback_util.dart';
 
 /// Material Design 3 Palette and OLED Pure Black Definition
@@ -28,13 +29,17 @@ class AppTheme {
     if (adjustment == 0) return base;
     final step = (adjustment / 100).round();
     final currentIndex = (base.value ~/ 100) - 1;
-    final targetIndex =
-        (currentIndex + step).clamp(0, FontWeight.values.length - 1);
+    final targetIndex = (currentIndex + step).clamp(
+      0,
+      FontWeight.values.length - 1,
+    );
     return FontWeight.values[targetIndex];
   }
 
   static TextTheme _adjustTextThemeFontWeights(
-      TextTheme theme, int adjustment) {
+    TextTheme theme,
+    int adjustment,
+  ) {
     TextStyle? adj(TextStyle? style) {
       if (style == null) return null;
       final currentWeight = style.fontWeight ?? FontWeight.w400;
@@ -68,19 +73,28 @@ class AppTheme {
     required ColorScheme scheme,
     required int fontWeightAdjustment,
   }) {
-    final baseTypography =
-        Typography.material2021(platform: TargetPlatform.android);
+    final baseTypography = Typography.material2021(
+      platform: TargetPlatform.android,
+    );
     final rawTextTheme = isDark ? baseTypography.white : baseTypography.black;
-    final textTheme =
-        _adjustTextThemeFontWeights(rawTextTheme, fontWeightAdjustment);
+    final textTheme = _adjustTextThemeFontWeights(
+      rawTextTheme,
+      fontWeightAdjustment,
+    );
 
     return textTheme.copyWith(
-      bodyLarge: textTheme.bodyLarge
-          ?.copyWith(color: scheme.onSurface, letterSpacing: 0.0),
-      bodyMedium: textTheme.bodyMedium
-          ?.copyWith(color: scheme.onSurface, letterSpacing: 0.0),
-      bodySmall: textTheme.bodySmall
-          ?.copyWith(color: scheme.onSurfaceVariant, letterSpacing: 0.0),
+      bodyLarge: textTheme.bodyLarge?.copyWith(
+        color: scheme.onSurface,
+        letterSpacing: 0.0,
+      ),
+      bodyMedium: textTheme.bodyMedium?.copyWith(
+        color: scheme.onSurface,
+        letterSpacing: 0.0,
+      ),
+      bodySmall: textTheme.bodySmall?.copyWith(
+        color: scheme.onSurfaceVariant,
+        letterSpacing: 0.0,
+      ),
       titleLarge: textTheme.titleLarge?.copyWith(
         color: scheme.onSurface,
         fontWeight: adjustFontWeight(FontWeight.bold, fontWeightAdjustment),
@@ -113,11 +127,9 @@ class AppTheme {
     int fontWeightAdjustment = 0,
   }) {
     final seed = getSeedColor(colorIndex);
-    final scheme = dynamicColorScheme ??
-        ColorScheme.fromSeed(
-          seedColor: seed,
-          brightness: Brightness.light,
-        );
+    final scheme =
+        dynamicColorScheme ??
+        ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.light);
 
     final textTheme = _buildAdjustedTextTheme(
       isDark: false,
@@ -159,9 +171,7 @@ class AppTheme {
       listTileTheme: ListTileThemeData(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
         minVerticalPadding: 8,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         titleTextStyle: TextStyle(
           fontWeight: adjustFontWeight(FontWeight.w600, fontWeightAdjustment),
           color: scheme.onSurface,
@@ -240,8 +250,10 @@ class AppTheme {
           if (states.contains(WidgetState.selected)) {
             return TextStyle(
               fontSize: 12,
-              fontWeight:
-                  adjustFontWeight(FontWeight.bold, fontWeightAdjustment),
+              fontWeight: adjustFontWeight(
+                FontWeight.bold,
+                fontWeightAdjustment,
+              ),
               color: scheme.primary,
             );
           }
@@ -266,15 +278,14 @@ class AppTheme {
     int fontWeightAdjustment = 0,
   }) {
     final seed = getSeedColor(colorIndex);
-    final scheme = dynamicColorScheme ??
-        ColorScheme.fromSeed(
-          seedColor: seed,
-          brightness: Brightness.dark,
-        );
+    final scheme =
+        dynamicColorScheme ??
+        ColorScheme.fromSeed(seedColor: seed, brightness: Brightness.dark);
 
     final bgColor = isPureBlack ? Colors.black : const Color(0xFF111215);
-    final cardColor =
-        isPureBlack ? const Color(0xFF121212) : const Color(0xFF1B1C20);
+    final cardColor = isPureBlack
+        ? const Color(0xFF121212)
+        : const Color(0xFF1B1C20);
     final appBarColor = isPureBlack ? Colors.black : const Color(0xFF111215);
     final navBgColor = isPureBlack ? Colors.black : const Color(0xFF16171B);
 
@@ -329,9 +340,7 @@ class AppTheme {
       listTileTheme: ListTileThemeData(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
         minVerticalPadding: 8,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         titleTextStyle: TextStyle(
           fontWeight: adjustFontWeight(FontWeight.w600, fontWeightAdjustment),
           color: effectiveScheme.onSurface,
@@ -379,8 +388,9 @@ class AppTheme {
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         showDragHandle: true,
-        dragHandleColor:
-            effectiveScheme.onSurfaceVariant.withValues(alpha: 0.4),
+        dragHandleColor: effectiveScheme.onSurfaceVariant.withValues(
+          alpha: 0.4,
+        ),
         dragHandleSize: const Size(38, 4.5),
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
@@ -393,9 +403,11 @@ class AppTheme {
       searchBarTheme: SearchBarThemeData(
         shape: const WidgetStatePropertyAll(StadiumBorder()),
         elevation: const WidgetStatePropertyAll(0),
-        backgroundColor: WidgetStatePropertyAll(isPureBlack
-            ? const Color(0xFF1C1C1E)
-            : effectiveScheme.surfaceContainerHigh),
+        backgroundColor: WidgetStatePropertyAll(
+          isPureBlack
+              ? const Color(0xFF1C1C1E)
+              : effectiveScheme.surfaceContainerHigh,
+        ),
       ),
       navigationBarTheme: NavigationBarThemeData(
         elevation: 0,
@@ -415,8 +427,10 @@ class AppTheme {
           if (states.contains(WidgetState.selected)) {
             return TextStyle(
               fontSize: 12,
-              fontWeight:
-                  adjustFontWeight(FontWeight.bold, fontWeightAdjustment),
+              fontWeight: adjustFontWeight(
+                FontWeight.bold,
+                fontWeightAdjustment,
+              ),
               color: effectiveScheme.primary,
             );
           }

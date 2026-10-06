@@ -6,11 +6,7 @@ class AppSectionCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry? margin;
 
-  const AppSectionCard({
-    super.key,
-    required this.child,
-    this.margin,
-  });
+  const AppSectionCard({super.key, required this.child, this.margin});
 
   @override
   Widget build(BuildContext context) {

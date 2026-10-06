@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/storage/storage_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/theme_provider.dart';
@@ -48,7 +49,9 @@ class HotTrendsViewState extends ConsumerState<HotTrendsView>
     super.initState();
     _categoryListKeys.addAll(
       List.generate(
-          _categories.length, (_) => GlobalKey<_HotCategoryListViewState>()),
+        _categories.length,
+        (_) => GlobalKey<_HotCategoryListViewState>(),
+      ),
     );
     _tabController = TabController(
       length: _categories.length,
@@ -110,8 +113,9 @@ class HotTrendsViewState extends ConsumerState<HotTrendsView>
     // Read the same effective setting that builds MaterialApp's theme. This
     // keeps the tab labels responsive even when the font option changes while
     // this page is already open, instead of inferring it from bodyMedium.
-    final fontWeightAdjustment =
-        ref.watch(themeProvider).effectiveFontWeightAdjustment;
+    final fontWeightAdjustment = ref
+        .watch(themeProvider)
+        .effectiveFontWeightAdjustment;
 
     final appBar = AppBar(
       title: const Text('微博热搜', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -122,9 +126,8 @@ class HotTrendsViewState extends ConsumerState<HotTrendsView>
           tooltip: '搜索',
           onPressed: () {
             HapticFeedbackUtil.light();
-            Navigator.of(context).push(
-              MaterialPageRoute(builder: (ctx) => const SearchView()),
-            );
+            Navigator.of(context)
+                .push(MaterialPageRoute(builder: (ctx) => const SearchView()));
           },
         ),
         const SizedBox(width: 4),
@@ -153,6 +156,16 @@ class HotTrendsViewState extends ConsumerState<HotTrendsView>
       ),
     );
 
+    final body = TabBarView(
+      controller: _tabController,
+      children: List.generate(_categories.length, (index) {
+        final category = _categories[index];
+        return _HotCategoryListView(
+          key: _categoryListKeys[index],
+          categoryKey: category['key']!,
+        );
+      }),
+    );
     return Scaffold(
       appBar: PreferredSize(
         preferredSize: appBar.preferredSize,
@@ -162,16 +175,7 @@ class HotTrendsViewState extends ConsumerState<HotTrendsView>
           child: appBar,
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: List.generate(_categories.length, (index) {
-          final category = _categories[index];
-          return _HotCategoryListView(
-            key: _categoryListKeys[index],
-            categoryKey: category['key']!,
-          );
-        }),
-      ),
+      body: body,
     );
   }
 }
@@ -180,10 +184,7 @@ class HotTrendsViewState extends ConsumerState<HotTrendsView>
 class _HotCategoryListView extends ConsumerStatefulWidget {
   final String categoryKey;
 
-  const _HotCategoryListView({
-    super.key,
-    required this.categoryKey,
-  });
+  const _HotCategoryListView({super.key, required this.categoryKey});
 
   @override
   ConsumerState<_HotCategoryListView> createState() =>
@@ -270,14 +271,18 @@ class _HotCategoryListViewState extends ConsumerState<_HotCategoryListView>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.local_fire_department_outlined,
-                size: 48,
-                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
+            Icon(
+              Icons.local_fire_department_outlined,
+              size: 48,
+              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+            ),
             const SizedBox(height: 12),
             Text(
               '暂无该分类热搜',
-              style:
-                  TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
+              style: TextStyle(
+                color: colorScheme.onSurfaceVariant,
+                fontSize: 14,
+              ),
             ),
             const SizedBox(height: 16),
             FilledButton.tonal(
@@ -345,8 +350,9 @@ class _HotCategoryListViewState extends ConsumerState<_HotCategoryListView>
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 15,
-                              fontWeight:
-                                  context.adjustWeight(FontWeight.normal),
+                              fontWeight: context.adjustWeight(
+                                FontWeight.normal,
+                              ),
                               color: colorScheme.onSurface,
                             ),
                           ),
@@ -396,11 +402,7 @@ class _HotCategoryListViewState extends ConsumerState<_HotCategoryListView>
     if (item.isPinned) {
       return const Align(
         alignment: Alignment.centerLeft,
-        child: Icon(
-          Icons.push_pin_rounded,
-          size: 22,
-          color: Color(0xFFFF6D00),
-        ),
+        child: Icon(Icons.push_pin_rounded, size: 22, color: Color(0xFFFF6D00)),
       );
     }
 
@@ -500,10 +502,7 @@ class _HotCategoryListViewState extends ConsumerState<_HotCategoryListView>
       ),
       child: Text(
         cat,
-        style: TextStyle(
-          color: colorScheme.onSurfaceVariant,
-          fontSize: 9.5,
-        ),
+        style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 9.5),
       ),
     );
   }

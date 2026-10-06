@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../core/design_system/components/review_card.dart';
+import '../../../core/design_system/components/review_choice_tile.dart';
+import '../../../core/design_system/components/review_page_scaffold.dart';
+import '../../../core/design_system/components/review_switch_tile.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/custom_app_icon_provider.dart';
 import '../../../core/theme/theme_provider.dart';
@@ -8,11 +13,15 @@ import '../../../core/utils/haptic_feedback_util.dart';
 import 'custom_app_icon_page.dart';
 import 'screen_refresh_rate_page.dart';
 
-/// 个性化设置页面 (严格排序：1.明暗模式 2.色彩方案 3.字体粗细 4.导航布局风格 5.应用图标 6.屏幕显示 7.触感与震动)
+/// 个性化设置页面。
 class ThemeSettingsPage extends ConsumerWidget {
   const ThemeSettingsPage({super.key});
 
-  void _showFontWeightDialog(BuildContext context, WidgetRef ref, ThemeState themeState) {
+  void _showFontWeightDialog(
+    BuildContext context,
+    WidgetRef ref,
+    ThemeState themeState,
+  ) {
     HapticFeedbackUtil.light();
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -29,43 +38,51 @@ class ThemeSettingsPage extends ConsumerWidget {
       builder: (ctx) => AlertDialog(
         title: const Text('选择字体粗细'),
         contentPadding: const EdgeInsets.symmetric(vertical: 12),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: options.map((opt) {
-            final label = opt['label'] as String;
-            final delta = opt['delta'] as int;
-            final desc = opt['desc'] as String;
-            final isSelected = themeState.customFontWeightDelta == delta;
+        content: RadioGroup<int>(
+          groupValue: themeState.customFontWeightDelta,
+          onChanged: (val) {
+            if (val == null) return;
+            HapticFeedbackUtil.light();
+            ref.read(themeProvider.notifier).setUseCustomFontWeight(true);
+            ref.read(themeProvider.notifier).setCustomFontWeightDelta(val);
+            Navigator.pop(ctx);
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: options.map((opt) {
+              final label = opt['label'] as String;
+              final delta = opt['delta'] as int;
+              final desc = opt['desc'] as String;
+              final isSelected = themeState.customFontWeightDelta == delta;
 
-            return RadioListTile<int>(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
-              title: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: context.adjustWeight(isSelected ? FontWeight.bold : FontWeight.w600),
-                  color: isSelected ? colorScheme.primary : null,
+              return RadioListTile<int>(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 2,
                 ),
-              ),
-              subtitle: Text(
-                desc,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isSelected ? colorScheme.primary.withValues(alpha: 0.8) : colorScheme.onSurfaceVariant,
+                title: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: context.adjustWeight(
+                      isSelected ? FontWeight.bold : FontWeight.w600,
+                    ),
+                    color: isSelected ? colorScheme.primary : null,
+                  ),
                 ),
-              ),
-              value: delta,
-              groupValue: themeState.customFontWeightDelta,
-              onChanged: (val) {
-                if (val != null) {
-                  HapticFeedbackUtil.light();
-                  ref.read(themeProvider.notifier).setUseCustomFontWeight(true);
-                  ref.read(themeProvider.notifier).setCustomFontWeightDelta(val);
-                  Navigator.pop(ctx);
-                }
-              },
-            );
-          }).toList(),
+                subtitle: Text(
+                  desc,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isSelected
+                        ? colorScheme.primary.withValues(alpha: 0.8)
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                value: delta,
+              );
+            }).toList(),
+          ),
         ),
         actions: [
           TextButton(
@@ -83,15 +100,16 @@ class ThemeSettingsPage extends ConsumerWidget {
     final iconState = ref.watch(customAppIconProvider);
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('个性化'),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    return ReviewPageScaffold(
+      title: '个性化',
+      bodyBuilder: (context, contentInsets) => ListView(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ).add(contentInsets),
         children: [
           // 1. 明暗模式 (Theme Mode)
-          Card(
+          ReviewCard(
             elevation: 0,
             color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
             shape: RoundedRectangleBorder(
@@ -116,45 +134,44 @@ class ThemeSettingsPage extends ConsumerWidget {
                     ),
                   ),
                 ),
-                RadioListTile<ThemeMode>(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                  title: Text('跟随系统', style: TextStyle(fontSize: 15, fontWeight: context.adjustWeight(FontWeight.w600), height: 1.35, letterSpacing: 0.0)),
-                  subtitle: Text('自动匹配系统深色/浅色设置', style: TextStyle(fontSize: 12.5, height: 1.4, letterSpacing: 0.0, color: colorScheme.onSurfaceVariant)),
+                ReviewChoiceTile<ThemeMode>(
+                  title: '跟随系统',
+                  summary: '自动匹配系统深色/浅色设置',
                   value: ThemeMode.system,
                   groupValue: themeState.themeMode,
-                  onChanged: (val) {
-                    HapticFeedbackUtil.light();
-                    if (val != null) ref.read(themeProvider.notifier).setThemeMode(val);
-                  },
+                  onSelected: () => ref
+                      .read(themeProvider.notifier)
+                      .setThemeMode(ThemeMode.system),
                 ),
                 const Divider(height: 1, indent: 56),
-                RadioListTile<ThemeMode>(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                  title: Text('浅色模式', style: TextStyle(fontSize: 15, fontWeight: context.adjustWeight(FontWeight.w600), height: 1.35, letterSpacing: 0.0)),
+                ReviewChoiceTile<ThemeMode>(
+                  title: '浅色模式',
                   value: ThemeMode.light,
                   groupValue: themeState.themeMode,
-                  onChanged: (val) {
-                    HapticFeedbackUtil.light();
-                    if (val != null) ref.read(themeProvider.notifier).setThemeMode(val);
-                  },
+                  onSelected: () => ref
+                      .read(themeProvider.notifier)
+                      .setThemeMode(ThemeMode.light),
                 ),
                 const Divider(height: 1, indent: 56),
-                RadioListTile<ThemeMode>(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                  title: Text('深色模式', style: TextStyle(fontSize: 15, fontWeight: context.adjustWeight(FontWeight.w600), height: 1.35, letterSpacing: 0.0)),
+                ReviewChoiceTile<ThemeMode>(
+                  title: '深色模式',
                   value: ThemeMode.dark,
                   groupValue: themeState.themeMode,
-                  onChanged: (val) {
-                    HapticFeedbackUtil.light();
-                    if (val != null) ref.read(themeProvider.notifier).setThemeMode(val);
-                  },
+                  onSelected: () => ref
+                      .read(themeProvider.notifier)
+                      .setThemeMode(ThemeMode.dark),
                 ),
                 const Divider(height: 1, indent: 16, endIndent: 16),
-                SwitchListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-                  secondary: Icon(Icons.contrast_rounded, color: colorScheme.primary),
-                  title: Text('纯黑深色模式 (OLED 省电)', style: TextStyle(fontSize: 15, fontWeight: context.adjustWeight(FontWeight.w600), height: 1.35, letterSpacing: 0.0)),
-                  subtitle: Text('深色模式下使用纯黑背景（#000000），极致对比度与功耗节省', style: TextStyle(fontSize: 12.5, height: 1.4, letterSpacing: 0.0, color: colorScheme.onSurfaceVariant)),
+                ReviewSwitchTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 3,
+                  ),
+                  leading: Icon(
+                    Icons.contrast_rounded,
+                    color: colorScheme.primary,
+                  ),
+                  title: '纯黑深色模式',
                   value: themeState.isPureBlackDark,
                   onChanged: (val) {
                     HapticFeedbackUtil.light();
@@ -166,8 +183,8 @@ class ThemeSettingsPage extends ConsumerWidget {
           ),
           const SizedBox(height: 14),
 
-          // 2. 色彩方案 (Color Palette)
-          Card(
+          // 色彩方案 (Color Palette)
+          ReviewCard(
             elevation: 0,
             color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
             shape: RoundedRectangleBorder(
@@ -194,11 +211,17 @@ class ThemeSettingsPage extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  SwitchListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-                    secondary: Icon(Icons.auto_awesome_outlined, color: colorScheme.primary),
-                    title: Text('Material You (Monet) 动态取色', style: TextStyle(fontSize: 15, fontWeight: context.adjustWeight(FontWeight.w600), height: 1.35, letterSpacing: 0.0)),
-                    subtitle: Text('从 Android 12+ 壁纸自动提取主色调', style: TextStyle(fontSize: 12.5, height: 1.4, letterSpacing: 0.0, color: colorScheme.onSurfaceVariant)),
+                  ReviewSwitchTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 3,
+                    ),
+                    leading: Icon(
+                      Icons.auto_awesome_outlined,
+                      color: colorScheme.primary,
+                    ),
+                    title: 'Material You (Monet) 动态取色',
+                    summary: '从 Android 12+ 壁纸自动提取主色调',
                     value: themeState.useDynamicColor,
                     onChanged: (val) {
                       HapticFeedbackUtil.light();
@@ -208,10 +231,19 @@ class ThemeSettingsPage extends ConsumerWidget {
                   if (!themeState.useDynamicColor) ...[
                     const Divider(height: 1, indent: 16, endIndent: 16),
                     Padding(
-                      padding: const EdgeInsets.only(left: 16, top: 14, bottom: 10),
+                      padding: const EdgeInsets.only(
+                        left: 16,
+                        top: 14,
+                        bottom: 10,
+                      ),
                       child: Text(
-                        '预置主题配色搭配',
-                        style: TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant, height: 1.35, letterSpacing: 0.0),
+                        'Material 3 预置主题色',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: colorScheme.onSurfaceVariant,
+                          height: 1.35,
+                          letterSpacing: 0.0,
+                        ),
                       ),
                     ),
                     Padding(
@@ -219,19 +251,26 @@ class ThemeSettingsPage extends ConsumerWidget {
                       child: Wrap(
                         spacing: 12,
                         runSpacing: 12,
-                        children: List.generate(AppTheme.themeColors.length, (idx) {
+                        children: List.generate(AppTheme.themeColors.length, (
+                          idx,
+                        ) {
                           final item = AppTheme.themeColors[idx];
                           final name = item['name'] as String;
                           final color = item['color'] as Color;
                           final isSelected = themeState.themeColorIndex == idx;
 
                           return ChoiceChip(
-                            avatar: CircleAvatar(backgroundColor: color, radius: 10),
+                            avatar: CircleAvatar(
+                              backgroundColor: color,
+                              radius: 10,
+                            ),
                             label: Text(name),
                             selected: isSelected,
                             onSelected: (_) {
                               HapticFeedbackUtil.light();
-                              ref.read(themeProvider.notifier).setThemeColorIndex(idx);
+                              ref
+                                  .read(themeProvider.notifier)
+                                  .setThemeColorIndex(idx);
                             },
                           );
                         }),
@@ -246,7 +285,7 @@ class ThemeSettingsPage extends ConsumerWidget {
           const SizedBox(height: 14),
 
           // 3. 字体粗细 (Font Weight - 弹窗选择 5 档：偏细、默认、中等、偏粗、加粗)
-          Card(
+          ReviewCard(
             elevation: 0,
             color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
             shape: RoundedRectangleBorder(
@@ -272,8 +311,14 @@ class ThemeSettingsPage extends ConsumerWidget {
                   ),
                 ),
                 ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-                  leading: Icon(Icons.format_bold_rounded, color: colorScheme.primary),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 3,
+                  ),
+                  leading: Icon(
+                    Icons.format_bold_rounded,
+                    color: colorScheme.primary,
+                  ),
                   title: Text(
                     '自定义应用字体粗细',
                     style: TextStyle(
@@ -300,7 +345,9 @@ class ThemeSettingsPage extends ConsumerWidget {
                   margin: const EdgeInsets.fromLTRB(16, 12, 16, 14),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
+                    color: colorScheme.surfaceContainerHighest.withValues(
+                      alpha: 0.3,
+                    ),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Column(
@@ -332,8 +379,8 @@ class ThemeSettingsPage extends ConsumerWidget {
           ),
           const SizedBox(height: 14),
 
-          // 4. 导航布局风格 (Navigation Layout Style)
-          Card(
+          // 底部导航
+          ReviewCard(
             elevation: 0,
             color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
             shape: RoundedRectangleBorder(
@@ -349,7 +396,7 @@ class ThemeSettingsPage extends ConsumerWidget {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
                   child: Text(
-                    '导航布局风格',
+                    '底部导航',
                     style: TextStyle(
                       fontSize: 13,
                       fontWeight: context.adjustWeight(FontWeight.bold),
@@ -358,11 +405,14 @@ class ThemeSettingsPage extends ConsumerWidget {
                     ),
                   ),
                 ),
-                SwitchListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-                  secondary: Icon(Icons.dock_rounded, color: colorScheme.primary),
-                  title: Text('悬浮胶囊底栏 (MD3 Expressive)', style: TextStyle(fontSize: 15, fontWeight: context.adjustWeight(FontWeight.w600), height: 1.35, letterSpacing: 0.0)),
-                  subtitle: Text('使用居中实体圆角悬浮导航胶囊，极富立体质感', style: TextStyle(fontSize: 12.5, height: 1.4, letterSpacing: 0.0, color: colorScheme.onSurfaceVariant)),
+                ReviewSwitchTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 3,
+                  ),
+                  leading: Icon(Icons.dock_rounded, color: colorScheme.primary),
+                  title: '使用悬浮底栏',
+                  summary: '居中显示悬浮式导航栏',
                   value: themeState.useFloatingNavBar,
                   onChanged: (val) {
                     HapticFeedbackUtil.light();
@@ -375,7 +425,7 @@ class ThemeSettingsPage extends ConsumerWidget {
           const SizedBox(height: 14),
 
           // 5. 自定义应用图标 (Custom App Icon)
-          Card(
+          ReviewCard(
             elevation: 0,
             color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
             shape: RoundedRectangleBorder(
@@ -401,8 +451,14 @@ class ThemeSettingsPage extends ConsumerWidget {
                   ),
                 ),
                 ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-                  leading: Icon(Icons.app_shortcut_rounded, color: colorScheme.primary),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 3,
+                  ),
+                  leading: Icon(
+                    Icons.app_shortcut_rounded,
+                    color: colorScheme.primary,
+                  ),
                   title: Text(
                     '自定义应用图标',
                     style: TextStyle(
@@ -438,7 +494,7 @@ class ThemeSettingsPage extends ConsumerWidget {
           const SizedBox(height: 14),
 
           // 6. 屏幕帧率设置 (Screen Refresh Rate)
-          Card(
+          ReviewCard(
             elevation: 0,
             color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
             shape: RoundedRectangleBorder(
@@ -464,8 +520,14 @@ class ThemeSettingsPage extends ConsumerWidget {
                   ),
                 ),
                 ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-                  leading: Icon(Icons.speed_rounded, color: colorScheme.primary),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 3,
+                  ),
+                  leading: Icon(
+                    Icons.speed_rounded,
+                    color: colorScheme.primary,
+                  ),
                   title: Text(
                     '屏幕帧率设置',
                     style: TextStyle(
@@ -501,7 +563,7 @@ class ThemeSettingsPage extends ConsumerWidget {
           const SizedBox(height: 14),
 
           // 7. 触感与震动 (Haptic Feedback)
-          Card(
+          ReviewCard(
             elevation: 0,
             color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
             shape: RoundedRectangleBorder(
@@ -526,11 +588,17 @@ class ThemeSettingsPage extends ConsumerWidget {
                     ),
                   ),
                 ),
-                SwitchListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
-                  secondary: Icon(Icons.vibration_rounded, color: colorScheme.primary),
-                  title: Text('触感与震动反馈', style: TextStyle(fontSize: 15, fontWeight: context.adjustWeight(FontWeight.w600), height: 1.35, letterSpacing: 0.0)),
-                  subtitle: Text('按键、卡片点击、手势滑动与底栏切换的细腻触感', style: TextStyle(fontSize: 12.5, height: 1.4, letterSpacing: 0.0, color: colorScheme.onSurfaceVariant)),
+                ReviewSwitchTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 3,
+                  ),
+                  leading: Icon(
+                    Icons.vibration_rounded,
+                    color: colorScheme.primary,
+                  ),
+                  title: '触感与震动反馈',
+                  summary: '按键、卡片点击、手势滑动与底栏切换的触感反馈',
                   value: themeState.enableHaptics,
                   onChanged: (val) {
                     ref.read(themeProvider.notifier).setEnableHaptics(val);

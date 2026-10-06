@@ -2,7 +2,75 @@
 
 这里保留能帮助避免回归的根因和检查办法。当前功能、接口边界与发布流程以 [DEVELOPMENT.md](../DEVELOPMENT.md) 为准；完整历史描述见[旧手册归档](archive/Review-legacy-2026-09-23.md)。旧手册里的操作建议有先后矛盾，不能直接当作现行规范执行。
 
+> **历史归档：** Miuix 与悬浮底栏液态玻璃已在 `2.17.0` 按用户决定移除。以下条目不要求恢复它们。`2.17.1` 按新的明确需求，只在图片画廊的两个圆形操作按钮上增加局部玻璃折射；这不恢复全局材质选项或 Miuix。
+
+## 登录方式切换（2.19.0）
+
+- 验证码保持默认，密码登录只作为可切换方式；两种登录最终汇入同一 native session 暂存、Review Cookie/UID 验证和 Keystore 保存路径，避免密码模式绕过会话校验。
+- 密码签名必须在 Android native 调用 `SAUtils.secP` 与 `WeiboApplication.newCalculateS(account + password)`；不要在 Dart 计算、持久化或打印密码。密码请求仍按登录接口的 QueryMap/FieldMap 分组，并带 Android 客户端上下文；不要把表单字段误放进 URL 查询或反向。
+- 登录页切换离开密码模式时清空密码输入；提交后也清空输入。设备验收需要分别覆盖无预设密码账户的验证码登录、已有密码账户登录、额外安全挑战、Cookie 导入与会话重启恢复。
+- 泛化成同一条“初始化/网络失败”会把 native 库加载异常和 API 传输错误混在一起。给原生错误保留有限层数的异常类型名用于诊断，但绝不显示异常消息、URL、请求参数或凭据。
+- 认证日志不能输出整个响应对象或异常消息：登录响应可能含 Cookie、Token，异常消息也可能带入请求上下文。仅记录 HTTP 状态、认证字段存在性和异常类型；用户界面可显示服务端错误，但日志必须保持脱敏。2.19.7 移除了 `WeiboApi` 的完整响应日志及 CookieManager 的异常消息日志。
+- `wbutil` 的 `JNI_OnLoad` 会对 `com.sina.weibo.WeiboApplication` 批量 `RegisterNatives` 8 个方法，并对 `com.sina.weibo.data.sp.EncryptSharedPreferences` 注册 2 个方法。只声明实际调用的部分方法或漏掉后一个类，都会让整库加载失败并抛 `UnsatisfiedLinkError`，请求还没发出；核对 `.so` 的注册表/签名并补齐精确声明。另核对每个 native 符号的 Java 全限定类名：`SecShare` 的 `secP` 导出属于 `com.hengye.share.module.other.SAUtils`，错误包名会在首次调用密码签名时失败。
+- 2.19.1 已补全这组注册声明，并修正 `SAUtils` 包名。APK 编译、签名、16 KB 对齐和 14 项认证测试通过，但没有连接真实设备；不要把静态产物检查写成短信或登录已通过。
+- 上游 `DeviceId.getDeviceId()` 通过 `WSUtils` 获取已初始化的 `WeiboApplication`，并把它传给 `getDeviceIdNative`。Review 在 2.19.2 改为传真实的 `WeiboApplication` 实例，但用户实测仍会闪退；因此这项 Context 调整没有解决问题，不能再作为已确认根因。另一个已确认差异是 Review 在首次发码时一次性加载 `SecShare`、`wbutil`、`wbgjb`、`weibosdkcore`；上游按类首次使用加载，密码加密和 OAuth 签名库不应提前进入短信发码路径。2.19.3 移除 NativeRuntime 的全局预加载，依靠各原生包装类自己的按需加载器。实际短信请求仍须由设备验收确认。
+- **致命崩溃根因定位与修复（2.19.4）**：
+  1. **Native Crash / SIGSEGV**：通过反编译分析 `libweibosdkcore.so`，发现 native 函数 `getDeviceIdNative` 会通过 JNI 反射调用 `com.sina.deviceidjnisdk.DeviceId.genCheckId(String, String, String)`。Review 此前在 `WeiboApi.commonLoginQuery()` 中错误地将 `android_id` 设为 `nativeRuntime.deviceId()`，触发了该 JNI 函数调用。由于 Review 的 `DeviceId.java` 缺失 `genCheckId` 方法，JNI `GetMethodID` 返回 `NULL`，底层调用直接触发 ART 虚拟机的 SIGSEGV / Native Abort 崩溃，Java 层 `try-catch` 无法拦截。
+  2. **上游 Share 实现核实**：核对 `D:\share_ref\decoded\share_full\smali\UB.smali`（第 1053 行）和 `aQ.1.smali`（第 106-118 行），上游 Share 请求中的 `android_id` 根本不是 `DeviceId`，而是直接通过 `Settings.Secure.getString(context.getContentResolver(), Settings.Secure.ANDROID_ID)` 获取。Review 在 2.19.4 将 `android_id` 改回系统获取。
+  3. **JNI 签名防御性补齐**：在 `DeviceId.java` 中完整补齐 `genCheckId(String, String, String)`（安全拼接实现）、`appendCheckId`、`checkMyPermission` 等所有 JNI 交互方法，并在 `loadLibrary` 及调用点增加全套安全防护。
+  4. **彻底解耦 `android.test.mock`**：此前 `FakePackageManager` 继承 `android.test.mock.MockPackageManager`，依赖平台测试库。在部分现代与定制 ROM 上，系统未预装该测试库会导致类加载失败（`NoClassDefFoundError`）。现重构为直接继承 `android.content.pm.PackageManager`，实现全部 94 个抽象方法并安全代理给真实 PackageManager，从 Gradle 和 Manifest 中完全移除了 `android.test.mock`。
+- **短信验证码拒发与服务端错误透传修复（2.19.5）**：
+  1. **`area` 参数错误传递**：在上游 Share 实现中（`smali_classes2\wd.1.smali` 第 217-270 行），中国大陆区号（`"86"` 或 `"0086"`）在发码与登录请求中必须显式设置为空字符串 `""`，手机号保持 11 位数字。此前 Review 错误地将 `"86"` 放入 `query.put("area", "86")`，导致微博服务端因参数不合规拒发短信。2.19.5 将 `"86"` / `"0086"` 自动规范化为空字符串。
+  2. **硬编码伪造 `aid="7501641714"` 污染请求**：核对上游 Share（`mA.2.smali` 第 127-145 行与 `WeiboWebAuthorizeActivity.smali` 第 580-600 行），`"7501641714"` 是 AidTask 的固定 App ID，绝非设备 AID；若 AidTask 未缓存真实设备 AID，Share 在 query 与 form 中完全不传 `aid`。此前 Review 在多处写死了伪造的 `aid="7501641714"`，导致微博服务端设备 token 校验失败。2.19.5 彻底移除了伪造的 `aid` 传参。
+  3. **`ua` 参数补全系统版本号**：核对上游 `PB.smali` 第 41-48 行，标准 ua 格式为 `MANUFACTURER-MODEL__weibo__11.6.3__android__android<RELEASE>`。此前 Review 缺少末尾的 `Build.VERSION.RELEASE`，已补齐。
+  4. **透传服务端真实错误描述 (`msg`)**：核对上游 Share（`oo0o00O0.6.smali` 与 `zd.smali`），发码失败时直接提取并向用户展示服务端返回的 `msg`（如“操作过于频繁，请稍后再试”）。此前 Review 抛弃了该字段并用硬编码兜底文案掩盖了真实拒发原因。2.19.5 已将服务端 `msg` / `errmsg` / `error` 全程透传至前端提示与错误日志。
+- **短信验证码登录会话拦截修复与 Cookie 解析增强（2.19.6）**：
+  1. **`hasRequiredFields` 误判与拦截（核心拦截点）**：真机测试 2.19.5 发码成功收到短信，但在输入验证码登录后提示“微博未返回完整登录会话”。对比上游 Share 源码（`sd.1.smali` 短信验证码登录回调 `ThirdPartyLoginActivity$O00000Oo` 第 80-137 行），短信登录接口**根本不返回 `sut`，也从不要求 `sut`**（`sut` 是单点登录凭据，仅在账号密码登录 `yd.1.smali` 中存在）。Review 此前在 `WeiboSession.java` 的 `hasRequiredFields()` 中硬编码要求 `present(sut)` 以及根对象的 `present(expire)`，导致所有短信登录即使微博服务端返回 200 OK 并下发全部有效凭据，也会 100% 被判为 `session_fields_missing`。2.19.6 将会话校验条件修正为必要充分条件：`present(uid) && (present(cookie) || present(accessToken) || present(gsid))`。
+  2. **Cookie 多层嵌套结构解析**：在上游 Share 实现（`oo0o00o0.7.smali` 与 `Gz.smali` 第 475-620 行）中，微博返回的 `cookie` 是一个包含域名映射的 JSON 对象（如 `.weibo.cn`、`.weibo.com` 等各自对应一段 Cookie 字符串）。此前 Review 直接调用 `response.optString("cookie")`，若其为 JSONObject 则返回了整个对象的 JSON 字符串，无法被 Flutter 的 `setAndVerifyCookie`（要求 `SUB=...` 格式）识别。2.19.6 重构了 Cookie 递归与键值提取逻辑，优先提取包含 `SUB=` 的登录 Cookie，并支持 `gsid` 以 `_2A` 开头时的回退兜底，确保 Flutter 接收到规范的 Cookie。
+  3. **系统 CookieManager 双向同步**：在 `WeiboAuthManager.java` 中增加 `syncCookieManager(cookie)` 和 `clearCookieManager()`，在登录成功与恢复会话时将 Cookie 同步写入系统 `android.webkit.CookieManager` 并 `flush()`，退出登录时彻底清理，保证 WebView 与原生通道凭据完全一致。
+  4. **详细字段缺失日志**：会话校验不通过时通过 `Log.w` 详细记录各个字段的存在状态及原始 JSON，便于快速定位服务端响应结构变化。
+
+## 已移除的 Miuix 与液态玻璃尝试（2.15.0–2.16.9）
+
+## 图片画廊的局部玻璃按钮（2.17.1–2.17.2）
+
+- 对照用户提供的 Android 相册截图，把圆形玻璃按钮视觉直径收至 44dp，保留 48dp 可点击区域；模糊 sigma 从 4 降至 2.5，球冠高度从 3 降至 1.4 shader 单位，折射位移上限从 1.25 降至 0.45。保留空气/玻璃界面 Snell 角计算，只减弱形变量；描边和阴影也更柔和。其他渲染后端和 shader 加载失败时保留模糊/描边。
+- 不对整页截图、不调用同步 `toImageSync`、不做逐帧 CPU 图像处理。历史悬浮栏卡死问题来自页面级捕获与同步离屏合成；局部 shader 必须继续局限在这两个按钮内。
+
+- **更正（2.16.9：透镜方向与拖动帧负载）**：2.16.8 shader 用 `position - normal * ...` 向胶囊内部取样，和 Kyant `RoundedRectRefractionShader` 的 `coord + d * grad` 相反；SDF 外法线方向才形成凸透镜，向内采样会变成凹透镜。2.16.5 的旧记录也把这个方向写反了。拖动时原实现每个指针事件都重启左右边缘两个位置弹簧和速度弹簧；现改为单一位置弹簧，速度样本直接驱动形变，释放时再弹簧复位。设备尚未连接，因此卡顿改善和最终观感仍需真机验收。
+
+- **现象与根因（2.16.8：液态玻璃像毛玻璃底板上的选中块）**：Flutter 实时路径把整个胶囊中心统一放大，而 Legado/Kyant 的 `lens` 按 SDF 法线和 `circleMap` 只重折射胶囊内侧的一圈；Review 还只以 30% 透明度把图标行放入滤镜输入，又在透镜上方重画完整图标，因此图标没有进入折射结果。选中胶囊还比实际槽位宽 10dp，较实的渐变和边框进一步压住了折射。上游 `FloatingBottomBar` 用 `rememberCombinedBackdrop(backdrop, tabsBackdrop)` 合并页面与完整图标层，以 `lens(10dp × press, 14dp × press, depthEffect = true)`、`DampedDragAnimation`、78/56 按压缩放和带方向的速度拉伸共同产生水滴移动。当前 Review 用 Flutter `ImageFilter.shader` 移植相同的边缘折射轮廓与分层关系，图标行置于透镜下、选中层不再被重画遮盖，槽宽与每个导航项对齐。Legado 声明 `io.github.kyant0:backdrop:2.0.1`、`io.github.kyant0:capsule:2.1.3` 和应用级 Haze `1.7.3`；其中实际透镜在 Backdrop，Haze 不是该选中透镜的实现。源码：[FloatingBottomBar](https://github.com/HapeLee/legado-with-MD3/blob/main/app/src/main/java/io/legado/app/ui/widget/components/FloatingBottomBar.kt)、[DampedDragAnimation](https://github.com/HapeLee/legado-with-MD3/blob/main/app/src/main/java/io/legado/app/ui/animation/DampedDragAnimation.kt)、[Kyant SDF lens shader](https://github.com/Kyant0/AndroidLiquidGlass/blob/kmp/backdrop/src/commonMain/kotlin/com/kyant/backdrop/internal/Shaders.kt)、[Legado dependencies](https://github.com/HapeLee/legado-with-MD3/blob/main/gradle/libs.versions.toml)。Flutter/Compose 的采样与坐标系统不同，源码适配完成和 APK 构建不能代替目标设备上的动态观感验收。
+- **覆盖检查（2.16.0）**：之前主题桥接虽然能改 Material 全局色彩/形状，但 Miuix 原生组件主要集中在底栏和个性化页，导致整体验感像只换色。上游 Legado 的 ThemeComponents 使用 Miuix 自己的 ThemeController/Theme/Typography，并把设计引擎保存在主题状态中；Review 因此在共享页面增加真实 Miuix Scaffold、TopAppBar、TabRow、ArrowPreference 与 Card 路径，保留 Material 3 分支和同一业务逻辑。后续继续沿用户可见频率迁移，不能把全局 recolor 当成完整适配。参考：[Legado ThemeComponents](https://github.com/HapeLee/legado-with-MD3/blob/main/app/src/main/java/io/legado/app/ui/theme/ThemeComponents.kt)、[Legado theme state](https://github.com/HapeLee/legado-with-MD3/blob/main/app/src/main/java/io/legado/app/ui/theme/LegadoTheme.kt)。
+- 第三方 Miuix glass navigation 在点击当前已选中的 Tab 时不再次调用选择回调；Review 的首页把重复点击用于回顶/刷新。替换导航组件时必须在共享适配层补回已选项点击，并回归快速重复点击和跨 Tab 拖动，不能只验证切页。
+- Miuix 卡片不提供 Material 祖先，卡片中复用的 `ChoiceChip`、`ListTile` 等 Material 子控件可能因缺少 `Material` 报错。共享卡片封装应在 Miuix 卡片内部提供透明 Material 层，并以真实包含旧 Material 子控件的页面回归。
+- Miuix 自带开关可能无条件触发震动，绕过 Review 可关闭的全局触感偏好。设置控件应从 Review 的用户操作回调统一触发反馈；玻璃背景捕获只在悬浮底栏玻璃模式挂载，按 1x 捕获页面背景并排除导航栏自身，避免多余纹理工作或反馈循环。
+- 界面风格开关在“设置 → 个性化 → 明暗模式”下方；风格与悬浮栏材质分开保存。悬浮栏关闭时隐藏材质选项但保留选值，旧用户默认仍为 Material 3 + 标准材质。回归应覆盖六种风格/导航组合、备份白名单、明暗与纯黑色板桥接及关闭/重开后材质记忆。
+- **现象（2.15.1：Miuix 标准悬浮栏垂直居中）**：`MiuixFloatingNavigationBar` 内部使用带底部间距的 `Align`；直接放进 Scaffold 底栏时，父节点给出的整屏剩余高度让它在中间对齐。2.15.1 曾尝试仅约束内容高度，但实际页面仍出现居中；2.15.2 在调用处用含库同款底部间距的固定外层高度，并将库组件显式放在外层底部。不要改 Miuix 的共享组件实现，以免影响 Stack 等正常用法。
+- **现象（2.15.1：玻璃选中态缺少液态水滴感）**：M3 原实现使用静态胶囊，Miuix 玻璃导航默认指示器颜色透明度低。两种风格应复用 `MiuixGlassNavigationBar` 的弹性位置动画，并分别按 M3 色板和 Miuix 中性色提高指示器对比；不要再包一层静态选中胶囊遮掉动画。
+- **更正（2.15.2：玻璃仍没有大水滴效果）**：`MiuixGlassNavigationBar` 的选中指示器本质上只是动画移动的 ShapeDecoration，改颜色并不会产生折射。上游底栏把跟手弹簧透镜单独绘制在玻璃轨道上；2.15.2 虽叠加了 `MiuixGlassPanel`，但透镜只采样页面背景，图标/文字在其上重绘，所以没有折射前景内容，也缺少按压/速度形变。不能只把 ShapeDecoration 改成彩色胶囊并称为液态玻璃。
+- **修正（2.15.3：按 Legado 底栏补全动态水滴）**：页面截图仍只保留一份全屏 1x 捕获；额外捕获限于底栏附近 320×88dp，将页面该位置像素与 1.15 倍图标/标签合成，作为选中透镜的 backdrop。按压高度缩放参照 `78/56`，拖动速度驱动横向拉伸、位置、折射率和光照强度，释放由弹簧复位；系统关闭动画时不运行弹簧。两个设计语言共用该透镜，业务导航与震动回调保持原入口。局部捕获跟随页面截图刷新，避免再复制一张全屏纹理；真机帧率仍须在设备确认。
+- **更正（2.16.4：此前的“按 Legado 补全”不等于采用了上游的渲染机制）**：Legado 底栏把页面 `backdrop` 与透明图标行的 `tabsBackdrop` 合并，再由 Kyant Compose `backdrop` 的 GPU `drawBackdrop` 连续执行 `vibrancy`、`blur`、`lens`，并通过 `DampedDragAnimation` 把弹簧位置、按压进度、速度形变、高光和阴影接到同一透镜。上游当前依赖目录含 `io.github.kyant0:backdrop:2.0.1`、`dev.chrisbanes.haze:haze:1.7.3`、`io.github.kyant0:capsule:2.1.3`；底栏直接用 `backdrop` 做背景/透镜采样，`capsule` 提供连续胶囊形状，Haze 是应用另外声明的模糊依赖。实现可对照 [FloatingBottomBar.kt](https://github.com/HapeLee/legado-with-MD3/blob/main/app/src/main/java/io/legado/app/ui/widget/components/FloatingBottomBar.kt)、[版本目录](https://github.com/HapeLee/legado-with-MD3/blob/main/gradle/libs.versions.toml) 与 [应用依赖](https://github.com/HapeLee/legado-with-MD3/blob/main/app/build.gradle.kts)。Review 是 Flutter 应用，不能直接使用 Compose 依赖。旧 Flutter 方案在页面层每次捕获时对 `OffsetLayer` 调用 `toImageSync`，`MiuixGlassPanel` 又做模糊、混色和同步离屏出图，因此即使叠了折射面板，也不等价于上游 GPU 实时透镜。Impeller 设备现在改走 Flutter 原生 `BackdropFilter` + `ImageFilter.shader` 和局部 SDF lens shader；其他后端保留原回退。仍需真机验收，不得仅凭 shader 编译宣称观感与上游相同。
+- **现象与根因（2.16.4：Miuix 热搜分类条滑动延迟）**：库的 `MiuixTabRow` 收到选中整数变化后，在 post-frame 再调用 275ms 的 `_controller.animateTo` 自动居中；其指示器也只根据整数下标定位。`TabBarView` 横向拖动提供连续页面进度，两者速度源不一致，导致顶部分段明显落后。可滑动页面的 Miuix 分类条应监听 `TabController.animation`，让指示器直接使用小数进度，并避免为每个下标变化额外滚动动画。
+- **撤回错误归因（2.16.5）**：旧记录曾称 SDF 外法线采样是错误方向，并建议向透镜中心折射；该判断与 Kyant 的 shader 源码相反。凸透镜应沿 SDF 外法线从边缘向外取样，不能再因看到凹透镜而反向改成向内采样。shader 公式只能说明采样映射，不能代替真机视觉验收。
+- **现象与根因（2.16.7：Miuix 字号比 M3 大）**：Review 的 Material 列表行和应用栏分别覆写成 15/12.5/18sp，而 `ReviewMiuixTheme` 直接使用库默认的 17/14/32sp 等字级。应在主题桥接处将 Miuix 语义字号映射到当前 Material 主题，不改第三方包，也不把已调整的字重再套一遍系统偏移。
+- **现象与根因（2.16.7：玻璃栏斜向拖动后跳回原项）**：拖动时透镜位置按 X 轴继续移动，但目标命中仍要求整个指针坐标处于栏内；斜向移出上下边界后 `upIndex` 变成 null，释放回退到按下时的选中项。开始按下仍需命中导航栏，指针捕获后的拖动和释放只根据横向槽位计算目标。
+- **现象（2.15.2：标准 Miuix 底栏过小）**：库按图标和间距的固有宽度收缩，玻璃模式则固定为 280×64dp。固定标准栏三项的宽高，让两种悬浮栏采用相同外框和每项分配宽度；窄屏按可用宽度缩小，并继续为 Scaffold 约束内容高度与系统底部间距。
+- **现象（2.15.2：Miuix 与玻璃导航没有触感）**：这些控件用 GestureDetector 而不是 Material Ink，因而不会经过全局 `HapticSplashFactory`。在确认选中回调调用 `HapticFeedbackUtil.light()`，覆盖 Miuix 标准栏及 M3/Miuix 玻璃栏；不在按下或取消时提前触发，避免偏好关闭失效或重复震动。
+- **现象（2.15.2：时间线长文全部展开）**：前一轮为避免短差异出现“展开全文”按钮，加入 360 字全文、100 字差异和 5 行布局门槛；大量微博全文达不到门槛时反而默认显示全文。时间线应保留官方 `text_raw` 作为预览，只要已取回的标准化全文比预览更长就给出展开入口；点击后才显示全文。未取回时保留预览并允许手动请求；主微博与转发微博一致。长文预取和并发上限不变，删除每次布局进行的 `TextPainter` 行数测量。
+- **现象（2.15.1：切换 Miuix 后仍沿用 M3 预置色）**：共用 M3 主色作为 Miuix 种子会令两种风格外观接近。保留一个 Monet 动态色开关，但把 Miuix 内置色索引独立保存并加入个性化备份；动态色存在时共享系统种子，不存在时两个设计语言分别使用各自预置色，兼容 Android 12 以下。
+- **适配范围（2.15.1）**：当前功能页大量复用 Flutter Material 控件，逐页替换会复制布局并提高回归面。先在 `ReviewThemeBridge.materialTheme` 集中应用 Miuix 语义色和控件形状/状态样式，同时保留已有 Miuix Scaffold、卡片和设置行适配；新页面优先用 Review 语义组件。不要只改主题色后就认为全应用 Miuix 已适配，也不要为同一业务复制 M3/Miuix 页面。
+
 ## 画廊返回动画补充更正（2.14.5）
+
+- **画廊控件显隐保持图片位置（2.17.3）**：按用户截图要求，让 Pager 在控件显示与清屏状态下始终保持全屏约束，顶栏和缩略条作为覆盖层；此前根据 `_showChrome` 动态添加上下 Padding，改变了 PageView 高度，ExtendedImage 重新适配时让放大图片偏移。不要通过切换主图视口尺寸避让控件，也不要用底部占位补偿中心；单张静态图片自然以全屏为中心，多图缩放和平移状态在控件显隐时保持。
+- **单图底部边界更正（2.16.6）**：2.16.5 曾为了对称居中给单图添加底部留白。用户明确指出单图没有缩略条，底部不应设置边界；现仅保留顶部按钮行下沿的 inset，底部延伸到屏幕底部，多图的缩略条间距不变。
+- **单图居中尝试（2.16.5，已回调）**：顶部避让使可视区域不对称，因此曾在单图底部加同等留白来把视口几何中心放回屏幕中心；但这样无故限制了无缩略条时的底部空间。不要为追求对称而给单图增加底部占位。
+- **顶部边界与缩放焦点修正（2.16.3）**：状态栏下沿方案会让主图进入返回/下载按钮后方，按用户反馈改回安全区加 68dp 的按钮行下沿；多图视口底部从缩略条上沿前 24dp 收到 8dp，释放垂直显示空间。ExtendedImage 在缩放低于 1.0 时按设计强制将图像居中，且长图顶对齐可能覆盖手指焦点；将最低缩放及回弹下限设为 fit 尺寸 1.0，并统一初始对齐到中心，避免适配尺寸以下的空白和焦点偏移。仍需真机验证不同长宽比和多指缩放观感。
+- **状态栏作为画廊上边界（2.16.2，已回调）**：曾按反馈试用状态栏安全区下沿，顶部按钮悬浮在主图之上；后续观感反馈证明会遮住图片，因此 2.16.3 恢复按钮行下沿边界。
+
+- **主图顶部留白调整（2.16.1）**：初版在 68dp 顶栏下另加 12dp，导致图片上边界显得过低。按钮行本身由 48dp IconButton 加上下各 10dp padding 组成，安全区之外共 68dp；顶部视口边界直接落在按钮行下边缘，不再额外留白。安全区仍扣除，防止内容侵入状态栏。
+
+- **画廊纵向布局（2.15.4）**：主图原先只扣除了底部缩略条区域，顶部仍铺到状态栏和操作栏背后；`BoxFit.contain` 只能按给定边界适配，不能感知上层 Stack 控件会遮挡内容。给主图设置顶部和底部不等的可视边界，使它在状态栏/顶栏与缩略条之间适配并自然下移；清屏时撤掉顶部控制区占位。保持现有缩放/分页参数，避免为了布局另加缩放动画或手势状态。
 
 - 2.14.4 仍存在落点填充跳变。此前只查 Flutter `RenderImage`，实际 ExtendedImage 的 `ExtendedRenderImage` 独立继承 RenderBox，生产分支并未读到解码比例；而测试用了普通 RawImage，只断言倍率，未覆盖实际库的裁切交接。不能用“倍率正确”推导末帧像素一致。
 - 新方案复用现成 Flutter CustomPainter/Rect.lerp 和图片库公开绘制数据，不新增依赖：捕获两端完整图片平面和来源圆角，冻结当前解码句柄，插值图片边缘与裁切窗，避免在变动的 Hero 约束中重新布局手势图片。手势 destinationRect 含 canvas 绘制偏移，需先减去 layoutRect.topLeft，不能直接当本地坐标，否则放大平移时起点错位。
@@ -12,6 +80,9 @@
 
 - **现象**：WebView 已显示登录成功，应用却无法同步凭据，或检测一直转圈。**根因**：SSO 回跳可能跨域，WebView Cookie 与网络层候选值不同步；仅凭一个接口的固定响应结构会误判有效会话。**回归点**：检查移动端回跳、原生与 Flutter Cookie 候选、桌面/移动端验证，以及响应无法确认时是否保留既有有效会话。不要把网络异常当成确定登出。
 - **现象**：界面已提示超时，之前的检测稍后仍改变登录状态。**根因**：`Future.timeout` 只停止等待，不会取消 Dio 请求。**回归点**：为实际请求传 `CancelToken`，限制自动轮询并发，并允许手动重新检测。相关历史修复见[变更记录](CHANGELOG.md#28973)。
+- **私有登录参数分组与验证码优先**：接入 Review 时用户明确要求短信验证码为主要登录方式，右上角保留 Cookie 导入。Share 的 `jA` Retrofit 注解中 `LLCa` 是 QueryMap、`LuCa` 是 FieldMap；发码的 `account/login_sendcode` 与校验的 `account/login` 各自 QueryMap/FieldMap 不同，不能把密码登录参数或字段分组直接套用。短信校验通过 `phone/number/code=area/smscode` 发送，返回完整 native session 后仍需 Review UID/Cookie 校验；只有通过后才能写 Keystore session。当前 Review 的 API 层仍有 Cookie 直注入与 SharedPreferences 兼容路径，不能宣称已经迁完；退出时同步清理 native session。静态构建不能代替真实短信发送、设备登录、重启恢复、到期 `getoauth` 或 Review API 验收。
+- **Android test library 编译缺口**：Manifest 的 `<uses-library android:name="android.test.mock" android:required="false" />` 只声明运行时可选库，不会自动加入 Java 编译 classpath；只加 Manifest 会让 `FakePackageManager` 在 Release Java 编译时报找不到 `android.test.mock`。同时在 Android Gradle 配置中使用 `useLibrary("android.test.mock")`，再分别验证编译成功和目标设备可解析运行库。缺少可选类通常表现为类链接错误；不要把它与本次已定位的 `wbutil` native 注册失败混为一因。
+- **Windows Java/Gradle 回归点**：此环境的 JDK 26 和临时 JDK 17 即使独立执行 `Selector.open()` 也会在 Windows loopback Unix-domain socket 连接时报 `Invalid argument`；Gradle daemon 因同一底层 Selector 初始化失败，不能归因于项目源码或仅靠提升权限重试。换 JDK 17 仍失败。JDK 17 `javac --release 17` 与单测可独立运行；SDK 工具手工拼 APK 只验证当前静态产物，不能声称 Gradle task 或设备安装通过。需要在本机 loopback 可用的环境重新跑 Gradle。
 
 ## 消息与通知
 

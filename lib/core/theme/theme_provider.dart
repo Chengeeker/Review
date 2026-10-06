@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../storage/storage_service.dart';
 
 class ThemeState {
@@ -52,9 +53,12 @@ class ThemeState {
       enableHaptics: enableHaptics ?? this.enableHaptics,
       useFloatingNavBar: useFloatingNavBar ?? this.useFloatingNavBar,
       useCustomFontWeight: useCustomFontWeight ?? this.useCustomFontWeight,
-      customFontWeightDelta: customFontWeightDelta ?? this.customFontWeightDelta,
-      systemFontWeightAdjustment: systemFontWeightAdjustment ?? this.systemFontWeightAdjustment,
-      screenRefreshRateMode: screenRefreshRateMode ?? this.screenRefreshRateMode,
+      customFontWeightDelta:
+          customFontWeightDelta ?? this.customFontWeightDelta,
+      systemFontWeightAdjustment:
+          systemFontWeightAdjustment ?? this.systemFontWeightAdjustment,
+      screenRefreshRateMode:
+          screenRefreshRateMode ?? this.screenRefreshRateMode,
     );
   }
 }
@@ -96,10 +100,19 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
   }
 
   void _loadFromStorage() {
-    final modeIndex = _storage.getInt(StorageService.keyThemeMode, defaultValue: 0);
-    final useDynamic = _storage.getBool(StorageService.keyUseDynamicColor, defaultValue: false);
+    final modeIndex = _storage.getInt(
+      StorageService.keyThemeMode,
+      defaultValue: 0,
+    );
+    final useDynamic = _storage.getBool(
+      StorageService.keyUseDynamicColor,
+      defaultValue: false,
+    );
     final colorIdx = _storage.getInt('key_theme_color_index', defaultValue: 0);
-    final pureBlack = _storage.getBool('key_is_pure_black_dark', defaultValue: false);
+    final pureBlack = _storage.getBool(
+      'key_is_pure_black_dark',
+      defaultValue: false,
+    );
     final haptics = _storage.getEnableHaptics();
     final floatingNav = _storage.getUseFloatingNavBar();
     final customFont = _storage.getUseCustomFontWeight();

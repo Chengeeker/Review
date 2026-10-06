@@ -1,8 +1,10 @@
 import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+
 import '../constants/api_constants.dart';
 import '../storage/storage_service.dart';
 
@@ -73,19 +75,48 @@ class AuthState {
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
-  static const MethodChannel _cookieChannel =
-      MethodChannel('com.sharelite/cookies');
+  static const MethodChannel _cookieChannel = MethodChannel(
+    'com.sharelite/cookies',
+  );
+  static const MethodChannel _weiboAuthChannel = MethodChannel(
+    'com.review/weibo_auth',
+  );
 
   final StorageService _storage;
   final DesktopCookieVerifier? _desktopCookieVerifier;
   Future<bool>? _nativeSyncFuture;
 
-  AuthNotifier(
-    this._storage, {
-    DesktopCookieVerifier? desktopCookieVerifier,
-  })  : _desktopCookieVerifier = desktopCookieVerifier,
-        super(const AuthState()) {
+  AuthNotifier(this._storage, {DesktopCookieVerifier? desktopCookieVerifier})
+    // Keep the public test seam while retaining a private field.
+    // ignore: prefer_initializing_formals
+    : _desktopCookieVerifier = desktopCookieVerifier,
+      super(const AuthState()) {
     _loadFromStorage();
+    unawaited(_restoreAndroidSession());
+  }
+
+  Future<void> _restoreAndroidSession() async {
+    try {
+      final response = await _weiboAuthChannel.invokeMapMethod<String, dynamic>(
+        'restoreSession',
+      );
+      if (response == null) return;
+
+      final sessionUid = response['uid']?.toString() ?? '';
+      final cookie = response['cookie']?.toString() ?? '';
+      if (sessionUid.isEmpty || cookie.isEmpty) return;
+      final knownUid = state.uid ?? '';
+      if (knownUid.isNotEmpty && knownUid != sessionUid) return;
+
+      final refreshed = response['refreshed'] == true;
+      final storedCookie = normalizeCookieHeader(state.fullCookie ?? '');
+      final sessionCookie = normalizeCookieHeader(cookie);
+      if (!state.isLoggedIn || (refreshed && storedCookie != sessionCookie)) {
+        await setAndVerifyCookie(cookie, requireDesktopSession: false);
+      }
+    } catch (_) {
+      // Keep the existing Cookie session if native restore/refresh is unavailable.
+    }
   }
 
   /// Whether the verified session still belongs to [uid] after async sync.
@@ -177,11 +208,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
     final data = _asMap(body['data']);
     final user = _asMap(data?['user']) ?? _asMap(body['user']);
-    final loginFlagPresent = (data != null &&
+    final loginFlagPresent =
+        (data != null &&
             (data.containsKey('islogin') || data.containsKey('login'))) ||
         body.containsKey('islogin') ||
         body.containsKey('login');
-    final loggedIn = (data != null &&
+    final loggedIn =
+        (data != null &&
             (_isTruthy(data['islogin']) || _isTruthy(data['login']))) ||
         _isTruthy(body['islogin']) ||
         _isTruthy(body['login']) ||
@@ -216,8 +249,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final sub = _storage.getSubCookie();
     final subp = _storage.getSubpCookie();
     final storedFull = _storage.getFullCookie();
-    final normalizedFull =
-        storedFull == null ? '' : normalizeCookieHeader(storedFull);
+    final normalizedFull = storedFull == null
+        ? ''
+        : normalizeCookieHeader(storedFull);
     final full = normalizedFull.isNotEmpty ? normalizedFull : storedFull;
     final uid = _storage.getString(StorageService.keyUserUid);
     final nickname = _storage.getString(StorageService.keyUserNickname);
@@ -253,17 +287,22 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required String fullCookie,
   }) async {
     final normalizedCookie = normalizeCookieHeader(fullCookie);
-    final effectiveCookie =
-        normalizedCookie.isNotEmpty ? normalizedCookie : fullCookie.trim();
+    final effectiveCookie = normalizedCookie.isNotEmpty
+        ? normalizedCookie
+        : fullCookie.trim();
     String sub = '';
     String subp = '';
 
-    final subMatch = RegExp(r'SUB=([^;]+)', caseSensitive: false)
-        .firstMatch(effectiveCookie);
+    final subMatch = RegExp(
+      r'SUB=([^;]+)',
+      caseSensitive: false,
+    ).firstMatch(effectiveCookie);
     if (subMatch != null) sub = subMatch.group(1)!.trim();
 
-    final subpMatch = RegExp(r'SUBP=([^;]+)', caseSensitive: false)
-        .firstMatch(effectiveCookie);
+    final subpMatch = RegExp(
+      r'SUBP=([^;]+)',
+      caseSensitive: false,
+    ).firstMatch(effectiveCookie);
     if (subpMatch != null) subp = subpMatch.group(1)!.trim();
 
     await _storage.setLoggedIn(true);
@@ -319,16 +358,20 @@ class AuthNotifier extends StateNotifier<AuthState> {
     String sub = '';
     String subp = '';
 
-    final subMatch =
-        RegExp(r'SUB=([^;]+)', caseSensitive: false).firstMatch(cookieSource);
+    final subMatch = RegExp(
+      r'SUB=([^;]+)',
+      caseSensitive: false,
+    ).firstMatch(cookieSource);
     if (subMatch != null) {
       sub = subMatch.group(1)!.trim();
     } else if (cookieSource.startsWith('_2A')) {
       sub = cookieSource;
     }
 
-    final subpMatch =
-        RegExp(r'SUBP=([^;]+)', caseSensitive: false).firstMatch(cookieSource);
+    final subpMatch = RegExp(
+      r'SUBP=([^;]+)',
+      caseSensitive: false,
+    ).firstMatch(cookieSource);
     if (subpMatch != null) {
       subp = subpMatch.group(1)!.trim();
     }
@@ -341,12 +384,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
     final effectiveFullCookie =
         RegExp(r'SUB=', caseSensitive: false).hasMatch(cookieSource)
-            ? cookieSource
-            : 'SUB=$sub; ${subp.isNotEmpty ? "SUBP=$subp;" : ""}';
+        ? cookieSource
+        : 'SUB=$sub; ${subp.isNotEmpty ? "SUBP=$subp;" : ""}';
 
     String xsrfToken = '';
-    final xsrfMatch = RegExp(r'XSRF-TOKEN=([^;]+)', caseSensitive: false)
-        .firstMatch(effectiveFullCookie);
+    final xsrfMatch = RegExp(
+      r'XSRF-TOKEN=([^;]+)',
+      caseSensitive: false,
+    ).firstMatch(effectiveFullCookie);
     if (xsrfMatch != null) xsrfToken = xsrfMatch.group(1)!.trim();
 
     // Temporary in-memory verification without premature storage mutation
@@ -395,7 +440,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
           desktopSessionVerified = true;
           resolvedUid = desktopSessionUid(configRes.data);
           resolvedNickname = userObj?['screen_name']?.toString() ?? '';
-          resolvedAvatar = userObj?['avatar_large']?.toString() ??
+          resolvedAvatar =
+              userObj?['avatar_large']?.toString() ??
               userObj?['avatar_hd']?.toString() ??
               userObj?['profile_image_url']?.toString() ??
               '';
@@ -420,7 +466,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
               resolvedNickname = userObj?['screen_name']?.toString() ?? '';
             }
             if (resolvedAvatar.isEmpty) {
-              resolvedAvatar = userObj?['avatar_large']?.toString() ??
+              resolvedAvatar =
+                  userObj?['avatar_large']?.toString() ??
                   userObj?['avatar_hd']?.toString() ??
                   userObj?['profile_image_url']?.toString() ??
                   '';
@@ -434,16 +481,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
         try {
           final mConfigRes = await dio.get(
             'https://m.weibo.cn/api/config',
-              options: Options(
-                headers: {
+            options: Options(
+              headers: {
                 'Referer': 'https://m.weibo.cn/',
-                'User-Agent':
-                    'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
                 'Accept': 'application/json, text/plain, */*',
                 'X-Requested-With': 'XMLHttpRequest',
-                },
-              ),
-              cancelToken: verificationCancelToken,
+              },
+            ),
+            cancelToken: verificationCancelToken,
           );
           if (mConfigRes.data is Map<String, dynamic> &&
               mConfigRes.data['data'] != null) {
@@ -477,7 +523,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
             final data = _asMap(detailRes.data['data']);
             final verifiedUrl = data?['verified_url']?.toString() ?? '';
             final uidMatch = RegExp(r'uid=(\d+)').firstMatch(verifiedUrl);
-            final uid = uidMatch?.group(1) ??
+            final uid =
+                uidMatch?.group(1) ??
                 data?['uid']?.toString() ??
                 data?['id']?.toString() ??
                 '';
@@ -532,7 +579,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
                     userData['screen_name']?.toString() ?? '微博用户';
               }
               if (resolvedAvatar.isEmpty) {
-                resolvedAvatar = userData['avatar_large']?.toString() ??
+                resolvedAvatar =
+                    userData['avatar_large']?.toString() ??
                     userData['profile_image_url']?.toString() ??
                     '';
               }
@@ -636,7 +684,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (!_storage.isLoggedIn() && !state.isLoggedIn) return false;
 
     try {
-      final needsScopeMigration = _storage.getCookieScopeSchemaVersion() <
+      final needsScopeMigration =
+          _storage.getCookieScopeSchemaVersion() <
           StorageService.currentCookieScopeSchemaVersion;
       if (needsScopeMigration) {
         // Versions before schema 2 copied one legacy, cross-domain Cookie
@@ -661,10 +710,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final nativeDesktop = normalizeCookieHeader(scoped['desktop'] ?? '');
       final nativeMobile = normalizeCookieHeader(scoped['mobile'] ?? '');
       final storedFull = normalizeCookieHeader(_storage.getFullCookie() ?? '');
-      final storedDesktop =
-          normalizeCookieHeader(_storage.getDesktopCookie() ?? '');
-      final storedMobile =
-          normalizeCookieHeader(_storage.getMobileCookie() ?? '');
+      final storedDesktop = normalizeCookieHeader(
+        _storage.getDesktopCookie() ?? '',
+      );
+      final storedMobile = normalizeCookieHeader(
+        _storage.getMobileCookie() ?? '',
+      );
       final expectedUid =
           _storage.getString(StorageService.keyUserUid) ?? state.uid ?? '';
       final candidates = <String>[];
@@ -679,7 +730,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
       String candidateDesktop = '';
       for (final candidate in candidates) {
-        final canReuseVerifiedStoredCookie = !force &&
+        final canReuseVerifiedStoredCookie =
+            !force &&
             !needsScopeMigration &&
             storedDesktop.isNotEmpty &&
             candidate == storedDesktop;
@@ -704,9 +756,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
           ? nativeMobile
           : (storedMobile.isNotEmpty ? storedMobile : storedFull);
       final merged = normalizeCookieHeader(
-        [candidateDesktop, effectiveMobile, storedFull]
-            .where((item) => item.isNotEmpty)
-            .join('; '),
+        [
+          candidateDesktop,
+          effectiveMobile,
+          storedFull,
+        ].where((item) => item.isNotEmpty).join('; '),
       );
       if (merged.isEmpty) return false;
 
@@ -855,22 +909,26 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final storedDesktopCookie = _storage.getDesktopCookie();
     final storedMobileCookie = _storage.getMobileCookie();
     final normalizedFullCookie = normalizeCookieHeader(storedFullCookie ?? '');
-    final normalizedDesktopCookie =
-        normalizeCookieHeader(storedDesktopCookie ?? '');
-    final normalizedMobileCookie =
-        normalizeCookieHeader(storedMobileCookie ?? '');
+    final normalizedDesktopCookie = normalizeCookieHeader(
+      storedDesktopCookie ?? '',
+    );
+    final normalizedMobileCookie = normalizeCookieHeader(
+      storedMobileCookie ?? '',
+    );
     final fullCookie = normalizedFullCookie.isNotEmpty
         ? normalizedFullCookie
         : normalizeCookieHeader(
-            [normalizedDesktopCookie, normalizedMobileCookie]
-                .where((cookie) => cookie.isNotEmpty)
-                .join('; '),
+            [
+              normalizedDesktopCookie,
+              normalizedMobileCookie,
+            ].where((cookie) => cookie.isNotEmpty).join('; '),
           );
     final desktopCookie = normalizedDesktopCookie.isNotEmpty
         ? normalizedDesktopCookie
         : fullCookie;
-    final mobileCookie =
-        normalizedMobileCookie.isNotEmpty ? normalizedMobileCookie : fullCookie;
+    final mobileCookie = normalizedMobileCookie.isNotEmpty
+        ? normalizedMobileCookie
+        : fullCookie;
 
     if (fullCookie.isEmpty) {
       state = state.copyWith(
@@ -930,7 +988,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
             final user = _asMap(data['user']);
             final loginFlagPresent =
                 data.containsKey('islogin') || data.containsKey('login');
-            final loggedIn = _isTruthy(data['islogin']) ||
+            final loggedIn =
+                _isTruthy(data['islogin']) ||
                 _isTruthy(data['login']) ||
                 (!loginFlagPresent && user != null);
             if (loginFlagPresent && !loggedIn) {
@@ -941,7 +1000,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
               desktopSessionValid = true;
               resolvedUid = uid;
               resolvedName = user?['screen_name']?.toString();
-              resolvedAvatar = user?['avatar_large']?.toString() ??
+              resolvedAvatar =
+                  user?['avatar_large']?.toString() ??
                   user?['avatar_hd']?.toString() ??
                   user?['profile_image_url']?.toString();
             }
@@ -960,8 +1020,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
               headers: {
                 'Cookie': mobileCookie,
                 'Referer': 'https://m.weibo.cn/',
-                'User-Agent':
-                    'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
                 'Accept': 'application/json, text/plain, */*',
                 'X-Requested-With': 'XMLHttpRequest',
               },
@@ -973,7 +1032,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
             if (mData != null) {
               final mUser = _asMap(mData['user']);
               final mLogin = _isTruthy(mData['login']);
-              final mUid = mData['uid']?.toString() ??
+              final mUid =
+                  mData['uid']?.toString() ??
                   mUser?['id']?.toString() ??
                   mUser?['idstr']?.toString() ??
                   '';
@@ -1011,7 +1071,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
             final user = pRes.data['data']?['user'] as Map<String, dynamic>?;
             if (user != null && user['id']?.toString() == resolvedUid) {
               resolvedName ??= user['screen_name']?.toString();
-              resolvedAvatar ??= user['avatar_large']?.toString() ??
+              resolvedAvatar ??=
+                  user['avatar_large']?.toString() ??
                   user['avatar_hd']?.toString() ??
                   user['profile_image_url']?.toString();
             }
@@ -1025,11 +1086,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
         await _storage.setString(StorageService.keyUserUid, resolvedUid);
         if (resolvedName != null && resolvedName.isNotEmpty) {
           await _storage.setString(
-              StorageService.keyUserNickname, resolvedName);
+            StorageService.keyUserNickname,
+            resolvedName,
+          );
         }
         if (resolvedAvatar != null && resolvedAvatar.isNotEmpty) {
           await _storage.setString(
-              StorageService.keyUserAvatar, resolvedAvatar);
+            StorageService.keyUserAvatar,
+            resolvedAvatar,
+          );
         }
 
         state = state.copyWith(
@@ -1092,6 +1157,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   Future<void> logout() async {
     await _storage.clearAuth();
+    try {
+      await _weiboAuthChannel.invokeMethod('logout');
+    } catch (_) {}
     try {
       await const MethodChannel('com.sharelite/cookies')
           .invokeMethod('clearNativeCookies');

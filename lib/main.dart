@@ -5,6 +5,7 @@ import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'core/services/link_routing_service.dart';
 import 'core/services/image_cache_maintenance.dart';
 import 'core/storage/storage_service.dart';
@@ -50,9 +51,7 @@ void main() async {
 
   runApp(
     ProviderScope(
-      overrides: [
-        storageServiceProvider.overrideWithValue(storageService),
-      ],
+      overrides: [storageServiceProvider.overrideWithValue(storageService)],
       child: const WBTestApp(),
     ),
   );
@@ -82,7 +81,6 @@ class WBTestApp extends ConsumerWidget {
           isPureBlack: themeState.isPureBlackDark,
           fontWeightAdjustment: themeState.effectiveFontWeightAdjustment,
         );
-
         return MaterialApp(
           navigatorKey: rootNavigatorKey,
           title: 'Review',
@@ -96,14 +94,11 @@ class WBTestApp extends ConsumerWidget {
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
-          supportedLocales: const [
-            Locale('zh', 'CN'),
-          ],
+          supportedLocales: const [Locale('zh', 'CN')],
           builder: (context, child) {
-            final isDark = Theme.of(context).brightness == Brightness.dark;
-            final currentTheme = isDark ? darkTheme : lightTheme;
             return DefaultTextStyle(
-              style: currentTheme.textTheme.bodyMedium ?? const TextStyle(),
+              style:
+                  Theme.of(context).textTheme.bodyMedium ?? const TextStyle(),
               child: child ?? const SizedBox.shrink(),
             );
           },

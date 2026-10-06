@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/storage/storage_service.dart';
@@ -17,6 +18,8 @@ import 'storage_settings_page.dart';
 import 'webdav_backup_page.dart';
 import 'message_notification_settings_page.dart';
 import '../../../core/theme/custom_app_icon_provider.dart';
+import '../../../core/design_system/components/review_page_scaffold.dart';
+import '../../../core/design_system/components/review_preference_tile.dart';
 import '../../../core/widgets/app_section_card.dart';
 
 /// 纯粹的系统设置大厅 (底栏第 3 个 Tab)
@@ -34,50 +37,58 @@ class SettingsView extends ConsumerWidget {
     // 当开启悬浮胶囊底栏时，预留适度紧凑的底部边距，防止遮挡退出登录与底部设置项
     final bottomNavPadding = themeState.useFloatingNavBar ? 72.0 : 16.0;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('设置', style: TextStyle(fontWeight: FontWeight.bold)),
-      ),
-      body: ListView(
-        padding: EdgeInsets.fromLTRB(16, 12, 16, bottomNavPadding),
+    return ReviewPageScaffold(
+      title: '设置',
+      showNavigationIcon: false,
+      bodyBuilder: (context, contentInsets) => ListView(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          12,
+          16,
+          bottomNavPadding,
+        ).add(contentInsets),
         children: [
           // 1. 个性化与样式管理
           AppSectionCard(
             child: Column(
               children: [
                 // 个性化 (明暗、颜色、导航、触感)
-                ListTile(
-                  leading:
-                      Icon(Icons.palette_outlined, color: colorScheme.primary),
-                  title: const Text('个性化',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: const Text('明暗模式、色彩方案、悬浮胶囊底栏与触感反馈',
-                      style: TextStyle(fontSize: 12.5)),
-                  trailing: const Icon(Icons.chevron_right_rounded),
+                ReviewPreferenceTile(
+                  leading: Icon(
+                    Icons.palette_outlined,
+                    color: colorScheme.primary,
+                  ),
+                  title: '个性化',
+                  subtitle: '明暗模式、色彩方案、悬浮胶囊底栏与触感反馈',
+                  titleStyle: const TextStyle(fontWeight: FontWeight.w600),
+                  subtitleStyle: const TextStyle(fontSize: 12.5),
                   onTap: () {
                     HapticFeedbackUtil.light();
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                          builder: (ctx) => const ThemeSettingsPage()),
+                        builder: (ctx) => const ThemeSettingsPage(),
+                      ),
                     );
                   },
                 ),
                 const Divider(height: 1, indent: 56),
 
                 // 微博样式 (卡片排版、时间显示、IP属地、点赞过滤)
-                ListTile(
-                  leading:
-                      Icon(Icons.style_outlined, color: colorScheme.primary),
-                  title: const Text('微博样式',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: const Text('卡片排版、时间格式、IP属地与点赞博文过滤',
-                      style: TextStyle(fontSize: 12.5)),
-                  trailing: const Icon(Icons.chevron_right_rounded),
+                ReviewPreferenceTile(
+                  leading: Icon(
+                    Icons.style_outlined,
+                    color: colorScheme.primary,
+                  ),
+                  title: '微博样式',
+                  subtitle: '卡片排版、时间格式、IP属地与点赞博文过滤',
+                  titleStyle: const TextStyle(fontWeight: FontWeight.w600),
+                  subtitleStyle: const TextStyle(fontSize: 12.5),
                   onTap: () {
                     HapticFeedbackUtil.light();
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                          builder: (ctx) => const WeiboStyleSettingsPage()),
+                        builder: (ctx) => const WeiboStyleSettingsPage(),
+                      ),
                     );
                   },
                 ),
@@ -87,14 +98,15 @@ class SettingsView extends ConsumerWidget {
           const SizedBox(height: 14),
 
           AppSectionCard(
-            child: ListTile(
-              leading: Icon(Icons.notifications_active_outlined,
-                  color: colorScheme.primary),
-              title: const Text('订阅消息提醒',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text('后台提醒 @、点赞、回复和私信',
-                  style: TextStyle(fontSize: 12.5)),
-              trailing: const Icon(Icons.chevron_right_rounded),
+            child: ReviewPreferenceTile(
+              leading: Icon(
+                Icons.notifications_active_outlined,
+                color: colorScheme.primary,
+              ),
+              title: '订阅消息提醒',
+              subtitle: '后台提醒 @、点赞、回复和私信',
+              titleStyle: const TextStyle(fontWeight: FontWeight.w600),
+              subtitleStyle: const TextStyle(fontSize: 12.5),
               onTap: () {
                 HapticFeedbackUtil.light();
                 Navigator.of(context).push(
@@ -112,39 +124,42 @@ class SettingsView extends ConsumerWidget {
             child: Column(
               children: [
                 // 存储设置 (图片与视频存储路径)
-                ListTile(
-                  leading: Icon(Icons.folder_open_outlined,
-                      color: colorScheme.primary),
-                  title: const Text('存储设置',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle:
-                      const Text('图片/视频存储路径', style: TextStyle(fontSize: 12.5)),
-                  trailing: const Icon(Icons.chevron_right_rounded),
+                ReviewPreferenceTile(
+                  leading: Icon(
+                    Icons.folder_open_outlined,
+                    color: colorScheme.primary,
+                  ),
+                  title: '存储设置',
+                  subtitle: '图片/视频存储路径',
+                  titleStyle: const TextStyle(fontWeight: FontWeight.w600),
+                  subtitleStyle: const TextStyle(fontSize: 12.5),
                   onTap: () {
                     HapticFeedbackUtil.light();
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                          builder: (ctx) => const StorageSettingsPage()),
+                        builder: (ctx) => const StorageSettingsPage(),
+                      ),
                     );
                   },
                 ),
                 const Divider(height: 1, indent: 56),
 
                 // WebDAV 备份
-                ListTile(
-                  leading: Icon(Icons.cloud_sync_outlined,
-                      color: colorScheme.primary),
-                  title: const Text('WebDAV备份',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: const Text(
-                      '使用 WebDAV 备份个性化设置，不包含微博 Cookie、Token 或 WebDAV 密码',
-                      style: TextStyle(fontSize: 12.5)),
-                  trailing: const Icon(Icons.chevron_right_rounded),
+                ReviewPreferenceTile(
+                  leading: Icon(
+                    Icons.cloud_sync_outlined,
+                    color: colorScheme.primary,
+                  ),
+                  title: 'WebDAV备份',
+                  subtitle: '使用 WebDAV 备份个性化设置，不包含微博 Cookie、Token 或 WebDAV 密码',
+                  titleStyle: const TextStyle(fontWeight: FontWeight.w600),
+                  subtitleStyle: const TextStyle(fontSize: 12.5),
                   onTap: () {
                     HapticFeedbackUtil.light();
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                          builder: (ctx) => const WebDavBackupPage()),
+                        builder: (ctx) => const WebDavBackupPage(),
+                      ),
                     );
                   },
                 ),
@@ -158,14 +173,15 @@ class SettingsView extends ConsumerWidget {
             child: Column(
               children: [
                 if (!isLoggedIn)
-                  ListTile(
-                    leading:
-                        Icon(Icons.login_rounded, color: colorScheme.primary),
-                    title: const Text('登录账号',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: const Text('短信验证码、扫码或导入账号凭据',
-                        style: TextStyle(fontSize: 12)),
-                    trailing: const Icon(Icons.chevron_right_rounded),
+                  ReviewPreferenceTile(
+                    leading: Icon(
+                      Icons.login_rounded,
+                      color: colorScheme.primary,
+                    ),
+                    title: '登录账号',
+                    subtitle: '短信验证码、扫码或导入账号凭据',
+                    titleStyle: const TextStyle(fontWeight: FontWeight.w600),
+                    subtitleStyle: const TextStyle(fontSize: 12),
                     onTap: () {
                       HapticFeedbackUtil.light();
                       Navigator.of(context).push(
@@ -174,7 +190,7 @@ class SettingsView extends ConsumerWidget {
                     },
                   ),
                 if (isLoggedIn) ...[
-                  ListTile(
+                  ReviewPreferenceTile(
                     leading: Icon(
                       authState.isCookieExpired
                           ? Icons.warning_amber_rounded
@@ -183,18 +199,16 @@ class SettingsView extends ConsumerWidget {
                           ? Colors.amber
                           : colorScheme.primary,
                     ),
-                    title: const Text('检测账号凭据有效性',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: Text(
-                      authState.isCookieExpired
-                          ? '⚠️ 凭据已失效，点击重新登录'
-                          : '验证当前 Cookie 与访问令牌是否过期有效',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: authState.isCookieExpired
-                            ? colorScheme.error
-                            : null,
-                      ),
+                    title: '检测账号凭据有效性',
+                    subtitle: authState.isCookieExpired
+                        ? '⚠️ 凭据已失效，点击重新登录'
+                        : '验证当前 Cookie 与访问令牌是否过期有效',
+                    titleStyle: const TextStyle(fontWeight: FontWeight.w600),
+                    subtitleStyle: TextStyle(
+                      fontSize: 12,
+                      color: authState.isCookieExpired
+                          ? colorScheme.error
+                          : null,
                     ),
                     trailing: authState.isValidating
                         ? const SizedBox(
@@ -202,7 +216,7 @@ class SettingsView extends ConsumerWidget {
                             height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.chevron_right_rounded),
+                        : null,
                     onTap: () async {
                       HapticFeedbackUtil.light();
                       AppToast.show(context, '正在检测账号凭据有效性...');
@@ -216,12 +230,14 @@ class SettingsView extends ConsumerWidget {
                             context: context,
                             builder: (ctx) => AlertDialog(
                               icon: const Icon(
-                                  Icons.check_circle_outline_rounded,
-                                  color: Colors.green,
-                                  size: 36),
+                                Icons.check_circle_outline_rounded,
+                                color: Colors.green,
+                                size: 36,
+                              ),
                               title: const Text('凭据状态正常'),
                               content: Text(
-                                  '当前账号凭据有效，登录会话正常。\n\n账号：@${currentAuth.nickname ?? "已登录用户"}\nUID：${currentAuth.uid ?? ""}'),
+                                '当前账号凭据有效，登录会话正常。\n\n账号：@${currentAuth.nickname ?? "已登录用户"}\nUID：${currentAuth.uid ?? ""}',
+                              ),
                               actions: [
                                 FilledButton(
                                   onPressed: () => Navigator.pop(ctx),
@@ -235,11 +251,15 @@ class SettingsView extends ConsumerWidget {
                           showAppDialog(
                             context: context,
                             builder: (ctx) => AlertDialog(
-                              icon: const Icon(Icons.sync_problem_rounded,
-                                  color: Colors.amber, size: 36),
+                              icon: const Icon(
+                                Icons.sync_problem_rounded,
+                                color: Colors.amber,
+                                size: 36,
+                              ),
                               title: const Text('桌面会话待同步'),
                               content: const Text(
-                                  '当前账号的移动端凭据仍然有效，但微博桌面时间线会话尚未恢复。应用已经保留登录凭据并尝试自动修复，请返回时间线后下拉刷新；如果仍无法加载，再重新登录一次。'),
+                                '当前账号的移动端凭据仍然有效，但微博桌面时间线会话尚未恢复。应用已经保留登录凭据并尝试自动修复，请返回时间线后下拉刷新；如果仍无法加载，再重新登录一次。',
+                              ),
                               actions: [
                                 FilledButton(
                                   onPressed: () => Navigator.pop(ctx),
@@ -252,11 +272,15 @@ class SettingsView extends ConsumerWidget {
                           showAppDialog(
                             context: context,
                             builder: (ctx) => AlertDialog(
-                              icon: const Icon(Icons.sync_problem_rounded,
-                                  color: Colors.amber, size: 36),
+                              icon: const Icon(
+                                Icons.sync_problem_rounded,
+                                color: Colors.amber,
+                                size: 36,
+                              ),
                               title: const Text('暂时无法验证'),
                               content: const Text(
-                                  '微博官方接口暂时没有返回明确的登录状态，可能是网络波动或接口响应变化。当前不会清除登录凭据，请稍后重试。'),
+                                '微博官方接口暂时没有返回明确的登录状态，可能是网络波动或接口响应变化。当前不会清除登录凭据，请稍后重试。',
+                              ),
                               actions: [
                                 FilledButton(
                                   onPressed: () => Navigator.pop(ctx),
@@ -269,19 +293,25 @@ class SettingsView extends ConsumerWidget {
                           showAppDialog(
                             context: context,
                             builder: (ctx) => AlertDialog(
-                              icon: const Icon(Icons.warning_amber_rounded,
-                                  color: Colors.amber, size: 36),
+                              icon: const Icon(
+                                Icons.warning_amber_rounded,
+                                color: Colors.amber,
+                                size: 36,
+                              ),
                               title: const Text('登录凭据已失效'),
                               content: const Text(
-                                  '检测到当前账号登录凭据（Cookie / SUB）已过期失效，请重新登录以保障关注流和各项互动功能正常使用。'),
+                                '检测到当前账号登录凭据（Cookie / SUB）已过期失效，请重新登录以保障关注流和各项互动功能正常使用。',
+                              ),
                               actions: [
                                 TextButton(
                                   onPressed: () => Navigator.pop(ctx),
                                   child: const Text('稍后'),
                                 ),
                                 FilledButton.icon(
-                                  icon:
-                                      const Icon(Icons.login_rounded, size: 18),
+                                  icon: const Icon(
+                                    Icons.login_rounded,
+                                    size: 18,
+                                  ),
                                   label: const Text('重新登录'),
                                   onPressed: () async {
                                     Navigator.pop(ctx);
@@ -296,7 +326,8 @@ class SettingsView extends ConsumerWidget {
                                     if (!context.mounted) return;
                                     Navigator.of(context).push(
                                       MaterialPageRoute(
-                                          builder: (ctx) => const LoginPage()),
+                                        builder: (ctx) => const LoginPage(),
+                                      ),
                                     );
                                   },
                                 ),
@@ -308,38 +339,48 @@ class SettingsView extends ConsumerWidget {
                     },
                   ),
                   const Divider(height: 1, indent: 56),
-                  ListTile(
-                    leading:
-                        Icon(Icons.key_rounded, color: colorScheme.primary),
-                    title: const Text('导出账号凭据 / Cookie',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: const Text('查看并复制当前账号完整 Cookie 或 SUB 凭据',
-                        style: TextStyle(fontSize: 12.5)),
-                    trailing: const Icon(Icons.chevron_right_rounded),
+                  ReviewPreferenceTile(
+                    leading: Icon(
+                      Icons.key_rounded,
+                      color: colorScheme.primary,
+                    ),
+                    title: '导出账号凭据 / Cookie',
+                    subtitle: '查看并复制当前账号完整 Cookie 或 SUB 凭据',
+                    titleStyle: const TextStyle(fontWeight: FontWeight.w600),
+                    subtitleStyle: const TextStyle(fontSize: 12.5),
                     onTap: () => _showExportCookieDialog(
-                        context, authState, storageService),
+                      context,
+                      authState,
+                      storageService,
+                    ),
                   ),
                 ],
                 const Divider(height: 1, indent: 56),
-                ListTile(
-                  leading: Icon(Icons.info_outline_rounded,
-                      color: colorScheme.primary),
-                  title: const Text('关于 Review',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: const Text('版本 ${ApiConstants.appVersion}',
-                      style: TextStyle(fontSize: 12.5)),
-                  trailing: const Icon(Icons.chevron_right_rounded),
+                ReviewPreferenceTile(
+                  leading: Icon(
+                    Icons.info_outline_rounded,
+                    color: colorScheme.primary,
+                  ),
+                  title: '关于 Review',
+                  subtitle: '版本 ${ApiConstants.appVersion}',
+                  titleStyle: const TextStyle(fontWeight: FontWeight.w600),
+                  subtitleStyle: const TextStyle(fontSize: 12.5),
                   onTap: () => _showAboutDialog(context, ref),
                 ),
                 if (isLoggedIn) ...[
                   const Divider(height: 1, indent: 56),
                   ListTile(
-                    leading: const Icon(Icons.logout_rounded,
-                        color: Colors.redAccent),
-                    title: const Text('退出登录',
-                        style: TextStyle(
-                            color: Colors.redAccent,
-                            fontWeight: FontWeight.bold)),
+                    leading: const Icon(
+                      Icons.logout_rounded,
+                      color: Colors.redAccent,
+                    ),
+                    title: const Text(
+                      '退出登录',
+                      style: TextStyle(
+                        color: Colors.redAccent,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     onTap: () async {
                       HapticFeedbackUtil.light();
                       final confirmed = await showAppDialog<bool>(
@@ -347,7 +388,8 @@ class SettingsView extends ConsumerWidget {
                         builder: (ctx) => AlertDialog(
                           title: const Text('确认退出登录？'),
                           content: const Text(
-                              '退出登录后将彻底清理本地所有微博 Cookie、会话凭据及 WebView 状态。'),
+                            '退出登录后将彻底清理本地所有微博 Cookie、会话凭据及 WebView 状态。',
+                          ),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.pop(ctx, false),
@@ -355,7 +397,8 @@ class SettingsView extends ConsumerWidget {
                             ),
                             FilledButton(
                               style: FilledButton.styleFrom(
-                                  backgroundColor: Colors.redAccent),
+                                backgroundColor: Colors.redAccent,
+                              ),
                               onPressed: () => Navigator.pop(ctx, true),
                               child: const Text('退出'),
                             ),
@@ -407,9 +450,13 @@ class SettingsView extends ConsumerWidget {
               children: [
                 Row(
                   children: [
-                    const Text('导出账号凭据 / Cookie',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16)),
+                    const Text(
+                      '导出账号凭据 / Cookie',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
                     IconButton(
                       icon: const Icon(Icons.close_rounded),
                       onPressed: () => Navigator.pop(ctx),
@@ -420,9 +467,10 @@ class SettingsView extends ConsumerWidget {
                 Text(
                   '当前账号: $nickname (UID: $uid)',
                   style: TextStyle(
-                      fontSize: 13,
-                      color: colorScheme.primary,
-                      fontWeight: FontWeight.bold),
+                    fontSize: 13,
+                    color: colorScheme.primary,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const SizedBox(height: 14),
 
@@ -430,8 +478,9 @@ class SettingsView extends ConsumerWidget {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest
-                        .withValues(alpha: 0.5),
+                    color: colorScheme.surfaceContainerHighest.withValues(
+                      alpha: 0.5,
+                    ),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Column(
@@ -440,9 +489,13 @@ class SettingsView extends ConsumerWidget {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('SUB 核心令牌 (用于轻量鉴权)',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 13)),
+                          const Text(
+                            'SUB 核心令牌 (用于轻量鉴权)',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
                           TextButton.icon(
                             icon: const Icon(Icons.copy_rounded, size: 14),
                             label: const Text('复制 SUB'),
@@ -460,7 +513,9 @@ class SettingsView extends ConsumerWidget {
                             ? '${subCookie.substring(0, 60)}...'
                             : subCookie,
                         style: const TextStyle(
-                            fontSize: 11, fontFamily: 'monospace'),
+                          fontSize: 11,
+                          fontFamily: 'monospace',
+                        ),
                       ),
                     ],
                   ),
@@ -471,8 +526,9 @@ class SettingsView extends ConsumerWidget {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest
-                        .withValues(alpha: 0.5),
+                    color: colorScheme.surfaceContainerHighest.withValues(
+                      alpha: 0.5,
+                    ),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Column(
@@ -481,15 +537,20 @@ class SettingsView extends ConsumerWidget {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('完整 Cookie 字符串 (Full Session)',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 13)),
+                          const Text(
+                            '完整 Cookie 字符串 (Full Session)',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
                           TextButton.icon(
                             icon: const Icon(Icons.copy_all_rounded, size: 14),
                             label: const Text('复制全部'),
                             onPressed: () {
                               Clipboard.setData(
-                                  ClipboardData(text: fullCookie));
+                                ClipboardData(text: fullCookie),
+                              );
                               HapticFeedbackUtil.light();
                               Navigator.pop(ctx);
                               AppToast.show(context, '已复制完整 Cookie 字符串到剪贴板');
@@ -502,7 +563,9 @@ class SettingsView extends ConsumerWidget {
                             ? '${fullCookie.substring(0, 80)}...'
                             : fullCookie,
                         style: const TextStyle(
-                            fontSize: 11, fontFamily: 'monospace'),
+                          fontSize: 11,
+                          fontFamily: 'monospace',
+                        ),
                       ),
                     ],
                   ),
@@ -558,8 +621,10 @@ class SettingsView extends ConsumerWidget {
                 ),
                 const SizedBox(width: 8),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2.5,
+                  ),
                   decoration: BoxDecoration(
                     color: colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(8),
@@ -591,14 +656,23 @@ class SettingsView extends ConsumerWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildAboutItem(Icons.palette_outlined,
-                    '100% 纯原生 Flutter 与 MD3 动态主题配色', colorScheme),
+                _buildAboutItem(
+                  Icons.palette_outlined,
+                  '100% 纯原生 Flutter 与 MD3 动态主题配色',
+                  colorScheme,
+                ),
                 const SizedBox(height: 8),
                 _buildAboutItem(
-                    Icons.sync_rounded, '自动同步关注流、超话与云端自定义分组', colorScheme),
+                  Icons.sync_rounded,
+                  '自动同步关注流、超话与云端自定义分组',
+                  colorScheme,
+                ),
                 const SizedBox(height: 8),
-                _buildAboutItem(Icons.photo_library_outlined,
-                    '自适应九宫格、长图标记与高清画廊浏览', colorScheme),
+                _buildAboutItem(
+                  Icons.photo_library_outlined,
+                  '自适应九宫格、长图标记与高清画廊浏览',
+                  colorScheme,
+                ),
               ],
             ),
             const SizedBox(height: 14),
@@ -615,19 +689,26 @@ class SettingsView extends ConsumerWidget {
                 }
               },
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest
-                      .withValues(alpha: 0.5),
+                  color: colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.5,
+                  ),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                      color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+                  ),
                 ),
                 child: Row(
                   children: [
-                    Icon(CupertinoIcons.chevron_left_slash_chevron_right,
-                        color: colorScheme.primary, size: 20),
+                    Icon(
+                      CupertinoIcons.chevron_left_slash_chevron_right,
+                      color: colorScheme.primary,
+                      size: 20,
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(
@@ -636,19 +717,25 @@ class SettingsView extends ConsumerWidget {
                           const Text(
                             'GitHub 开源地址',
                             style: TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.bold),
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                           Text(
                             'github.com/Chengeeker/Review',
                             style: TextStyle(
-                                fontSize: 11,
-                                color: colorScheme.onSurfaceVariant),
+                              fontSize: 11,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
                           ),
                         ],
                       ),
                     ),
-                    Icon(Icons.open_in_new_rounded,
-                        size: 16, color: colorScheme.primary),
+                    Icon(
+                      Icons.open_in_new_rounded,
+                      size: 16,
+                      color: colorScheme.primary,
+                    ),
                   ],
                 ),
               ),
@@ -660,7 +747,8 @@ class SettingsView extends ConsumerWidget {
             onPressed: () => Navigator.pop(ctx),
             style: FilledButton.styleFrom(
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
             ),
             child: const Text('我知道了'),
@@ -681,9 +769,10 @@ class SettingsView extends ConsumerWidget {
           child: Text(
             text,
             style: TextStyle(
-                fontSize: 12.5,
-                color: colorScheme.onSurfaceVariant,
-                height: 1.35),
+              fontSize: 12.5,
+              color: colorScheme.onSurfaceVariant,
+              height: 1.35,
+            ),
           ),
         ),
       ],
