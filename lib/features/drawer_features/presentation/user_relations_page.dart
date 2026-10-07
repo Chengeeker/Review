@@ -1,7 +1,10 @@
 import 'package:dio/dio.dart';
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
+import 'package:review/core/widgets/review_refresh_header.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/network/weibo_dio_client.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
@@ -161,8 +164,8 @@ class _UserRelationsPageState extends ConsumerState<UserRelationsPage> {
           _emptyMessage = rejectedMessage.isNotEmpty
               ? rejectedMessage
               : (lastError == null
-                  ? '微博暂未返回${widget.relationName}，请稍后重试'
-                  : '暂时无法加载${widget.relationName}，请检查网络后重试');
+                    ? '微博暂未返回${widget.relationName}，请稍后重试'
+                    : '暂时无法加载${widget.relationName}，请检查网络后重试');
         }
       });
       return;
@@ -188,8 +191,8 @@ class _UserRelationsPageState extends ConsumerState<UserRelationsPage> {
         _emptyMessage = response.message.isNotEmpty
             ? response.message
             : ((widget.expectedCount ?? 0) > 0
-                ? '该用户的${widget.relationName}可能受隐私设置影响，暂未公开'
-                : widget.emptyTitle);
+                  ? '该用户的${widget.relationName}可能受隐私设置影响，暂未公开'
+                  : widget.emptyTitle);
       } else {
         _emptyMessage = '';
       }
@@ -207,10 +210,7 @@ class _UserRelationsPageState extends ConsumerState<UserRelationsPage> {
     return {
       'uid': uid,
       'page': page,
-      if (widget.isFollowers) ...{
-        'relate': 'fans',
-        'type': 'fans',
-      },
+      if (widget.isFollowers) ...{'relate': 'fans', 'type': 'fans'},
     };
   }
 
@@ -371,9 +371,10 @@ class _UserRelationsPageState extends ConsumerState<UserRelationsPage> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      extendBodyBehindAppBar: !widget.embedded,
       appBar: widget.embedded
           ? null
-          : AppBar(
+          : ReviewFrostedAppBar(
               title: Text(
                 widget.ownerName?.isNotEmpty == true
                     ? '${widget.ownerName}${widget.title}'
@@ -384,9 +385,9 @@ class _UserRelationsPageState extends ConsumerState<UserRelationsPage> {
       body: !authState.isLoggedIn
           ? _buildLoginPrompt(colorScheme)
           : EasyRefresh(
-              onRefresh: () => HapticFeedbackUtil.refresh(
-                () => _fetchUsers(refresh: true),
-              ),
+              header: widget.embedded ? null : reviewFrostedAppBarRefreshHeader,
+              onRefresh: () =>
+                  HapticFeedbackUtil.refresh(() => _fetchUsers(refresh: true)),
               onLoad: () async {
                 await _fetchUsers(refresh: false);
                 return _hasMore
@@ -395,60 +396,67 @@ class _UserRelationsPageState extends ConsumerState<UserRelationsPage> {
               },
               child: _isLoading
                   ? Center(
-                      child:
-                          CircularProgressIndicator(color: colorScheme.primary),
+                      child: CircularProgressIndicator(
+                        color: colorScheme.primary,
+                      ),
                     )
                   : _users.isEmpty
-                      ? _buildEmptyState(colorScheme)
-                      : ListView.separated(
-                          padding: const EdgeInsets.all(12),
-                          itemCount: _users.length,
-                          separatorBuilder: (_, __) =>
-                              const Divider(height: 1, indent: 64),
-                          itemBuilder: (context, index) {
-                            final user = _users[index];
-                            return ListTile(
-                              minVerticalPadding: 8,
-                              leading: AppAvatar(
-                                url: user.avatar,
-                                size: 46,
-                                name: user.screenName,
-                                verified: user.verified,
-                                verifiedType: user.verifiedType,
+                  ? _buildEmptyState(colorScheme)
+                  : ListView.separated(
+                      padding: EdgeInsets.fromLTRB(
+                        12,
+                        MediaQuery.paddingOf(context).top +
+                            (widget.embedded ? 0 : kToolbarHeight) +
+                            12,
+                        12,
+                        12,
+                      ),
+                      itemCount: _users.length,
+                      separatorBuilder: (_, __) =>
+                          const Divider(height: 1, indent: 64),
+                      itemBuilder: (context, index) {
+                        final user = _users[index];
+                        return ListTile(
+                          minVerticalPadding: 8,
+                          leading: AppAvatar(
+                            url: user.avatar,
+                            size: 46,
+                            name: user.screenName,
+                            verified: user.verified,
+                            verifiedType: user.verifiedType,
+                          ),
+                          title: Text(
+                            user.screenName,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Text(
+                            user.verifiedReason.isNotEmpty
+                                ? user.verifiedReason
+                                : (user.description.isNotEmpty
+                                      ? user.description
+                                      : '粉丝 ${user.followersCountStr}'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          trailing: const Icon(
+                            Icons.arrow_forward_ios_rounded,
+                            size: 14,
+                          ),
+                          onTap: () {
+                            HapticFeedbackUtil.light();
+                            Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (ctx) => UserProfilePage(
+                                  user: user,
+                                  uid: user.id,
+                                  screenName: user.screenName,
+                                ),
                               ),
-                              title: Text(
-                                user.screenName,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold),
-                              ),
-                              subtitle: Text(
-                                user.verifiedReason.isNotEmpty
-                                    ? user.verifiedReason
-                                    : (user.description.isNotEmpty
-                                        ? user.description
-                                        : '粉丝 ${user.followersCountStr}'),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              trailing: const Icon(
-                                Icons.arrow_forward_ios_rounded,
-                                size: 14,
-                              ),
-                              onTap: () {
-                                HapticFeedbackUtil.light();
-                                Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (ctx) => UserProfilePage(
-                                      user: user,
-                                      uid: user.id,
-                                      screenName: user.screenName,
-                                    ),
-                                  ),
-                                );
-                              },
                             );
                           },
-                        ),
+                        );
+                      },
+                    ),
             ),
     );
   }
@@ -471,9 +479,8 @@ class _UserRelationsPageState extends ConsumerState<UserRelationsPage> {
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (ctx) => const LoginPage()),
-              );
+              Navigator.of(context)
+                  .push(MaterialPageRoute(builder: (ctx) => const LoginPage()));
             },
             icon: const Icon(Icons.login_rounded),
             label: const Text('立即登录'),
@@ -484,8 +491,9 @@ class _UserRelationsPageState extends ConsumerState<UserRelationsPage> {
   }
 
   Widget _buildEmptyState(ColorScheme colorScheme) {
-    final message =
-        _emptyMessage.isNotEmpty ? _emptyMessage : widget.emptyTitle;
+    final message = _emptyMessage.isNotEmpty
+        ? _emptyMessage
+        : widget.emptyTitle;
     return Center(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 28),
@@ -501,8 +509,10 @@ class _UserRelationsPageState extends ConsumerState<UserRelationsPage> {
             Text(
               message,
               textAlign: TextAlign.center,
-              style:
-                  TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 14),
+              style: TextStyle(
+                color: colorScheme.onSurfaceVariant,
+                fontSize: 14,
+              ),
             ),
           ],
         ),
@@ -525,8 +535,8 @@ class _ParsedRelationResponse {
   });
 
   const _ParsedRelationResponse.notAccepted()
-      : users = const [],
-        hasMore = false,
-        message = '',
-        accepted = false;
+    : users = const [],
+      hasMore = false,
+      message = '',
+      accepted = false;
 }

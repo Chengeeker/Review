@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
+import 'package:review/core/widgets/review_refresh_header.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/network/weibo_dio_client.dart';
 import '../../../core/storage/storage_service.dart';
@@ -66,28 +69,31 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
       }
 
       final results = await Future.wait<dynamic>([
-        safeRequest(client.dio.post(
-          'https://api.weibo.com/webim/2/direct_messages/set_all_read.json',
-          queryParameters: {'source': '209678993'},
-        )),
-        safeRequest(client.dio.get(
-          'https://api.weibo.com/webim/2/direct_messages/clear_unread.json',
-          queryParameters: {'source': '209678993'},
-        )),
-        safeRequest(client.dio.get(
-          'https://weibo.com/ajax/message/clearUnread',
-          queryParameters: {'type': 'all'},
-        )),
+        safeRequest(
+          client.dio.post(
+            'https://api.weibo.com/webim/2/direct_messages/set_all_read.json',
+            queryParameters: {'source': '209678993'},
+          ),
+        ),
+        safeRequest(
+          client.dio.get(
+            'https://api.weibo.com/webim/2/direct_messages/clear_unread.json',
+            queryParameters: {'source': '209678993'},
+          ),
+        ),
+        safeRequest(
+          client.dio.get(
+            'https://weibo.com/ajax/message/clearUnread',
+            queryParameters: {'type': 'all'},
+          ),
+        ),
       ]);
       remoteSuccess = results.any(_isClearResponseConfirmed);
     } catch (_) {}
 
     if (!mounted) return;
     setState(() => _isClearingUnread = false);
-    AppToast.show(
-      context,
-      remoteSuccess ? '已清除未读消息' : '本地未读计数已清零，服务器未确认同步',
-    );
+    AppToast.show(context, remoteSuccess ? '已清除未读消息' : '本地未读计数已清零，服务器未确认同步');
   }
 
   bool _isClearResponseConfirmed(dynamic response) {
@@ -138,7 +144,8 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
             final uid = u['id']?.toString() ?? u['idstr']?.toString() ?? '';
             final name =
                 u['screen_name']?.toString() ?? u['name']?.toString() ?? '';
-            final avatar = u['avatar_large']?.toString() ??
+            final avatar =
+                u['avatar_large']?.toString() ??
                 u['profile_image_url']?.toString() ??
                 '';
             if (uid.isNotEmpty) {
@@ -169,14 +176,10 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
     // Mark the category as read independently of opening the page; this keeps
     // navigation immediate while persisting the local unread watermark.
     unawaited(
-      MessageUnreadService(ref.read(storageServiceProvider)).markCategoryAsRead(
-        ref.read(weiboDioClientProvider).dio,
-        category,
-      ),
+      MessageUnreadService(ref.read(storageServiceProvider))
+          .markCategoryAsRead(ref.read(weiboDioClientProvider).dio, category),
     );
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => page),
-    );
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
   }
 
   Future<void> _openConversation({
@@ -217,9 +220,12 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
     final isLoggedIn = authState.isLoggedIn;
 
     return Scaffold(
-      appBar: AppBar(
-        title:
-            const Text('我的消息', style: TextStyle(fontWeight: FontWeight.bold)),
+      extendBodyBehindAppBar: true,
+      appBar: ReviewFrostedAppBar(
+        title: const Text(
+          '我的消息',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         actions: isLoggedIn
             ? [
                 IconButton(
@@ -241,13 +247,16 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.mail_outline_rounded,
-                      size: 60,
-                      color: colorScheme.primary.withValues(alpha: 0.6)),
+                  Icon(
+                    Icons.mail_outline_rounded,
+                    size: 60,
+                    color: colorScheme.primary.withValues(alpha: 0.6),
+                  ),
                   const SizedBox(height: 16),
-                  const Text('登录后即可同步查看您的消息与私信会话',
-                      style:
-                          TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                  const Text(
+                    '登录后即可同步查看您的消息与私信会话',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 16),
                   FilledButton.icon(
                     onPressed: () {
@@ -262,9 +271,15 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
               ),
             )
           : EasyRefresh(
+              header: reviewFrostedAppBarRefreshHeader,
               onRefresh: () => HapticFeedbackUtil.refresh(_fetchContacts),
               child: ListView(
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: EdgeInsets.fromLTRB(
+                  0,
+                  MediaQuery.paddingOf(context).top + kToolbarHeight + 12,
+                  0,
+                  12,
+                ),
                 children: [
                   // 1. 顶部 4 个快捷通知功能卡片 (2x2 Grid)
                   Padding(
@@ -381,7 +396,8 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
                       padding: const EdgeInsets.symmetric(vertical: 40),
                       child: Center(
                         child: CircularProgressIndicator(
-                            color: colorScheme.primary),
+                          color: colorScheme.primary,
+                        ),
                       ),
                     )
                   else if (_contacts.isEmpty)
@@ -390,16 +406,20 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
                       child: Center(
                         child: Column(
                           children: [
-                            Icon(Icons.chat_bubble_outline_rounded,
-                                size: 48,
-                                color: colorScheme.onSurfaceVariant
-                                    .withValues(alpha: 0.35)),
+                            Icon(
+                              Icons.chat_bubble_outline_rounded,
+                              size: 48,
+                              color: colorScheme.onSurfaceVariant.withValues(
+                                alpha: 0.35,
+                              ),
+                            ),
                             const SizedBox(height: 12),
                             Text(
                               '暂无私信会话',
                               style: TextStyle(
-                                  color: colorScheme.onSurfaceVariant,
-                                  fontSize: 14),
+                                color: colorScheme.onSurfaceVariant,
+                                fontSize: 14,
+                              ),
                             ),
                           ],
                         ),
@@ -421,19 +441,23 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
                             ? (contact['message'] as Map<String, dynamic>)
                             : <String, dynamic>{};
                         final unreadCount = MessageUnreadService.readCount(
-                            contact['unread_count']);
+                          contact['unread_count'],
+                        );
                         final sigMsgs =
                             contact['significant_msgs'] as List? ?? [];
                         final hasSpecialAt = sigMsgs.isNotEmpty;
 
-                        final rawId = user['id']?.toString() ??
+                        final rawId =
+                            user['id']?.toString() ??
                             user['idstr']?.toString() ??
                             '';
-                        final name = user['name']?.toString() ??
+                        final name =
+                            user['name']?.toString() ??
                             user['screen_name']?.toString() ??
                             '私信用户';
-                        final isGroup =
-                            MessageUnreadService.isGroupContact(contact);
+                        final isGroup = MessageUnreadService.isGroupContact(
+                          contact,
+                        );
                         // A stored mute ID comes from this group's info page,
                         // so use the exact conversation ID as the source of
                         // truth instead of depending on server group flags.
@@ -441,7 +465,8 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
                             .read(storageServiceProvider)
                             .isMessageGroupMuted(rawId);
 
-                        final avatar = user['avatar_large']?.toString() ??
+                        final avatar =
+                            user['avatar_large']?.toString() ??
                             user['round_avatar_large']?.toString() ??
                             user['profile_image_url']?.toString() ??
                             '';
@@ -451,7 +476,9 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
 
                         return ListTile(
                           contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 4),
+                            horizontal: 16,
+                            vertical: 4,
+                          ),
                           leading: Stack(
                             clipBehavior: Clip.none,
                             children: [
@@ -465,15 +492,18 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
                                       'message-unread-badge-$rawId',
                                     ),
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 5, vertical: 1.5),
+                                      horizontal: 5,
+                                      vertical: 1.5,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: isMuted
                                           ? colorScheme.surfaceContainerHighest
                                           : Colors.red.shade600,
                                       borderRadius: BorderRadius.circular(10),
                                     ),
-                                    constraints:
-                                        const BoxConstraints(minWidth: 16),
+                                    constraints: const BoxConstraints(
+                                      minWidth: 16,
+                                    ),
                                     child: Text(
                                       unreadCount > 99 ? '99+' : '$unreadCount',
                                       style: TextStyle(
@@ -519,7 +549,9 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
                                 if (hasSpecialAt) ...[
                                   Container(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 4, vertical: 1),
+                                      horizontal: 4,
+                                      vertical: 1,
+                                    ),
                                     margin: const EdgeInsets.only(right: 4),
                                     decoration: BoxDecoration(
                                       color: Colors.orange.shade100,

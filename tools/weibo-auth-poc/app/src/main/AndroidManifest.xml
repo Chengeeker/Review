@@ -1,0 +1,20 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="false"
+        android:extractNativeLibs="true"
+        android:label="微博登录 POC"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="false">
+        <uses-library android:name="android.test.mock" android:required="true" />
+        <activity
+            android:name="com.review.weibopoc.MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -310,8 +311,9 @@ class _GroupInfoPageState extends ConsumerState<GroupInfoPage> {
         '暂无群公告';
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       backgroundColor: colorScheme.surface,
-      appBar: AppBar(
+      appBar: ReviewFrostedAppBar(
         title: const Text('群信息',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         centerTitle: false,

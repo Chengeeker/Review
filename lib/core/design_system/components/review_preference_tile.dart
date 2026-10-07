@@ -23,11 +23,30 @@ class ReviewPreferenceTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final titleTextStyle = theme.textTheme.titleMedium?.merge(titleStyle);
+    final subtitleTextStyle = theme.textTheme.bodyMedium
+        ?.copyWith(color: colorScheme.onSurfaceVariant)
+        .merge(subtitleStyle);
+
     return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+      minLeadingWidth: 24,
+      horizontalTitleGap: 16,
+      minVerticalPadding: 8,
       leading: leading,
-      title: Text(title, style: titleStyle),
-      subtitle: subtitle == null ? null : Text(subtitle!, style: subtitleStyle),
-      trailing: trailing ?? const Icon(Icons.chevron_right_rounded),
+      title: Text(title, style: titleTextStyle),
+      subtitle: subtitle == null
+          ? null
+          : Text(subtitle!, style: subtitleTextStyle),
+      trailing:
+          trailing ??
+          Icon(
+            Icons.chevron_right_rounded,
+            size: 24,
+            color: colorScheme.onSurfaceVariant,
+          ),
       onTap: onTap,
     );
   }

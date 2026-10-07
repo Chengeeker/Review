@@ -1,8 +1,41 @@
 # Review 工程复盘
 
-这里保留能帮助避免回归的根因和检查办法。当前功能、接口边界与发布流程以 [DEVELOPMENT.md](../DEVELOPMENT.md) 为准；完整历史描述见[旧手册归档](archive/Review-legacy-2026-09-23.md)。旧手册里的操作建议有先后矛盾，不能直接当作现行规范执行。
+这里保留能帮助避免回归的根因和检查办法。当前功能、接口边界与发布流程以 [DEVELOPMENT.md](../DEVELOPMENT.md) 为准。旧版综合手册截至 2026-09-23，原件仍在仓库 `docs/archive/Review-legacy-2026-09-23.md`，仅供追溯；其中的操作建议可能过时或互相矛盾，不能当作现行规范。
 
 > **历史归档：** Miuix 与悬浮底栏液态玻璃已在 `2.17.0` 按用户决定移除。以下条目不要求恢复它们。`2.17.1` 按新的明确需求，只在图片画廊的两个圆形操作按钮上增加局部玻璃折射；这不恢复全局材质选项或 Miuix。
+
+## 全应用顶栏渐变与 M3 全面复核（2.22.1）
+
+- **纵向渐变磨砂**：用户要求状态栏侧基本不模糊且基本不透明、向分界线侧逐渐增加透光并保留 60% alpha 模糊。2.22.1 首版颜色合成约 0.82，用户确认仍不够实；2.22.2 最终参数按用户明确指定为渐变叠加 alpha 0.90、AppBar Material alpha 0.45，合成 `1 - (1 - 0.90) × (1 - 0.45) = 0.945`，顶部约 94.5% 不透明，边界处叠加层 alpha 为 0、保留 Material 的 0.45。sigma 20 的局部 BackdropFilter 仍单独套 alpha 0→0.60 纵向遮罩。遮罩只包滤镜，不淡化标题或色层。标准栏、时间线/热搜自定义栏和超话详情 SliverAppBar 都复用 `ReviewFrostedBackdrop` 与同一个 Material alpha 常量。不能只改颜色 alpha 或在部分页面复制不同方向的渐变；回归检查两种渐变端点/方向、合成底色不透明度与 blur clip。
+- **模糊消失回归（2.22.3，首次尝试未解决）**：给 `BackdropFilter` 套 `ShaderMask`、再显式设 `BlendMode.src` 是当时针对模糊不可见作出的合成假设；用户真机反馈仍完全没有模糊，证明 widget 层级与 blendMode 断言不能代表视觉验收。这一处理不应继续保留为当前实现。
+- **状态栏侧不透明度微调（2.22.4，未解决根因）**：将渐变叠加层 alpha 从 0.90 调至 0.95、Material alpha 保持 0.45，理论合成不透明度从 0.945 增至 0.9725；但只调颜色参数并未恢复可见模糊，原实现仍需重新检查。
+- **参考 ReviewX 简化绘制链（2.22.5）**：ReviewX 使用 `ClipRect → BackdropFilter → 渐变 DecoratedBox`，没有 `ShaderMask`。Review 采用同一直接层级，移除独立 blur shader mask 和非默认 `BlendMode.src`；保留 sigma 20、Material alpha 0.45、顶部颜色 alpha 0.95→边界 0。顶部近乎不透明的颜色层压低模糊可见度，靠近边界则逐渐显出磨砂。widget 测试锁定层级且不含 ShaderMask，但仍需真机确认画面效果。
+- **下拉阈值根因**：`extendBodyBehindAppBar` 会使内容子树看到包含完整 AppBar 的 `MediaQuery.padding.top`；EasyRefresh 默认 `safeArea: true` 把该 inset 加到 `actualTriggerOffset`，因此用户必须拉很深。覆盖式页面使用 `safeArea:false` 保持 70dp 阈值，并仅在 indicator 内容里将 ClassicHeader 向下偏移完整 inset；不能把 `triggerOffset` 设为 0，因为 ClassicHeader 布局尺寸也依赖它。全局默认 header、非覆盖式与嵌入式页面保持原样。
+- **固定区边界**：磨砂范围以最后一项固定内容的下沿为界，不以标题文字行或局部标签线为界。搜索框、分类条、pinned 内容先确定唯一归属及总高度，再选标准 AppBar bottom 或覆盖式视口；安全区和 toolbar inset 只能补一次。超话中心保留 8dp 标签下方材质缓冲，不再绘制重复 hairline。
+- **设置 M3 与 Lurk 回归防范**：核查发现 `AppSectionCard` 的调用都在设置/个性化/存储/备份等分组页面，可复用同一低强调 surface helper；故统一默认零 margin、无 elevation/描边、低 surface 层级，而不是新增私有卡片或改全局 CardTheme。分组列表已有外层 16dp padding，不能再叠加卡片默认 margin；这是 Lurk 之前出现卡片外扩/留白叠加的同类风险。分割线以实际 ListTile 参数计算：leading 24 + title gap 16，卡片内缩进 56dp；不要把屏幕坐标 72dp误用作卡片内部 indent。
+- **设置页字号层级（2.22.6）**：上一版把设置项标题强制设为 17sp、分组标题强制设为 16sp，两个层级过于接近且忽略主题的 Material 3 字体比例。改用 `titleMedium`/`titleSmall` 默认层级（通常分别为 16sp/14sp），不要在共享设置行再次覆盖字号；删掉标题已表达的重复说明，但保留安全范围和动态状态等非冗余信息。
+- **画廊 Hero 转场闪烁（2.22.6）**：目标路由在 push 期间已绘制底部缩略条，而 Hero 飞行层覆盖其上，转场结束后缩略条突然出现。监听 `ModalRoute.animation` 的状态，只让缩略条在 `completed` 后淡入、`reverse` 开始时立刻淡出并禁用命中；不要隐藏/缩放主图，不要因显隐修改 PageView 约束、视口或 Hero 子树几何。
+- **验证边界**：定向 widget 测试覆盖渐变端点与复合不透明度、直接滤镜层级/无 ShaderMask、超话固定区几何、设置分组卡片及 overlay 下拉刷新回调；Flutter 测试不能代替暗色/纯黑/浅色主题和真机滚动时的视觉验收。2.22.1 的全面检查、2.22.2 顶栏 alpha 调整、2.22.3/2.22.4 未奏效的尝试及 2.22.5 的 ReviewX 层级移植分别记录在对应变更条目中。
+
+## 设置页 M3 视觉调整（2.22.0，历史说明）
+
+- **初版判断的后续修正**：2.22.0 先用页面私有卡片，避免当时尚未盘点共享调用时扩大副作用；后续全面检索发现 `AppSectionCard` 实际只用于设置与个性化分组。2.22.1 已将统一风格收敛到这个共享 helper，并保留零 margin 与不改全局 CardTheme 的约束。
+- **分割线按真实行布局对齐**：ListTile 文字起点是屏幕坐标 72dp（页面内边距 16dp + 卡片内 tile 内边距 16dp + 24dp leading + 16dp 标题间距）；Divider 位于卡片内部，因此代码缩进应为 56dp。Lurk 调整记录中 64dp 曾留下左侧空白；改 Divider 时先按实际行参数计算起点，不凭经验套固定数。
+- **保留操作和可访问性**：缩小视觉噪声不压缩触控区域；保留至少 8dp 垂直留白、24dp 图标、凭据有效/失效的动态状态、登录/导出/退出回调、状态栏与底部导航留白。验证要区分静态分析/安装包与真机显示；没有设备时明确记录未做真机验收。
+## 时间线顶部磨砂质感（2.19.16）
+
+- **现象与根因（2.19.15）**：虽然加入了 `BackdropFilter`，实际顶栏仍近似透明。它叠加的是与时间线底色几乎相同的 `colorScheme.surface`，模糊 sigma 仅为 8；页面初始滚动位置下顶栏背后又是预留空白，因此没有足够的色彩/细节差异让磨砂效果可见。
+- **修正与验收边界**：使用 `surfaceContainerHighest` 主题层级色、82% 不透明度和 sigma 18 的局部模糊，并以 `ClipRect` 限制在时间线顶栏；不扩大到其他页面、不做全屏捕获或 shader。测试/编译只能验证代码与包，磨砂是否符合预期仍应在暗色、纯黑主题及滚动时覆盖顶栏的真机画面上检查。
+- **二次修正（2.19.17）**：用户仍观察到全透明。前版虽在 `flexibleSpace` 子层绘制颜色，但 AppBar 自身 `backgroundColor` 仍显式为透明；新版本将当前主题 AppBar/Scaffold 底色直接赋给 AppBar Material（82% 不透明度），让颜色层不再依赖 backdrop filter 是否正确合成；`BackdropFilter` 只负责 sigma 20 模糊。验收需确认深色、纯黑与滚动内容经过顶栏时均可见底色和模糊层。
+- **跨页面复用回归（2.20.0）**：新增 `ReviewFrostedAppBar` 时再次将底色放回 `flexibleSpace`，并强制 AppBar Material 透明，违背上面的已验证修正，因此个性化、赞和收藏、关注列表等页面看起来透明。共用组件必须直接为 AppBar Material 设置主题底色的 82% alpha；回归测试检查最终 `AppBar.backgroundColor` 与 `forceMaterialTransparency == false`，不能只检查树中存在 `BackdropFilter`。
+- **固定顶栏内容边界（2.21.1）**：超话中心的搜索与分类标签固定在滚动结果上方，均属于顶栏视觉区域。磨砂层和底部分隔线必须延伸到最后一行固定标签下沿；只给“超话中心”标题行套磨砂会让下方固定内容落在裸背景上。将固定区放入 `ReviewFrostedAppBar.bottom`，滚动列表仍留在 Scaffold body，且只在边界下方保留原内容间距。
+- **避免重复分界线（2.21.2）**：超话分类栏下沿出现组件绘制的浅色 hairline，同时顶栏整体材质边缘又形成一道边界，视觉上像两条线。查找应先定位实际绘制源；本例只对该页设置 `showBottomBorder: false`，保留 82% 主题底色形成的整体边界，不全局移除其他页面的分隔线，也不在 body 顶部再叠加 Divider。
+
+## GIF 与视频/Live Photo 冲突分类（2.19.14）
+
+- `type: video` 或旧快照里的 `fid`/`livePhotoVideoUrl` 不能单独证明图片是视频或 Live Photo。只有存在真实的非 GIF 播放地址才进入视频播放器；否则播放器会以空地址加载，导致播放器控件与画廊缩略栏重叠。
+- 图片 URL 是 GIF 且没有真实视频直链时，GIF 必须优先作为动图图片显示，并压过旧 Live Photo 元数据/合成地址；不能把 `fid` 拼出的 MP4 当成源媒体格式。
+- 回归测试至少覆盖：带 `fid` 和陈旧 Live Photo 元数据的 GIF、只有 `type=video` 但无媒体 URL、真实 MP4 以及带 GIF 预览图的真实 MP4。设备播放和手势观感仍须真机验收。
 
 ## 登录方式切换（2.19.0）
 
@@ -29,6 +62,26 @@
   2. **Cookie 多层嵌套结构解析**：在上游 Share 实现（`oo0o00o0.7.smali` 与 `Gz.smali` 第 475-620 行）中，微博返回的 `cookie` 是一个包含域名映射的 JSON 对象（如 `.weibo.cn`、`.weibo.com` 等各自对应一段 Cookie 字符串）。此前 Review 直接调用 `response.optString("cookie")`，若其为 JSONObject 则返回了整个对象的 JSON 字符串，无法被 Flutter 的 `setAndVerifyCookie`（要求 `SUB=...` 格式）识别。2.19.6 重构了 Cookie 递归与键值提取逻辑，优先提取包含 `SUB=` 的登录 Cookie，并支持 `gsid` 以 `_2A` 开头时的回退兜底，确保 Flutter 接收到规范的 Cookie。
   3. **系统 CookieManager 双向同步**：在 `WeiboAuthManager.java` 中增加 `syncCookieManager(cookie)` 和 `clearCookieManager()`，在登录成功与恢复会话时将 Cookie 同步写入系统 `android.webkit.CookieManager` 并 `flush()`，退出登录时彻底清理，保证 WebView 与原生通道凭据完全一致。
   4. **详细字段缺失日志**：会话校验不通过时通过 `Log.w` 详细记录各个字段的存在状态及原始 JSON，便于快速定位服务端响应结构变化。
+- **冷启动闪退根因与治理（2.19.8）**：
+  1. **后台线程调用 CookieManager 触发底层 Native Abort（SIGABRT）**：2.19.6 在 `restoreSession` 中引入 `syncCookieManager`。由于 `restoreSession` 执行在后台单线程 `weiboAuthExecutor`，在用户登录后手机冷启动时，Chromium WebView 尚未在 UI 主线程完成初始化。后台子线程直接调用 `CookieManager.getInstance()` 或 `setCookie()` 会导致 Chromium 检查 `BrowserThread::UI` 失败或发生原生多线程竞争，触发底层的 `SIGABRT` / `SIGSEGV` 致命信号，导致应用瞬间闪退且 Java 层 `try-catch` 无法捕获。治理方案：所有对 `CookieManager` 的操作必须无条件派发至 Android 主线程（`Handler(Looper.getMainLooper()).post`）异步执行。
+  2. **CookieManager URL 格式非法清洗**：`CookieManager.setCookie` 与 `getCookie` 的第一个参数是绝对 URL，而非域名（如 `".weibo.com"`）。传入非 URL 字符串在部分系统版本会引发底层异常。治理方案：全面清洗为合规的 `https://` 绝对地址。
+  3. **`EncryptedSessionStore.load()` 与 `restoreSession()` 故障隔离**：设备重启、系统更新或硬件 KeyStore 状态波动可能导致解密失败（如 `AEADBadTagException`、`KeyPermanentlyInvalidatedException`）。在 `load()` 中对密钥获取和解密做全异常捕获并安全降级为 `null`（同时清理损坏密文）；`restoreSession()` 增加顶层异常兜底，网络刷新失败时保留本地有效会话，绝不阻断冷启动进程。
+  4. **MethodChannel 回调防御**：`submitWeiboAuth` 与 `completeWeiboAuthError` 中的 `result.success` 和 `result.error` 增加异常捕获，防止通道解绑或重复提交引发崩溃。
+- **冷启动 0.5s~1s 闪退与 AMS 杀进程彻底根治（2.19.9）**：
+  1. **彻底解耦 `WeiboAuthManager` 与 `CookieManager`**：Review 作为纯 Flutter 应用，所有网络请求通过 Dart 层的 `WeiboDioClient (Dio)` 并在 Header 中注入 Cookie 发送，根本不通过 Android 原生 WebView。2.19.8 将 `syncCookieManager()` 移入主线程 Handler 队列后，由于在 Flutter 首帧渲染完成（0.5s~1s）出队执行，循环遍历跨域名注入几十次并调用 `cookieManager.flush()`，极易与底层 Chromium 初始化/渲染管线产生争用引发 Native Abort。彻底删除 `WeiboAuthManager` 中的 `syncCookieManager()` 与 `clearCookieManager()` 及其所有调用，根除 Chromium 底层崩溃。
+  2. **修复 `MainActivity.onCreate` 组件状态判断误区，杜绝 AMS 杀进程**：默认情况下（未切换过桌面图标时），`MainActivity` 在系统的组件启用状态是 `COMPONENT_ENABLED_STATE_DEFAULT (0)`，而不是 `COMPONENT_ENABLED_STATE_ENABLED (1)`。此前逻辑因判断 `hasEnabled` 为 `false`，导致每次冷启动均调用 `pm.setComponentEnabledSetting(MainActivity, ENABLED, DONT_KILL_APP)`。在现代 Android（特别是国内定制系统 MIUI/HyperOS/ColorOS/OriginOS 等）中，修改当前正处于前台的 Activity 自身组件状态，PMS 发出 `ACTION_PACKAGE_CHANGED` 广播，AMS 会在 500ms~1000ms 后直接强行杀死应用进程（无任何 Java Crash Stacktrace，精准表现为进入应用 0.5s~1s 闪退）！2.19.9 修复为仅在 `MainActivity` 明确处于 `COMPONENT_ENABLED_STATE_DISABLED` 且所有别名均未启用时才兜底恢复，正常冷启动绝不调用 `setComponentEnabledSetting`，彻底根除 AMS 延迟杀进程。
+  3. **MainActivity 原生 Cookie 读取安全加固**：移除 `getNativeCookies` 与 `getNativeCookiesByDomain` 中多余的 `cookieManager.flush()` 磁盘同步写入，将 `CookieManager.getInstance()` 和 `getCookie` 调用全量包裹在 `try-catch (Throwable t)` 异常隔离块中，失败降级返回空数据，绝不波及宿主进程。
+- **冷启动 0.5s~1s 闪退最终根治（2.19.10）**：
+  1. **彻底绝缘 Android 原生 `CookieManager`（根除 Chromium Native SIGSEGV）**：此前已登录状态下冷启动，`FeedController.initAndLoad()` 首帧后调用 `reconcileNativeSession()`，触发 MethodChannel `getNativeCookiesByDomain`。在没有 WebView 初始化的纯 Flutter 进程中，主线程调用 `CookieManager.getInstance()` 并连续读取 8 个域名的 Cookie 会强行唤起系统 Chromium 引擎，在多核并发与缺失上下文时直接引发 C++ 底层 `SIGSEGV / SIGABRT` 致命崩溃（Linux 信号无法被 Java 捕获）。2.19.10 在 `MainActivity.kt` 中完全删除 `import android.webkit.CookieManager`，将 `getNativeCookies`、`getNativeCookiesByDomain` 和 `clearNativeCookies` 完全静态化返回安全空数据，原生端彻底零 `CookieManager` 依赖，彻底切断崩溃链路。
+  2. **MainActivity 全局未捕获异常崩溃日志落盘**：在 `MainActivity.onCreate` 中安装全局 `Thread.setDefaultUncaughtExceptionHandler`，一旦发生任何未捕获异常，立即自动写入私有目录 `latest_crash.txt`，并通过 MethodChannel 提供 `getLatestCrashLog` 查询能力。
+  3. **彻底清除 `onCreate` 中的组件启用状态检测**：将 `onCreate` 中触碰 `packageManager.setComponentEnabledSetting` 的历史自愈代码完全剥离，消除任何可能因包状态变更广播导致 AMS 延迟杀进程的潜在隐患。
+  4. **Flutter 顶层与平台调度异常兜底**：在 `lib/main.dart` 中配置 `FlutterError.onError` 与 `PlatformDispatcher.instance.onError`，对所有未捕获的 Dart 异步异常进行全局捕获与平稳降级，阻止 Flutter 引擎异常退出。
+
+- **冷启动后台线程 JNI aa4 缺失引发 SIGABRT 根治（2.19.11）**：
+  1. **真机确凿崩溃日志定位**：Logcat 抓取捕获到 `tid (pool-4-thread-1), Fatal signal 6 (SIGABRT): JNI DETECTED ERROR IN APPLICATION: mid == null in call to CallStaticObjectMethodV ... NoSuchMethodError: no static method "Lcom/sina/weibo/security/WeicoSecurityUtils;.aa4(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;"`。根因锁定为冷启动后台线程调用 `WeiboAuthManager.restoreSession()` 时，因 `shouldRefresh` 命中触发 `api().refresh(session)`，进入 `wbgjb.so` 的 native `generateS`，C++ 底层反射查找 Java 壳的 `aa4` 静态方法，因 Java 缺失该方法触发 Linux 信号强制中止。
+  2. **双层根治方案**：
+     - 第一层（冷启动脱困）：`restoreSession()` 彻底移除同步 refresh，直接返回本地 KeyStore 解密的有效 session，冷启动瞬时秒开；
+     - 第二层（完整恢复上游 Share WeicoSecurityUtils）：根据上游 smali（654 行字节码）完全恢复 `aa4`（`toSecurityValue` 纯 Java 散列选取算法）、`sha512`、`toHex`、`aa2`、`aa3` 等全部 JNI 依赖方法与导出签名，底层 Native 符号 100% 对齐。
 
 ## 已移除的 Miuix 与液态玻璃尝试（2.15.0–2.16.9）
 
@@ -62,6 +115,7 @@
 
 ## 画廊返回动画补充更正（2.14.5）
 
+- **控件与 Hero 同步显隐（3.0.0）**：共享元素飞行层位于页面控件上方，顶部返回/下载控件在 push 期间已显示会压住飞行图片，pop 开始后仍显示则和回程重叠；新 PageRoute 初始插入还可能短暂报告 `completed`，所以仅首个路由按 completed 直接显示，push 路由从隐藏开始等待状态变化。顶部工具组和底部缩略条共用 ModalRoute 状态：push 完成后淡入、reverse 一开始禁用命中并淡出。玻璃按钮的 `BackdropFilter`/fragment shader 不得放进整组 `Opacity` 合成层，否则过渡帧可能采样黑色中间层；改为分别插值图标、玻璃底色和模糊强度。不得改 Hero rect、图片变换、PageView 约束或手势。
 - **画廊控件显隐保持图片位置（2.17.3）**：按用户截图要求，让 Pager 在控件显示与清屏状态下始终保持全屏约束，顶栏和缩略条作为覆盖层；此前根据 `_showChrome` 动态添加上下 Padding，改变了 PageView 高度，ExtendedImage 重新适配时让放大图片偏移。不要通过切换主图视口尺寸避让控件，也不要用底部占位补偿中心；单张静态图片自然以全屏为中心，多图缩放和平移状态在控件显隐时保持。
 - **单图底部边界更正（2.16.6）**：2.16.5 曾为了对称居中给单图添加底部留白。用户明确指出单图没有缩略条，底部不应设置边界；现仅保留顶部按钮行下沿的 inset，底部延伸到屏幕底部，多图的缩略条间距不变。
 - **单图居中尝试（2.16.5，已回调）**：顶部避让使可视区域不对称，因此曾在单图底部加同等留白来把视口几何中心放回屏幕中心；但这样无故限制了无缩略条时的底部空间。不要为追求对称而给单图增加底部占位。
@@ -92,6 +146,8 @@
 
 ## 数据解析与跨页面状态
 
+- **现象（2.19.12 多图画廊 Live Photo 自动播放且顶部按钮无效）**：`WeiboPicModel.fromJson` 曾把任意非空视频 URL 推断为 Live Photo，而 `video_url` 又同时把同一项标成普通视频；画廊先走普通视频播放器自动播放，顶部控件却操作另一套 Live Photo 控制器。**修复与回归点**：优先使用明确 Live Photo 元数据；普通 `video_url` 保持普通视频语义，只有 Live Photo 标记或 `/livephoto/` 媒体地址作为兼容线索；模型的 `isVideo`/`isLivePhoto` 互斥。多图 widget 回归验证默认暂停、顶栏播放和暂停均操作同一控制器。遇到字段冲突时不要在画廊 UI 分支临时猜测媒体类型，应修正模型解析源头。
+- **后续问题（2.19.13 视频字段/GIF 被误认成 Live Photo）**：解析器会读取 `video` 字符串或 map，但普通视频判定原先只看 `video_url`；于是 `video` 字段里的 MP4 可能被当成 Live Photo。另一个分支只凭 `fid` 合成 `/livephoto/<fid>.mp4`，会把带 GIF 地址的媒体伪装成 Live Photo。**回归点**：`video_url`、`videoUrl` 和 `video` 统一视为直接视频源；GIF 从类型和图片 URL 路径识别，带 `fid` 也不得产生 Live Photo 回退地址；只有显式 Live Photo 字段或 `/livephoto/` 媒体地址才分类为实况。模型须保持 `isGif`、`isVideo`、`isLivePhoto` 互斥。
 - **现象（2.14.3 动画末帧到位时图片突然放大）**：动画临近目标时图片仍显得较小/完整，落到九宫格后突然按实际缩略图放大裁切。**根因**：2.14.2 使用微博模型中的宽高推导 cover 缩放；宽高缺失时回退成 1:1，字段不准时也与已解码来源缩略图的真实比例不符，导致 Hero 最后一帧与 Flutter 接回来源子树后的实际图像不一致。**修复与回归点（2.14.4）**：在来源缩略图子树中读取 `RenderImage.image` 的像素宽高比，用于计算飞行末端 cover 缩放；目标布局尺寸仍从来源 Hero 的 `RenderBox` 获取，只有无法读取已解码图像时才回退模型尺寸。用真实 Hero push/pop widget 测试构造“缺失模型尺寸 + 2:1 解码图 + 1:1 目标格”，断言回程终点倍率为 2；真机帧录制仍需复核最后一帧交接。
 - **现象（2.14.3 多图 Hero 返回）**：先浏览多张图片再返回时，当前图和前一张已访问图片同时飞回缩略图。**根因**：画廊 `PageView` 会保留相邻页，但所有保留页都挂载了 Hero；其 tag 又各自能与来源九宫格配对，因此一次 pop 会启动多条共享元素飞行。**修复与回归点（2.14.3）**：保留分页/预热行为，仅在 `index == _currentIndex` 时挂载画廊 Hero；测试打开三图画廊，依次切到第 2、第 3 张，确认每个时刻只有当前图的 tag 在来源与画廊两侧各出现一次，前序图片仅留在来源侧。不要通过禁用 PageView 邻页缓存来解决，否则会牵连滑动流畅度、播放器/Live Photo 生命周期与图片复用。
 - **现象（2.14.1 竖图 Hero 返回）**：返回起点/终点会发生明显裁切跳变：画廊用 `BoxFit.contain`，来源普通缩略图用 `BoxFit.cover`；仅固定飞行子树并不能自动插值图片内容的填充方式。**修复与回归点（2.14.2）**：返回 shuttle 保留当前画廊子树，并用其图片宽高比和来源 Hero 实际目标尺寸算出最终 cover 缩放因子；随着 Hero 反向进度从 1 连续插值到目标因子，再由来源缩略图接管。方形图片/方框目标保持比例因子 1；网页自动卡片仍完整显示、不做裁切；不再创建第二个图片网络组件，避免重复加载。测试需断言竖图在回程中点和近终点的缩放值处于连续区间；真机仍需确认图片边界、手势返回和最终裁切观感。
@@ -135,4 +191,4 @@
 
 ## 文档维护
 
-修复完成后，将当前行为写入 `DEVELOPMENT.md`，版本和当次验证写入 `CHANGELOG.md`，可复用的根因及回归点写在本文件，并将这三部分与历史归档全文同步至 `D:\App\开发文档\Review.md`。统一文档必须有正文，不能只保留索引链接；旧手册归档只用于追溯；签名口令、Cookie、Token 等凭据不进入任何开发文档。
+修复完成后，将当前行为写入 `DEVELOPMENT.md`，版本和当次验证写入 `CHANGELOG.md`，可复用的根因及回归点写在本文件；顶栏规范变更还要维护 `FROSTED_TOP_BAR_DESIGN_SPEC.md`。运行同步脚本，将这些当前文档的完整正文汇入 `D:\App\开发文档\Review.md`，不能只保留索引链接。旧版综合手册原件留在仓库归档目录、不再拼进现行主文档；签名口令、Cookie、Token 等凭据不进入任何开发文档。

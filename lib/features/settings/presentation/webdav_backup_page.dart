@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../core/widgets/app_section_card.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/services/webdav_service.dart';
 import '../../../core/storage/storage_service.dart';
@@ -34,10 +37,12 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
     super.initState();
     final storage = ref.read(storageServiceProvider);
     _urlController = TextEditingController(text: storage.getWebDavUrl());
-    _usernameController =
-        TextEditingController(text: storage.getWebDavUsername());
-    _passwordController =
-        TextEditingController(text: storage.getWebDavPassword());
+    _usernameController = TextEditingController(
+      text: storage.getWebDavUsername(),
+    );
+    _passwordController = TextEditingController(
+      text: storage.getWebDavPassword(),
+    );
     _dirController = TextEditingController(
       text: storage.getWebDavDirectory().isEmpty
           ? 'Review'
@@ -133,14 +138,17 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
       builder: (ctx) => AlertDialog(
         title: const Text('从 WebDAV 恢复备份？'),
         content: const Text(
-            '恢复备份将使用云端数据覆盖当前的个性化设置，不会恢复微博 Cookie、Token 或其他登录凭据。是否继续？'),
+          '恢复备份将使用云端数据覆盖当前的个性化设置，不会恢复微博 Cookie、Token 或其他登录凭据。是否继续？',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('取消')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('确定恢复')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确定恢复'),
+          ),
         ],
       ),
     );
@@ -190,14 +198,22 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('WebDAV 云端备份与恢复',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+      extendBodyBehindAppBar: true,
+      appBar: ReviewFrostedAppBar(
+        title: const Text(
+          'WebDAV 云端备份与恢复',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
       ),
       body: Form(
         key: _formKey,
         child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: EdgeInsets.fromLTRB(
+            16,
+            MediaQuery.paddingOf(context).top + kToolbarHeight + 14,
+            16,
+            14,
+          ),
           children: [
             // 1. Info Banner
             Container(
@@ -206,13 +222,17 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
                 color: colorScheme.primaryContainer.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                    color: colorScheme.primary.withValues(alpha: 0.2)),
+                  color: colorScheme.primary.withValues(alpha: 0.2),
+                ),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.cloud_sync_rounded,
-                      color: colorScheme.primary, size: 24),
+                  Icon(
+                    Icons.cloud_sync_rounded,
+                    color: colorScheme.primary,
+                    size: 24,
+                  ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
@@ -221,17 +241,19 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
                         Text(
                           '全量安全备份 (Review)',
                           style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: colorScheme.primary,
-                              fontSize: 14),
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.primary,
+                            fontSize: 16,
+                          ),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '使用 WebDAV 协议通过 HTTPS 将当前应用的外观主题、微博样式、卡片显示规则和媒体存储路径同步至坚果云、Nextcloud、群晖或自建 WebDAV 服务器。微博 Cookie、Token 与 WebDAV 密码不会写入备份文件。',
+                          '备份主题、微博样式和媒体路径；微博 Cookie、Token 与 WebDAV 密码不会上传。',
                           style: TextStyle(
-                              fontSize: 12,
-                              color: colorScheme.onSurfaceVariant,
-                              height: 1.4),
+                            fontSize: 14,
+                            color: colorScheme.onSurfaceVariant,
+                            height: 1.4,
+                          ),
                         ),
                       ],
                     ),
@@ -242,24 +264,20 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
             const SizedBox(height: 16),
 
             // 2. Configuration Card
-            Card(
-              elevation: 0,
-              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(
-                    color: theme.dividerColor.withValues(alpha: 0.1),
-                    width: 0.8),
-              ),
+            AppSectionCard(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('WebDAV 服务器配置',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 15)),
-                    const SizedBox(height: 14),
+                    const Text(
+                      'WebDAV 服务器配置',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     TextFormField(
                       controller: _urlController,
                       decoration: const InputDecoration(
@@ -318,7 +336,7 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
                         isDense: true,
                       ),
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
                       child: OutlinedButton.icon(
@@ -326,11 +344,14 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
                             ? const SizedBox(
                                 width: 16,
                                 height: 16,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
-                            : const Icon(Icons.wifi_tethering_rounded,
-                                size: 18),
+                            : const Icon(
+                                Icons.wifi_tethering_rounded,
+                                size: 18,
+                              ),
                         label: Text(_isTesting ? '正在测试连接...' : '测试服务器连接'),
                         onPressed: _isTesting ? null : _testConnection,
                       ),
@@ -342,37 +363,35 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
             const SizedBox(height: 16),
 
             // 3. Actions Section
-            Card(
-              elevation: 0,
-              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: BorderSide(
-                    color: theme.dividerColor.withValues(alpha: 0.1),
-                    width: 0.8),
-              ),
+            AppSectionCard(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('云端备份与还原操作',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 15)),
-                    const SizedBox(height: 14),
+                    const Text(
+                      '云端备份与还原操作',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     Row(
                       children: [
                         Expanded(
                           child: FilledButton.icon(
                             style: FilledButton.styleFrom(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
                             icon: _isBackingUp
                                 ? const SizedBox(
                                     width: 16,
                                     height: 16,
                                     child: CircularProgressIndicator(
-                                        strokeWidth: 2, color: Colors.white),
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
                                   )
                                 : const Icon(Icons.cloud_upload_rounded),
                             label: Text(_isBackingUp ? '正在上传...' : '立即备份到云端'),
@@ -385,14 +404,15 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
                         Expanded(
                           child: FilledButton.tonalIcon(
                             style: FilledButton.styleFrom(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12)),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
                             icon: _isRestoring
                                 ? const SizedBox(
                                     width: 16,
                                     height: 16,
                                     child: CircularProgressIndicator(
-                                        strokeWidth: 2),
+                                      strokeWidth: 2,
+                                    ),
                                   )
                                 : const Icon(Icons.cloud_download_rounded),
                             label: Text(_isRestoring ? '正在拉取...' : '从云端恢复备份'),

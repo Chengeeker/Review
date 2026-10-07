@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -116,7 +117,7 @@ class _WeiboChatWebViewPageState extends ConsumerState<WeiboChatWebViewPage> {
     final targetUrl = widget.initialUrl ?? defaultChatUrl;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: ReviewFrostedAppBar(
         title: Text(_title,
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
         actions: [

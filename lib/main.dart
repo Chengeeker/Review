@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:easy_refresh/easy_refresh.dart';
@@ -13,10 +14,20 @@ import 'core/theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
 import 'core/utils/app_toast.dart';
 import 'core/utils/haptic_feedback_util.dart';
+import 'core/widgets/review_refresh_header.dart';
 import 'features/home/presentation/main_scaffold.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  FlutterError.onError = (details) {
+    FlutterError.presentError(details);
+    debugPrint('FlutterError: ${details.exceptionAsString()}');
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('PlatformDispatcher error: $error\n$stack');
+    return true;
+  };
 
   // Initialize Storage Service (SharedPreferences)
   final storageService = await StorageService.init();
@@ -25,17 +36,7 @@ void main() async {
   LinkRoutingService.initDeepLinkListener(rootNavigatorKey);
 
   // Global EasyRefresh localization (Pure Chinese Strings)
-  EasyRefresh.defaultHeaderBuilder = () => const ClassicHeader(
-    dragText: '下拉刷新',
-    armedText: '释放立即刷新',
-    readyText: '正在刷新...',
-    processingText: '正在刷新...',
-    processedText: '刷新成功',
-    noMoreText: '没有更多了',
-    failedText: '刷新失败',
-    messageText: '最后更新于 %T',
-    showMessage: true,
-  );
+  EasyRefresh.defaultHeaderBuilder = () => reviewDefaultRefreshHeader;
 
   EasyRefresh.defaultFooterBuilder = () => const ClassicFooter(
     dragText: '上拉加载',

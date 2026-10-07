@@ -299,7 +299,7 @@ class ImageGalleryPage extends ConsumerStatefulWidget {
 }
 
 class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static const MethodChannel _mediaChannel = MethodChannel(
     'com.sharelite/cookies',
   );
@@ -311,6 +311,9 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
       GlobalKey<ExtendedImageSlidePageState>();
   bool _isSaving = false;
   bool _showChrome = true;
+  bool _chromeRouteVisible = false;
+  late final AnimationController _chromeOpacityController;
+  Animation<double>? _routeAnimation;
   bool _thumbnailUserScrolling = false;
   bool _thumbnailSettling = false;
   int _thumbnailSyncEpoch = 0;
@@ -328,6 +331,10 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
   @override
   void initState() {
     super.initState();
+    _chromeOpacityController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 140),
+    );
     _currentIndex = widget.initialIndex;
     _activeMediaIndex = ValueNotifier(widget.initialIndex);
     _pageController = ExtendedPageController(initialPage: widget.initialIndex);
@@ -344,8 +351,45 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    final routeAnimation = route?.animation;
+    if (identical(routeAnimation, _routeAnimation)) return;
+
+    _routeAnimation?.removeStatusListener(_handleRouteAnimationStatus);
+    _routeAnimation = routeAnimation;
+    if (routeAnimation == null) {
+      _chromeRouteVisible = true;
+      _chromeOpacityController.value = 1;
+      return;
+    }
+
+    // A pushed route can initially report completed before its forward tick.
+    // Only a completed first route should show controls immediately.
+    _chromeRouteVisible =
+        route?.isFirst == true &&
+        routeAnimation.status == AnimationStatus.completed;
+    _chromeOpacityController.value = _chromeRouteVisible ? 1 : 0;
+    routeAnimation.addStatusListener(_handleRouteAnimationStatus);
+  }
+
+  void _handleRouteAnimationStatus(AnimationStatus status) {
+    final visible = status == AnimationStatus.completed;
+    if (!mounted || visible == _chromeRouteVisible) return;
+    setState(() => _chromeRouteVisible = visible);
+    if (visible) {
+      _chromeOpacityController.forward();
+    } else {
+      _chromeOpacityController.reverse();
+    }
+  }
+
+  @override
   void dispose() {
+    _routeAnimation?.removeStatusListener(_handleRouteAnimationStatus);
     _restoreSystemUi();
+    _chromeOpacityController.dispose();
     _doubleTapAnimationController.dispose();
     _pageController.dispose();
     _thumbnailController.removeListener(_syncMainPageToThumbnail);
@@ -1030,123 +1074,161 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                 child: Visibility(
                   visible: _showChrome,
                   maintainState: true,
-                  child: _buildThumbnailStrip(),
+                  child: IgnorePointer(
+                    ignoring: !_chromeRouteVisible,
+                    child: AnimatedOpacity(
+                      key: const ValueKey('gallery-thumbnail-strip-fade'),
+                      opacity: _chromeRouteVisible ? 1 : 0,
+                      duration: const Duration(milliseconds: 140),
+                      curve: Curves.easeOutCubic,
+                      child: _buildThumbnailStrip(),
+                    ),
+                  ),
                 ),
               ),
 
             // Top Bar: Back, Counter, Live Pill, Save
             if (_showChrome)
-              SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _GalleryGlassIconButton(
-                        tooltip: '返回',
-                        icon: const Icon(
-                          Icons.arrow_back_rounded,
-                          color: Colors.white,
+              IgnorePointer(
+                key: const ValueKey('gallery-top-controls-pointer-gate'),
+                ignoring: !_chromeRouteVisible,
+                child: AnimatedBuilder(
+                  animation: _chromeOpacityController,
+                  builder: (context, _) {
+                    final controlsOpacity = _chromeOpacityController.value;
+                    return SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
                         ),
-                        // 返回动作不再依赖水波纹触感。
-                        onPressed: () => Navigator.of(context).pop(),
-                      ),
-
-                      // Counter or Live Photo Switcher Pill
-                      if (isCurrentLive)
-                        InkWell(
-                          // 使用普通水波纹；触感由 _toggleLivePlay 单独提供一次。
-                          splashFactory: InkSplash.splashFactory,
-                          enableFeedback: false,
-                          onTap: _toggleLivePlay,
-                          borderRadius: BorderRadius.circular(20),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 250),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _isPlayingLive
-                                  ? Colors.white
-                                  : Colors.black54,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: _isPlayingLive
-                                    ? Colors.white
-                                    : Colors.white24,
-                                width: 1,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _GalleryGlassIconButton(
+                              tooltip: '返回',
+                              opacity: controlsOpacity,
+                              opacityKey: const ValueKey(
+                                'gallery-back-button-opacity',
                               ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  _isPlayingLive
-                                      ? Icons.pause_circle_outline_rounded
-                                      : Icons.play_circle_outline_rounded,
-                                  size: 16,
-                                  color: _isPlayingLive
-                                      ? Colors.black
-                                      : Colors.white,
-                                ),
-                                const SizedBox(width: 5),
-                                Text(
-                                  _isPlayingLive ? '暂停 Live 图' : '播放 Live 图',
-                                  style: TextStyle(
-                                    color: _isPlayingLive
-                                        ? Colors.black
-                                        : Colors.white,
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      else
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black45,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Text(
-                            '${_currentIndex + 1} / ${widget.pics.length}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-
-                      _GalleryGlassIconButton(
-                        tooltip: '保存高清大图 / 实况到相册',
-                        icon: _isSaving
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(
-                                Icons.download_rounded,
+                              icon: const Icon(
+                                Icons.arrow_back_rounded,
                                 color: Colors.white,
                               ),
-                        onPressed: _isSaving ? null : _saveCurrentImage,
+                              // 返回动作不再依赖水波纹触感。
+                              onPressed: () => Navigator.of(context).pop(),
+                            ),
+
+                            // Counter or Live Photo Switcher Pill
+                            Opacity(
+                              key: const ValueKey('gallery-counter-opacity'),
+                              opacity: controlsOpacity,
+                              child: isCurrentLive
+                                  ? InkWell(
+                                      // 使用普通水波纹；触感由 _toggleLivePlay 单独提供一次。
+                                      splashFactory: InkSplash.splashFactory,
+                                      enableFeedback: false,
+                                      onTap: _toggleLivePlay,
+                                      borderRadius: BorderRadius.circular(20),
+                                      child: AnimatedContainer(
+                                        duration: const Duration(
+                                          milliseconds: 250,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 14,
+                                          vertical: 6,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: _isPlayingLive
+                                              ? Colors.white
+                                              : Colors.black54,
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
+                                          border: Border.all(
+                                            color: _isPlayingLive
+                                                ? Colors.white
+                                                : Colors.white24,
+                                            width: 1,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              _isPlayingLive
+                                                  ? Icons
+                                                        .pause_circle_outline_rounded
+                                                  : Icons
+                                                        .play_circle_outline_rounded,
+                                              size: 16,
+                                              color: _isPlayingLive
+                                                  ? Colors.black
+                                                  : Colors.white,
+                                            ),
+                                            const SizedBox(width: 5),
+                                            Text(
+                                              _isPlayingLive
+                                                  ? '暂停 Live 图'
+                                                  : '播放 Live 图',
+                                              style: TextStyle(
+                                                color: _isPlayingLive
+                                                    ? Colors.black
+                                                    : Colors.white,
+                                                fontSize: 12.5,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    )
+                                  : Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 6,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.black45,
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      child: Text(
+                                        '${_currentIndex + 1} / ${widget.pics.length}',
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                            ),
+
+                            _GalleryGlassIconButton(
+                              tooltip: '保存高清大图 / 实况到相册',
+                              opacity: controlsOpacity,
+                              opacityKey: const ValueKey(
+                                'gallery-download-button-opacity',
+                              ),
+                              icon: _isSaving
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.download_rounded,
+                                      color: Colors.white,
+                                    ),
+                              onPressed: _isSaving ? null : _saveCurrentImage,
+                            ),
+                          ],
+                        ),
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ),
           ],
@@ -1161,11 +1243,15 @@ class _GalleryGlassIconButton extends StatefulWidget {
     required this.icon,
     required this.tooltip,
     required this.onPressed,
+    required this.opacity,
+    required this.opacityKey,
   });
 
   final Widget icon;
   final String tooltip;
   final VoidCallback? onPressed;
+  final double opacity;
+  final Key opacityKey;
 
   @override
   State<_GalleryGlassIconButton> createState() =>
@@ -1201,9 +1287,13 @@ class _GalleryGlassIconButtonState extends State<_GalleryGlassIconButton> {
 
   @override
   Widget build(BuildContext context) {
-    final blur = ui.ImageFilter.blur(sigmaX: 2.5, sigmaY: 2.5);
+    final opacity = widget.opacity;
+    final blur = ui.ImageFilter.blur(
+      sigmaX: 2.5 * opacity,
+      sigmaY: 2.5 * opacity,
+    );
     final shader = _shader;
-    final filter = shader == null
+    final filter = shader == null || opacity < 1
         ? blur
         : ui.ImageFilter.compose(
             outer: ui.ImageFilter.shader(shader),
@@ -1224,12 +1314,12 @@ class _GalleryGlassIconButtonState extends State<_GalleryGlassIconButton> {
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.20),
+                    color: Colors.black.withValues(alpha: 0.20 * opacity),
                     blurRadius: 7,
                     offset: const Offset(0, 2),
                   ),
                   BoxShadow(
-                    color: Colors.white.withValues(alpha: 0.08),
+                    color: Colors.white.withValues(alpha: 0.08 * opacity),
                     blurRadius: 5,
                     offset: const Offset(0, -1),
                   ),
@@ -1246,13 +1336,19 @@ class _GalleryGlassIconButtonState extends State<_GalleryGlassIconButton> {
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                         colors: [
-                          Colors.grey.shade200.withValues(alpha: 0.30),
-                          Colors.grey.shade500.withValues(alpha: 0.20),
-                          Colors.grey.shade800.withValues(alpha: 0.36),
+                          Colors.grey.shade200.withValues(
+                            alpha: 0.30 * opacity,
+                          ),
+                          Colors.grey.shade500.withValues(
+                            alpha: 0.20 * opacity,
+                          ),
+                          Colors.grey.shade800.withValues(
+                            alpha: 0.36 * opacity,
+                          ),
                         ],
                       ),
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.34),
+                        color: Colors.white.withValues(alpha: 0.34 * opacity),
                         width: 1,
                       ),
                     ),
@@ -1271,7 +1367,11 @@ class _GalleryGlassIconButtonState extends State<_GalleryGlassIconButton> {
               shape: const CircleBorder(),
             ),
             onPressed: widget.onPressed,
-            icon: widget.icon,
+            icon: Opacity(
+              key: widget.opacityKey,
+              opacity: opacity,
+              child: widget.icon,
+            ),
           ),
         ],
       ),

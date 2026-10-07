@@ -1,6 +1,7 @@
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/network/weibo_dio_client.dart';
@@ -438,7 +439,7 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
     final myUid = authState.uid ?? '';
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: ReviewFrostedAppBar(
         titleSpacing: 0,
         title: Row(
           children: [

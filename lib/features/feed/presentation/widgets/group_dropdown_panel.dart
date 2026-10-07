@@ -1,4 +1,7 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
+
 import '../../data/feed_repository.dart';
 import '../group_management_page.dart';
 
@@ -28,6 +31,8 @@ class GroupDropdownPanel extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
+    final panelBaseColor =
+        theme.appBarTheme.backgroundColor ?? theme.scaffoldBackgroundColor;
     final screenHeight = MediaQuery.of(context).size.height;
 
     // 获取实际个人分组列表 (三级多重保障，确保永远精准显示)
@@ -41,131 +46,141 @@ class GroupDropdownPanel extends StatelessWidget {
           .map((g) => <String, String>{'id': g.gid, 'name': g.title})
           .toList();
     }
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: theme.scaffoldBackgroundColor,
-          borderRadius:
-              const BorderRadius.vertical(bottom: Radius.circular(20)),
-          border: Border(
-            bottom: BorderSide(
-              color: colorScheme.outlineVariant.withValues(alpha: 0.25),
-              width: 1.0,
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: panelBaseColor.withValues(alpha: 0.82),
+              borderRadius: const BorderRadius.vertical(
+                bottom: Radius.circular(20),
+              ),
+              border: Border(
+                bottom: BorderSide(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.25),
+                  width: 1.0,
+                ),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 14,
+                  offset: const Offset(0, 5),
+                ),
+              ],
             ),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.18),
-              blurRadius: 14,
-              offset: const Offset(0, 5),
-            ),
-          ],
-        ),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: screenHeight * 0.65),
-          child: SingleChildScrollView(
-            physics: const ClampingScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Section 1: 默认分组 Header
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: screenHeight * 0.65),
+              child: SingleChildScrollView(
+                physics: const ClampingScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '默认分组',
-                      style: textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: colorScheme.onSurface,
-                      ),
-                    ),
-                    InkWell(
-                      borderRadius: BorderRadius.circular(8),
-                      onTap: () {
-                        onClose();
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const GroupManagementPage()),
-                        );
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        child: Text(
-                          '编辑',
-                          style: textTheme.bodyMedium?.copyWith(
-                            color: colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13.5,
+                    // Section 1: 默认分组 Header
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '默认分组',
+                          style: textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: colorScheme.onSurface,
                           ),
                         ),
-                      ),
+                        InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () {
+                            onClose();
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const GroupManagementPage(),
+                              ),
+                            );
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            child: Text(
+                              '编辑',
+                              style: textTheme.bodyMedium?.copyWith(
+                                color: colorScheme.primary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13.5,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 10),
+
+                    // Section 1: 默认分组 Grid (4 columns)
+                    if (customDefaultGroups.isNotEmpty)
+                      _buildGrid(
+                        context: context,
+                        items: customDefaultGroups,
+                        currentId: currentCategoryId,
+                        onTap: (id, name) {
+                          String effectiveId = id;
+                          if (id == 'all_follow' || id == 'friends')
+                            effectiveId = 'friends';
+                          onSelectGroup(effectiveId, name);
+                        },
+                      ),
+
+                    // Section 2: 我的分组 (置于默认分组下方)
+                    if (effectivePersonal.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        '我的分组',
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _buildGrid(
+                        context: context,
+                        items: effectivePersonal,
+                        currentId: currentCategoryId,
+                        onTap: (id, name) {
+                          onSelectGroup(id, name);
+                        },
+                      ),
+                    ],
+
+                    // Section 3: 热门频道 (仅在存在自定义热门分组时展示)
+                    if (customHotGroups.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Text(
+                        '热门频道',
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _buildGrid(
+                        context: context,
+                        items: customHotGroups,
+                        currentId: currentCategoryId,
+                        onTap: (id, name) {
+                          onSelectGroup(id, name);
+                        },
+                      ),
+                    ],
                   ],
                 ),
-                const SizedBox(height: 10),
-
-                // Section 1: 默认分组 Grid (4 columns)
-                if (customDefaultGroups.isNotEmpty)
-                  _buildGrid(
-                    context: context,
-                    items: customDefaultGroups,
-                    currentId: currentCategoryId,
-                    onTap: (id, name) {
-                      String effectiveId = id;
-                      if (id == 'all_follow' || id == 'friends')
-                        effectiveId = 'friends';
-                      onSelectGroup(effectiveId, name);
-                    },
-                  ),
-
-                // Section 2: 我的分组 (置于默认分组下方)
-                if (effectivePersonal.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    '我的分组',
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: colorScheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  _buildGrid(
-                    context: context,
-                    items: effectivePersonal,
-                    currentId: currentCategoryId,
-                    onTap: (id, name) {
-                      onSelectGroup(id, name);
-                    },
-                  ),
-                ],
-
-                // Section 3: 热门频道 (仅在存在自定义热门分组时展示)
-                if (customHotGroups.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  Text(
-                    '热门频道',
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: colorScheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  _buildGrid(
-                    context: context,
-                    items: customHotGroups,
-                    currentId: currentCategoryId,
-                    onTap: (id, name) {
-                      onSelectGroup(id, name);
-                    },
-                  ),
-                ],
-              ],
+              ),
             ),
           ),
         ),
@@ -194,7 +209,8 @@ class GroupDropdownPanel extends StatelessWidget {
       ),
       itemBuilder: (context, index) {
         final item = items[index];
-        final isSelected = item['id'] == currentId ||
+        final isSelected =
+            item['id'] == currentId ||
             (item['id'] == 'friends' && currentId == 'friends') ||
             (item['id'] == 'all_follow' && currentId == 'friends');
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/auth/auth_provider.dart';
 import 'followed_topics_page.dart';
@@ -68,7 +69,8 @@ class _MyFollowsPageState extends ConsumerState<MyFollowsPage>
   Widget build(BuildContext context) {
     final tabLabels = _tabs;
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      appBar: ReviewFrostedAppBar(
         title: Text(
           widget.ownerName?.isNotEmpty == true
               ? '${widget.ownerName}的关注列表'

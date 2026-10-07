@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/theme/custom_app_icon_provider.dart';
 import '../../../core/utils/app_dialog.dart';
 import '../../../core/utils/app_toast.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
+import '../../../core/widgets/app_section_card.dart';
 
 /// 自定义应用图标选择页面 (预设官方图标自由切换)
 class CustomAppIconPage extends ConsumerStatefulWidget {
@@ -22,9 +25,7 @@ class _CustomAppIconPageState extends ConsumerState<CustomAppIconPage> {
     });
   }
 
-  Future<void> _confirmSwitchIcon(
-    PresetAppIconModel item,
-  ) async {
+  Future<void> _confirmSwitchIcon(PresetAppIconModel item) async {
     HapticFeedbackUtil.light();
     final confirmed = await showAppDialog<bool>(
       context: context,
@@ -52,7 +53,9 @@ class _CustomAppIconPageState extends ConsumerState<CustomAppIconPage> {
       HapticFeedbackUtil.medium();
       AppToast.show(context, '正在应用“${item.name}”并同步桌面与抽屉...');
       await Future.delayed(const Duration(milliseconds: 300));
-      await ref.read(customAppIconProvider.notifier).switchIcon(item.id, killProcessAfter: true);
+      await ref
+          .read(customAppIconProvider.notifier)
+          .switchIcon(item.id, killProcessAfter: true);
     }
   }
 
@@ -64,23 +67,18 @@ class _CustomAppIconPageState extends ConsumerState<CustomAppIconPage> {
     final activeIcon = iconState.currentIcon;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('自定义应用图标'),
-      ),
+      extendBodyBehindAppBar: true,
+      appBar: ReviewFrostedAppBar(title: const Text('自定义应用图标')),
       body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          MediaQuery.paddingOf(context).top + kToolbarHeight + 12,
+          16,
+          12,
+        ),
         children: [
           // 1. 当前生效图标预览卡片
-          Card(
-            elevation: 0,
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.dividerColor.withValues(alpha: 0.1),
-                width: 0.8,
-              ),
-            ),
+          AppSectionCard(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
               child: Row(
@@ -123,7 +121,10 @@ class _CustomAppIconPageState extends ConsumerState<CustomAppIconPage> {
                             ),
                             const SizedBox(width: 8),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: colorScheme.primaryContainer,
                                 borderRadius: BorderRadius.circular(6),
@@ -143,7 +144,7 @@ class _CustomAppIconPageState extends ConsumerState<CustomAppIconPage> {
                         Text(
                           activeIcon.description,
                           style: TextStyle(
-                            fontSize: 12.5,
+                            fontSize: 14,
                             color: colorScheme.onSurfaceVariant,
                             height: 1.3,
                           ),
@@ -163,9 +164,9 @@ class _CustomAppIconPageState extends ConsumerState<CustomAppIconPage> {
             child: Text(
               '可选预设图标',
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 15,
                 fontWeight: FontWeight.bold,
-                color: colorScheme.primary,
+                color: colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -176,18 +177,19 @@ class _CustomAppIconPageState extends ConsumerState<CustomAppIconPage> {
               padding: const EdgeInsets.only(bottom: 10),
               child: Card(
                 elevation: 0,
-                color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                margin: EdgeInsets.zero,
+                color: colorScheme.surfaceContainerLow,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                  side: BorderSide(
-                    color: isSelected
-                        ? colorScheme.primary.withValues(alpha: 0.5)
-                        : theme.dividerColor.withValues(alpha: 0.1),
-                    width: isSelected ? 1.5 : 0.8,
-                  ),
+                  borderRadius: BorderRadius.circular(24),
+                  side: isSelected
+                      ? BorderSide(color: colorScheme.primary, width: 1.5)
+                      : BorderSide.none,
                 ),
                 child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 6,
+                  ),
                   leading: Container(
                     width: 48,
                     height: 48,
@@ -203,23 +205,29 @@ class _CustomAppIconPageState extends ConsumerState<CustomAppIconPage> {
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: Image.asset(
-                        item.assetPath,
-                        fit: BoxFit.cover,
-                      ),
+                      child: Image.asset(item.assetPath, fit: BoxFit.cover),
                     ),
                   ),
                   title: Text(
                     item.name,
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                    ),
                   ),
                   subtitle: Text(
                     item.description,
-                    style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
                   ),
                   trailing: isSelected
                       ? Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
                           decoration: BoxDecoration(
                             color: colorScheme.primaryContainer,
                             borderRadius: BorderRadius.circular(8),
@@ -227,7 +235,11 @@ class _CustomAppIconPageState extends ConsumerState<CustomAppIconPage> {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.check_rounded, size: 14, color: colorScheme.primary),
+                              Icon(
+                                Icons.check_rounded,
+                                size: 14,
+                                color: colorScheme.primary,
+                              ),
                               const SizedBox(width: 4),
                               Text(
                                 '使用中',
@@ -243,10 +255,16 @@ class _CustomAppIconPageState extends ConsumerState<CustomAppIconPage> {
                       : FilledButton.tonal(
                           onPressed: () => _confirmSwitchIcon(item),
                           style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 4,
+                            ),
                             minimumSize: const Size(60, 32),
                           ),
-                          child: const Text('应用', style: TextStyle(fontSize: 13)),
+                          child: const Text(
+                            '应用',
+                            style: TextStyle(fontSize: 13),
+                          ),
                         ),
                   onTap: isSelected ? null : () => _confirmSwitchIcon(item),
                 ),

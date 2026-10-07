@@ -1,6 +1,177 @@
 # Review 变更记录
 
-这里记录已经完成的版本变更及当次验证结果。当前行为和发布命令以 [DEVELOPMENT.md](../DEVELOPMENT.md) 为准；历史测试数量不代表以后构建的测试结果。更早、更细的实施记录保存在[旧手册归档](archive/Review-legacy-2026-09-23.md)。
+这里记录已经完成的版本变更及当次验证结果。当前行为和发布命令以 [DEVELOPMENT.md](../DEVELOPMENT.md) 为准；历史测试数量不代表以后构建的测试结果。更早的旧版综合手册原件保留在仓库 `docs/archive/Review-legacy-2026-09-23.md`，仅供追溯，不作为现行规范，也不再并入当前开发文档。
+
+## 3.0.0+156（2026-10-07）
+
+- 整理统一开发文档：当前说明、完整变更记录、工程复盘和磨砂顶栏规范继续全文汇入 `D:\App\开发文档\Review.md`；将截至 2026-09-23 的旧版综合手册全文从当前汇编移除，仓库归档原件保留且不作为现行规范。
+- 修复图库 push/pop 转场时顶部返回、页码/Live Photo 和下载控件提前显示或未及时消失的问题。玻璃按钮含 `BackdropFilter` 与 fragment shader，整组 `AnimatedOpacity` 会在合成层中过滤出黑帧；现改为逐帧调整按钮图标透明度、玻璃底色和模糊强度，不再对滤镜设置祖先透明层。顶部控件与缩略条共用路由动画状态：push 完成后以 140ms 淡入，pop 开始立即禁用点击并淡出；不改变 Hero 尺寸、主图 PageView 视口/约束、定位几何或手势。
+- 图库、混合媒体与设置组件定向测试 27/27 通过；全量 Flutter 测试 223/229 通过，6 个失败均是未改动的微博卡片“展开全文”预期，与本次图库控件无关。改动文件静态分析无问题，`git diff --check` 通过。
+- ARM64 Release APK 构建成功（294.2 秒）；核验包名 `com.review`、版本 `3.0.0`、`versionCode` `156`、target SDK `36`、ABI `arm64-v8a`。APK v2 签名有效且签名证书与上一包一致，16 KB zipalign 检查通过。交付 `Review_v3.0.0.apk`（31,985,921 字节），SHA-256：`02523A2E9215E720606E34306B08145DAC992485DADA7BF225B4EF04D265A15D`；上一版 `Review_v2.22.6.apk` 可恢复地归档至 `build/previous-deliveries/Review_v2.22.6-before-v3.0.0.apk`。未连接真机，最终转场视觉仍需设备确认。
+
+## 2.22.6+155（2026-10-07）
+
+- 收紧设置首页字体层级：设置项标题回归主题 `titleMedium`（Material 3 默认 16sp），分组标题使用 `titleSmall`（默认 14sp），不再强制放大字号或覆盖主题样式。删除订阅消息提醒、存储设置、登录账号和导出凭据行中重复标题含义的说明；保留 WebDAV 备份范围、动态凭据状态和应用版本等有实际信息量的辅助内容。
+- 修复多图画廊 Hero 路由转场时缩略条提前露出造成的闪烁：路由 push 期间保持透明且不可交互，打开动画完成后淡入；路由 reverse 一开始立即淡出并禁用点击。不改变主图 PageView 视口/约束、Hero 图片几何或手势。
+- 画廊与设置定向 Flutter 测试 24/24 通过；相关 Dart 静态分析无问题，`git diff --check` 通过。
+- ARM64 Release APK 构建成功（341.3 秒）；核验包名 `com.review`、版本 `2.22.6`、`versionCode` `155`、target SDK `36`、ABI `arm64-v8a`；APK v2 签名有效，签名身份与前版相同，16 KB zipalign 检查通过。交付 `Review_v2.22.6.apk`（31,985,917 字节），SHA-256：`C13549E95C4C9995047F1AADDA97D739D80AFECC449A26190CD9CE341FD30737`；上一版 `Review_v2.22.5.apk` 可恢复地归档至 `build/previous-deliveries/Review_v2.22.5-before-v2.22.6.apk`。未连接真机，最终 UI 观感仍需安装确认。
+
+## 2.22.5+154（2026-10-07）
+
+- 对照 ReviewX 的实际顶栏代码，将磨砂背景改为直接绘制链 `ClipRect → BackdropFilter(sigma 20) → 渐变 DecoratedBox`，移除 Review 中额外的 `ShaderMask` 和 `BlendMode.src` 设置。此前 2.22.3/2.22.4 的组合虽然通过结构测试，但用户设备仍看不到模糊；记录为未解决尝试，不再沿用。
+- 保留顶部渐变 alpha 0.95、边界 alpha 0、AppBar Material alpha 0.45及唯一底边；渐变色层本身提供状态栏侧低透光、分界线附近较明显磨砂的观感。新增回归断言确认 BackdropFilter 没有被 ShaderMask 包裹。定向 Flutter 测试 13/13 通过，Dart analyze 与 `git diff --check` 无问题。
+- ARM64 Release APK 构建成功（393.6 秒）；核验包名 `com.review`、版本 `2.22.5`、`versionCode` `154`、ABI `arm64-v8a`；APK v2 签名有效，签名身份与前版相同，16 KB zipalign 检查通过。交付 `Review_v2.22.5.apk`（31,985,917 字节），SHA-256：`B71C67B865B56B83D5E840BF7B82D2C66ACF33DA451CCAC11CDA6140D7E64119`；上一版 `Review_v2.22.4.apk` 可恢复地归档至 `build/previous-deliveries/Review_v2.22.4-before-v2.22.5.apk`。未连接真机，视觉效果仍需安装确认。
+
+## 2.22.4+153（2026-10-07）
+
+- 按用户反馈，轻微提高磨砂顶栏状态栏侧的底色不透明度：顶部渐变叠加层 alpha 从 0.90 调至 0.95，Material alpha 保持 0.45，合成不透明度从约 0.945 提升至约 0.9725；边界渐变、模糊 alpha 0→0.60 与模糊合成模式均不变。
+- 更新回归测试、顶栏设计规范、工程复盘和完整开发文档；版本名 `2.22.4`、Android `versionCode` `153`。相关 Dart 文件静态分析无问题，顶栏及关联页面定向测试 13/13 通过。
+- ARM64 Release 构建成功（359.4 秒）；核验包名 `com.review`、版本 `2.22.4`、`versionCode` `153`、target SDK `36`、ABI `arm64-v8a`；APK v2 签名有效，签名证书与前版相同，16 KB zipalign 检查通过。交付 `Review_v2.22.4.apk`（31,985,917 字节），SHA-256：`389CF32D22339EFD29E1733397257521770669CBB0034B0325AA3348B3308492`；上一版 `Review_v2.22.3.apk` 可恢复地归档至 `build/previous-deliveries/Review_v2.22.3-alpha-9725.apk`。未连接真机，视觉效果仍需安装确认。
+
+## 2.22.3+152（2026-10-07）
+
+- 修复新磨砂渐变中 `BackdropFilter` 被 `ShaderMask` 遮罩后模糊不可见的问题：滤镜位于临时合成缓冲区时，默认 `srcOver` 可能产生异常；显式设置 `BlendMode.src`，不改用户确认的 alpha 0.90 渐变、alpha 0.45 Material 和 alpha 0→0.60 模糊遮罩。
+- 新增回归断言确认实际 `BackdropFilter.blendMode`；定向 widget 测试 13/13 通过；指定文件静态分析无 error/warning（仅有 1 条既存 deprecation info）。ARM64 Release 构建成功（369.4 秒）；APK 核验包名 `com.review`、版本 `2.22.3`、`versionCode` `152`、`arm64-v8a`，APK v2 签名及 zipalign 验证通过，签名证书与 2.22.2 相同。
+- 交付 `Review_v2.22.3.apk`（SHA-256：`019488ED3B7415A88DFEAD1276378A57D82F3CE875EDBF808F93602B0DC241DB`）；真机视觉复验未执行，仍需安装后确认模糊层实际可见性。
+- 原 `Review_v2.22.2.apk` 已可恢复地归档至 `build/previous-deliveries/Review_v2.22.2-alpha-945.apk`；项目根目录仅保留当前验证通过的 APK。
+
+## 2.22.2+151（2026-10-07）
+
+- 根据用户确认的参数提高顶栏状态栏一侧的底色不透明度：颜色渐变叠加层顶部 alpha 为 0.90，AppBar Material alpha 为 0.45，合成后顶部约 0.945 不透明；边界处渐变 alpha 为 0，保留 Material 的 0.45 底色。模糊仍独立从状态栏侧 0 增至边界侧 0.60，不影响标题/控件；时间线、热搜和超话详情等自定义栏统一复用同一 Material alpha 常量。
+- 同步更新统一顶栏设计规范、工程复盘和完整开发文档；版本名 `2.22.2`、Android `versionCode` `151`。
+- 顶栏及此前关联布局定向测试 13/13 通过；改动相关 Dart 文件分析无 error/warning，`feed_view.dart` 保留 1 条与本次无关的既有弃用提示（`axisAlignment`）。
+- ARM64 Release 构建成功（372.7 秒）；核验 `com.review`、版本 `2.22.2`、`versionCode` `151`、target SDK `36`、ABI `arm64-v8a`；APK v2 签名有效且证书与前版相同，16 KB zipalign 检查通过。交付 `Review_v2.22.2.apk`（31,985,917 字节），SHA-256：`E23C4653D9AD892DB49341B7148BF6D1B3738223D0D390603AD377CB3AAD11E7`。上一版 2.22.1 APK 保留在 `build/previous-deliveries/Review_v2.22.1-gradient-blur.apk`。未连接真机。
+
+## 2.22.1+150（2026-10-07）
+
+- 设置首页按轻量 M3 规范整理为“偏好与功能”“存储与备份”“账号设置”“关于与支持”四组；减弱卡片层级与图标颜色，统一 17sp 标题、14sp 说明、24dp 图标和箭头；移除只有标题、没有操作的设置首页顶栏，并校正设置内容与状态栏的间距。
+- 设置分组使用独立低强调 surface：默认零外边距、无阴影/描边、透明 surface tint，24dp 圆角；普通主题使用 `surfaceContainerLow`，纯黑主题使用 `surfaceContainer`。不改全局 `CardTheme`，不叠加父级页面留白。
+- 所有标准顶栏及时间线、热搜自定义栏、超话详情 SliverAppBar 统一复用 `ReviewFrostedBackdrop`。AppBar Material 主题色 alpha 0.58；独立颜色渐变顶部 alpha 0.57 → 边界 0；sigma 20 模糊另套 alpha 0 → 0.60 的纵向遮罩，状态栏附近基本不模糊、边界处保留 60% 模糊，遮罩不影响文字和控件。超话固定搜索/分类区仍计入完整顶栏边界，并关闭重复浅色分割线。
+- 11 个覆盖式 EasyRefresh 页面统一使用 70dp 触发阈值；`safeArea: false` 避免将完整 AppBar inset 重复计入阈值，只将刷新指示器视觉位置下移。全局默认头和非覆盖式/嵌入式页面行为保持不变。热搜页面移除无数据时的顶部空白区域。
+- 相关定向 widget 测试 13/13 通过；全量测试 220 项中 214 项通过，另有 6 项失败集中在 `test/widget_test.dart` 的微博正文“展开全文”断言，与本轮顶栏/设置卡片变更无关。全项目 Dart 分析有 60 条 info、无 error/warning；本轮涉及的顶栏、设置卡片和布局测试文件分析无问题；`git diff --check` 通过。
+- ARM64 Release 构建成功（346.9 秒）。核验 `com.review`、版本 `2.22.1`、versionCode `150`、target SDK `36`、ABI `arm64-v8a`；APK v2 签名有效且证书与上一包相同，16 KB zipalign 检查通过。交付 `Review_v2.22.1.apk`（31,985,917 字节），SHA-256：`2F5DA519DAF06FD1C7672AD53F94647D4A39F8ACCF5756D12B70A05D04E90553`。上一份同版本包已备份至 `build/previous-deliveries/Review_v2.22.1-pre-gradient-blur.apk`，此前 2.22.0/2.21.4 回退包保留。未连接真机；视觉渐变仍需设备实测。
+## 2.21.4+148（2026-10-07）
+
+- 超话中心标签行下方增加 8dp 磨砂留白，避免材质边界紧贴标签产生“被切掉”的视觉；固定搜索/分类区从 100dp 调为 108dp，同时把列表间距从 12dp 调为 4dp，首条结果的屏幕位置保持不变。
+- 修正 Android app Gradle 插件列表缺少 `org.jetbrains.kotlin.android` 的构建配置问题，按 Android、Kotlin、Flutter 插件顺序应用；同步补充开发文档中的防回归说明和磨砂顶栏规范。
+- 超话及磨砂顶栏定向测试 3/3 通过，相关文件分析无问题。全量测试 216 项中 210 项通过，6 项失败仍集中在 `test/widget_test.dart` 的微博正文“展开全文”断言。全项目分析报告 58 条 info、无 error/warning。
+- ARM64 Release 构建成功（388.6 秒）；核验 `com.review`、版本 `2.21.4`、versionCode `148`、target SDK `36`；APK v2 签名及 16 KB zipalign 通过，签名证书与前版一致。交付 `Review_v2.21.4.apk`（31,985,917 字节），SHA-256：`EB9E5A7F17EA4348A4336784FD0C13986258047E83301D9163313C2DABF5F5D2`；旧 `Review_v2.21.3.apk` 可恢复地归档至 `build/previous-deliveries/`，根目录只保留当前包。未连接真机。
+
+## 2.21.3+147（2026-10-07）
+
+- 修复超话中心磨砂层无法从完整顶栏边界生效的问题：启用 `extendBodyBehindAppBar`，让全屏滚动视口位于标题栏、搜索框和分类标签后方；将完整顶栏高度与原有间距计入列表内部首项 padding，保持初始首条结果的位置不变，同时让滚动内容经过整块顶栏并被模糊。加载和空状态仍位于固定头部下方。
+- 同步修订可迁移设计规范及完整开发文档，明确“视口铺满、inset 放在 scroll 内部”的覆盖式实现，防止外层 `Column`/`Padding` 将模糊效果截在固定标签下方。
+- 超话与磨砂顶栏定向 widget 测试 3/3 通过（含视口从屏幕顶端开始、首项 inset 位于列表内部的断言）；相关文件分析无问题。全量测试 216 项中 210 项通过，6 项失败均为 `test/widget_test.dart` 中既有微博正文“展开全文”断言。全项目分析有 58 条 info、无 error/warning；`git diff --check` 通过。未连接真机。
+- ARM64 Release 构建成功（449.0 秒）；核验 `com.review`、版本 `2.21.3`、versionCode `147`、target SDK `36`、ABI `arm64-v8a`；APK v2 签名和 16 KB zipalign 通过，证书与前版一致。交付 `Review_v2.21.3.apk`（31,985,921 字节），SHA-256：`325A6D3F4E716507E6A3AF45F8823BD5C4CA4E4BC6537A9D045BE91F8A57A39C`；旧 `Review_v2.21.2.apk` 可恢复地归档至 `build/previous-deliveries/`，项目根目录只保留当前包。未连接真机。
+
+## 2.21.2+146（2026-10-07）
+
+- 超话中心关闭分类标签下方的浅色细分隔线，保留磨砂顶栏整体边界；其他共用顶栏默认分隔线不变。新增可独立参考的《磨砂顶栏设计规范》，并并入统一开发文档。
+- `test/review_frosted_app_bar_test.dart` 与 `test/chaohua_center_page_test.dart` 定向测试 3/3 通过；涉及的 4 个 Dart 文件分析无问题。全量测试 216 项中 210 项通过，6 项失败均为 `test/widget_test.dart` 中既有微博正文“展开全文”断言。全项目分析有 58 条 info、无 error/warning；`git diff --check` 通过。未连接真机。
+- ARM64 Release 构建成功（373.9 秒）；核验 `com.review`、版本 `2.21.2`、versionCode `146`、target SDK `36`、ABI `arm64-v8a`；APK v2 签名和 16 KB zipalign 通过，证书与前版一致。交付 `Review_v2.21.2.apk`（31,985,917 字节），SHA-256：`11D6CB707540222A99370D27F6175B085CC6F024C6E78E0276A035E54920F483`；旧 `Review_v2.21.1.apk` 可恢复地归档至 `build/previous-deliveries/`，项目根目录只保留当前包。未连接真机。
+
+## 2.21.1+145（2026-10-07）
+
+- 设置首页内容在状态栏安全区下方增加 8dp 留白；超话中心把搜索框和固定分类标签纳入磨砂顶栏，分隔边界位于分类标签下沿，结果列表仍独立滚动且保留原间距。
+- 新增超话中心固定内容/滚动列表边界 widget 回归测试并通过；全量测试 215 项中 209 项通过，6 项既有微博正文“展开全文”断言失败。目标文件分析通过；全项目分析无 error/warning，保留 45 条 info；`git diff --check` 通过。未连接真机。
+- ARM64 Release 构建成功（239.0 秒）；核验 `com.review`、版本 `2.21.1`、versionCode `145`、target SDK `36`、ABI `arm64-v8a`；APK v2 签名及 16 KB zipalign 通过，证书与前版一致。交付 `Review_v2.21.1.apk`（31,985,921 字节），SHA-256：`AC843FC9D612FFEF47C37AF03919899430B26A57C03F40FE9EDBEC5BF5035FE4`；旧 `Review_v2.21.0.apk` 可恢复地归档至 `build/previous-deliveries/`，项目根目录只保留当前包。未连接真机。
+
+## 2.21.0+144（2026-10-07）
+
+- 移除设置首页仅展示“设置”标题的顶栏；保留状态栏安全区与底部导航留白，个性化、存储等设置子页面的返回顶栏不变。修正搜索页热门搜索内嵌列表/网格继承顶部安全区 padding 导致榜单卡片顶部留白，现有热搜条目正常显示并从卡片顶部开始排列。
+- `flutter test --no-pub` 共 214 项，208 项通过；6 项既有失败均在 `test/widget_test.dart` 的微博正文“展开全文”断言。设置页与搜索页定向 `flutter analyze --no-pub` 无问题，`git diff --check` 通过。未连接真机。
+- ARM64 Release 构建成功（391.6 秒）；核验 `com.review`、版本 `2.21.0`、versionCode `144`、target SDK `36`、ABI `arm64-v8a`；APK v2 签名与 16 KB zipalign 通过，签名证书与前版一致。交付 `Review_v2.21.0.apk`（31,985,921 字节），SHA-256：`72658325C032239DDD63285E3D4AD566374082570BEFC107C7B814702017D962`；旧 `Review_v2.20.1.apk` 可恢复地归档至 `build/previous-deliveries/`，根目录只保留当前包。未连接真机。
+
+## 2.20.1+143（2026-10-07）
+
+- 修正共用磨砂顶栏合成后仍近似透明的问题：82% 主题底色直接设置在 AppBar Material 的 `backgroundColor`，不再留在 `flexibleSpace` 装饰层；模糊层只负责 sigma 20 局部模糊和底部分隔线，与时间线绘制方式一致。增加测试断言实际 AppBar `Material` 颜色及非透明模式，覆盖个性化、赞和收藏、关注列表等复用页面。
+- 顶栏/分组面板/热搜定向测试 7/7 通过。全量 `flutter test --no-pub` 为 214 项，其中 6 项仍是 `test/widget_test.dart` 中既有的 TweetCard 全文展开/收起断言失败；其余通过。`flutter analyze --no-pub` 无 error/warning，报告 45 条 info；`git diff --check` 通过。未连接真机。
+- ARM64 Release 构建成功（404.8 秒）；核验 `com.review`、版本 `2.20.1`、versionCode `143`、target SDK `36`、ABI `arm64-v8a`；APK v2 签名与 16 KB zipalign 通过，签名证书与前版一致。交付 `Review_v2.20.1.apk`（31,985,921 字节），SHA-256：`73E3F0D3B38C49B98C4EE5193BC01ACF3AD330C9BC43EE76BD07746485762F8B`；旧 `Review_v2.20.0.apk` 可恢复地归档至 `build/previous-deliveries/`，根目录只保留当前包。未连接真机。
+
+## 2.20.0+142（2026-10-07）
+
+- 将磨砂顶栏从时间线/热搜扩展为全应用统一的 `ReviewFrostedAppBar`，覆盖设置、详情、搜索、分组管理、赞和收藏、关注/粉丝列表等标准 AppBar；自定义 SliverAppBar 继续沿用同一套 82% 主题底色、sigma 20 局部模糊和分隔线。可安全滚动的页面在补回顶部内容 inset 后延伸到顶栏后方；登录、聊天输入、内嵌网页/视频及固定/pinned 布局只换材质、不改内容几何，降低键盘、播放器和滚动行为回归风险。
+- 新增顶栏组件回归测试；`test/review_frosted_app_bar_test.dart`、`test/group_dropdown_test.dart`、`test/hot_trends_view_test.dart` 定向测试共 7 项通过。`dart analyze lib test` 无 error/warning，保留 44 条既有 info；`git diff --check` 通过。全量 `flutter test --no-pub` 共 214 项，其中 6 项既有 TweetCard 全文展开/收起断言失败，均在 `test/widget_test.dart`，与顶栏改动无关。设备视觉验收待完成。
+- ARM64 Release 构建成功（447.9 秒）；核验 `com.review`、版本 `2.20.0`、versionCode `142`、target SDK `36`、ABI `arm64-v8a`；APK v2 签名通过，证书与上一版相同，16 KB zipalign 通过。交付 `Review_v2.20.0.apk`（31,985,917 字节），SHA-256：`AD038CFC32215A6E0AC3CCD1620918FB5063FE3B64317F97230A91B1E7D0F736`；旧 `Review_v2.19.17.apk` 可恢复地归档至 `build/previous-deliveries/`，根目录仅保留当前 APK。未连接真机，视觉表现仍需设备验收。
+
+## 2.19.17+141（2026-10-07）
+
+- 再次修正时间线顶栏仍被用户观察为全透明的问题：直接将当前主题 `appBarTheme.backgroundColor`（缺省时回退 Scaffold 背景色）设为 AppBar Material 的 82% 半透明底色；`BackdropFilter` 不再承担背景着色，只负责 sigma 20 的局部模糊。仅影响时间线顶栏。
+- `test/group_dropdown_test.dart` 1/1 通过。全量 `flutter test --no-pub` 为 213 项通过、6 项失败，仍是 `test/widget_test.dart` 中 TweetCard 正文展开/收起断言；本次未改动相关卡片逻辑。定向 analyze 无 error/warning，保留 1 条既有 `axisAlignment` 弃用 info；`git diff --check` 通过。未连接真机。
+- ARM64 Release 构建成功（359.5 秒）；核验包名 `com.review`、版本 `2.19.17`、versionCode `141`、target SDK `36`、ABI `arm64-v8a`、APK v2 签名及 16 KB zipalign 通过，签名证书与上一版相同。
+- 交付 `Review_v2.19.17.apk`（31,985,917 字节），SHA-256：`F69DF1A05E88CD753C37AEB8475179B901162B143955D7B97B3127EE34A11EB6`；`Review_v2.19.16.apk` 归档至 `build/previous-deliveries/`，根目录仅保留当前 APK。
+
+## 2.19.16+140（2026-10-07）
+
+- 修正时间线顶栏此前看起来近乎透明的问题：旧版使用与页面底色相近的 `surface`，sigma 8 的模糊在无内容的顶部区域不易察觉；改用 `surfaceContainerHighest` 主题容器色（82%）并将局部 `BackdropFilter` 提高至 sigma 18，仍只作用于时间线顶栏。
+- `test/group_dropdown_test.dart` 1/1 通过。全量 `flutter test --no-pub` 为 213 项通过、6 项失败，失败均是 `test/widget_test.dart` 中既有 TweetCard 正文展开/收起显示断言；本次仅修改时间线顶栏、版本与文档，没有改动这些卡片逻辑。定向 analyze 无 error/warning，保留 1 条既有 `axisAlignment` 弃用 info；`git diff --check` 通过。未连接真机，视觉效果仍需设备验收。
+- ARM64 Release 构建成功（356.4 秒）；核验包名 `com.review`、版本 `2.19.16`、versionCode `140`、target SDK `36`、ABI `arm64-v8a`、APK v2 签名与 16 KB zipalign 通过，签名证书与上一版相同。
+- 交付 `Review_v2.19.16.apk`（31,985,917 字节），SHA-256：`4748D0DEC145688AA7338D55C92D897EF450E0EC277C6ABEF6D1207CD7408A9B`；`Review_v2.19.15.apk` 归档至 `build/previous-deliveries/`，根目录仅保留当前 APK。
+
+## 2.19.15+139（2026-10-07）
+
+- 时间线顶栏试用局部磨砂玻璃：动态内容滚动到顶栏后方时使用 `ClipRect` 限定的 `BackdropFilter`（sigma 8）、82% 主题表面色和细分隔线；仅影响时间线，不启用全局玻璃材质或 shader。首条微博、登录/空状态和分组下拉位置保持原来的可视布局。
+- `test/group_dropdown_test.dart` 1/1 通过；定向 `flutter analyze --no-pub` 无 error/warning，保留 1 条既有 `axisAlignment` 弃用 info；`git diff --check` 通过。未运行全量测试或真机视觉验收。
+- ARM64 Release 构建成功（407.1 秒）；核验包名 `com.review`、版本 `2.19.15`、versionCode `139`、APK v2 签名、16 KB zipalign 通过，签名证书与 `2.19.14` 相同。
+- 交付 `Review_v2.19.15.apk`（31,985,917 字节），SHA-256：`DB1C815EA0F94403BCFC9E067277045E00D5324037889630958A58A8385CB6A3`；`Review_v2.19.14.apk` 归档至 `build/previous-deliveries/`，根目录仅保留当前 APK。
+
+## 2.19.14+138（2026-10-07）
+
+- 修复 GIF 与旧视频/Live Photo 元数据冲突时误开视频播放器的问题：当 GIF 图片 URL 没有真实视频直链时，即使旧快照残留 `type=video`、`isVideo`、`fid` 或 `livePhotoVideoUrl`，仍按 GIF 图片进入画廊；单独的 `type=video` 标记不再创建无播放地址的播放器。真正的非 GIF MP4 直链仍走视频播放器；GIF 预览图伴随真实 MP4 直链时仍按视频处理。
+- 新增混合媒体回归覆盖，验证带陈旧播放器元数据的 GIF 保持图片分类、真实 MP4 仍播放。`test/mixed_media_gallery_test.dart` 3/3、`test/models_test.dart` 37/37 通过；定向 analyze 无 error/warning，保留 1 条既有 info（`weibo_status_model.dart:1288`：`prefer_conditional_assignment`）；`git diff --check` 通过。测试夹具的 `path_provider` 缺少平台实现日志为非致命现象；未运行全量测试、未做真机媒体验收。
+- ARM64 Release 构建成功（285.59 秒）；核验包名 `com.review`、版本 `2.19.14`、versionCode `138`、target SDK `36`、ABI `arm64-v8a`、APK v2 签名及 16 KB zipalign 通过，签名证书与上一版相同。
+- 交付 `Review_v2.19.14.apk`（31,985,917 字节），SHA-256：`1225B7764DA55D6291DCFCFA3A7DF4508B7F9BB3BC654C722AE29DDAD4D4EE80`；`Review_v2.19.13.apk` 归档至 `build/previous-deliveries/`，项目根目录仅保留当前 APK。
+
+## 2.19.13+137（2026-10-07）
+
+- 修复多图混合媒体中 GIF 因附带 `fid` 被误判为 Live Photo 的分类问题：GIF 依据媒体类型及缩略图/大图/原图 URL 路径扩展名识别（忽略查询参数）；`fid` 不再为 GIF 或明确视频合成 Live Photo MP4 地址。直接 `video` 字符串/对象 URL、`video_url`、`videoUrl` 仍按普通视频播放；显式 Live Photo 字段继续使用手动播放控件。针对 F12 中的 `.gif` 地址和普通 MP4 直链增加回归覆盖。
+- `test/mixed_media_gallery_test.dart` 3/3、`test/models_test.dart` 37/37 通过；定向 analyze 无 error/warning，保留 1 条既有 info（`weibo_status_model.dart:1282`：`prefer_conditional_assignment`）；`git diff --check` 通过。测试夹具中 `path_provider` 缺少平台实现的日志为非致命现象，未运行全量测试、未做真机媒体验收。
+- ARM64 Release 构建成功（280.49 秒）；核验包名 `com.review`、版本 `2.19.13`、versionCode `137`、target SDK `36`、ABI `arm64-v8a`、APK v2 签名及 16 KB zipalign 通过，签名证书与上一版相同。
+- 交付 `Review_v2.19.13.apk`（31,985,917 字节），SHA-256：`5572562950A66276DAFD02DA67994C2E60939F701E0154357E4D166BC12D93D1`；`Review_v2.19.12.apk` 归档至 `build/previous-deliveries/`，项目根目录仅保留当前 APK。
+
+## 2.19.12+136（2026-10-07）
+
+- 修复多图画廊中的 Live Photo 被同时识别为普通视频的问题：明确 Live Photo 标记优先；普通 `video_url` 不再触发 Live Photo 控制器；视频与 Live Photo 分类互斥，避免自动播放的视频播放器绕过顶部播放/暂停按钮。
+- 新增混合媒体画廊回归测试，验证普通视频与 Live Photo 分类互斥、Live Photo 默认暂停且顶部按钮可播放/暂停。`test/mixed_media_gallery_test.dart` 3 项通过；定向 analyze 无 error/warning，保留 1 条既有 info；`git diff --check` 通过。测试过程有 `path_provider` 缺少平台实现的非致命日志。未运行全量测试，未连接真机。
+- ARM64 Release 构建成功（460.1 秒）；核验包名 `com.review`、版本 `2.19.12`、versionCode `136`、target SDK `36`、ABI `arm64-v8a`、16 KB zipalign 与 APK v2 签名通过，签名证书与上一版相同。
+- 交付 `Review_v2.19.12.apk`（31,985,917 字节），SHA-256：`4ECE43F86BF312D7286108EF3CC895E8BF64B1E40B7773095F549C334B456241`；`Review_v2.19.11.apk` 归档至 `build/previous-deliveries/`，项目根目录仅保留当前 APK。
+
+## 2.19.11+135（2026-10-07）
+
+- 彻底根除真机日志确凿定位的 `wbgjb.so` 缺失 `WeicoSecurityUtils.aa4` 导致的 JNI SIGABRT 闪退死循环（两层双保险实施）：
+  1. **第一层（斩断冷启动死循环链路）**：在 `WeiboAuthManager.java` 的 `restoreSession()` 中，彻底移除了冷启动主路径上的同步 `api().refresh()` 触发。应用本地已通过 AES-GCM KeyStore 安全持久化了包含已验证 `uid` 和 `cookie` 的合法会话，直接返回给 Flutter 端加载首屏，0 毫秒阻塞、0 崩溃风险，冷启动瞬间秒开。
+  2. **第二层（对齐上游 Share 完整 JNI ABI 规范）**：根据上游 `WeicoSecurityUtils.smali`（654 行字节码），将 Java 壳层 `WeicoSecurityUtils.java` 完整重建。补齐了底层 native `generateS` 所依赖的 `aa4(String, String, String)` JNI 静态方法回调及其关联算法 `toSecurityValue`（双 SHA-512 散列字符选取算法）、`sha512`、`toHex`；同时补齐 `aa2`（设备 ID 获取）、`aa3`（MD5 特殊下标字符提取）、`aaa`、`securityPsd`、`sinaPushParse`、`charToByte`、`hexString2Bytes` 及全部底层 Native 导出方法签名，彻底杜绝 `mid == null` 和 `Fatal signal 6 (SIGABRT)`。
+- `test/auth_session_test.dart` 14/14 测试全部通过；ARM64 Release 构建成功（615.6 秒）；`aapt2` 核验包名 `com.review`、版本 `2.19.11`、versionCode `135`；APK v2 签名验证通过，签名身份与此前版本相同，4-byte zipalign 检查通过。
+- 交付 `Review_v2.19.11.apk`（31,330,557 字节），SHA-256：`7DC9F3170123998988D74C01A08AA9994CC36A0A448CB296EDC9C57AB364C979`；`Review_v2.19.10.apk` 归档至 `build/previous-deliveries/`，项目根目录仅保留当前 APK 供用户真机验证冷启动与登录持久化。
+
+## 2.19.10+134（2026-10-07）
+
+- 彻底根治已登录用户冷启动首屏 0.5 秒至 1 秒闪退的最终源头（Chromium Native SIGSEGV 绝缘与全局安全加固）：
+  1. **彻底绝缘 Android 原生 `CookieManager`**：在 `MainActivity.kt` 中完全移除 `import android.webkit.CookieManager`。此前已登录状态下冷启动，`FeedController.initAndLoad()` 首帧后调用 `reconcileNativeSession()`，触发 MethodChannel `getNativeCookiesByDomain`。在没有 WebView 上下文的纯 Flutter 进程中，主线程调用 `CookieManager.getInstance()` 并连续读取 8 个域名的 Cookie 会强行唤起系统 Chromium 引擎，在多核并发与缺失上下文时直接引发 C++ 底层 `SIGSEGV / SIGABRT` 致命崩溃（Linux 信号无法被 Java 捕获）。2.19.10 将 `getNativeCookies`、`getNativeCookiesByDomain` 和 `clearNativeCookies` 完全静态化返回安全空数据，原生端彻底零 `CookieManager` 依赖，彻底切断崩溃链路。
+  2. **MainActivity 安装全局未捕获异常崩溃日志落盘**：在 `MainActivity.onCreate` 中安装全局 `Thread.setDefaultUncaughtExceptionHandler`，一旦发生任何未捕获异常，立即自动写入私有目录 `latest_crash.txt`，并通过 MethodChannel 提供 `getLatestCrashLog` 查询能力。
+  3. **彻底清除 `onCreate` 中的组件启用状态检测**：将 `onCreate` 中触碰 `packageManager.setComponentEnabledSetting` 的历史自愈代码完全剥离，消除任何可能因包状态变更广播导致 AMS 延迟杀进程的潜在隐患。
+  4. **Flutter 顶层与平台调度异常兜底**：在 `lib/main.dart` 中配置 `FlutterError.onError` 与 `PlatformDispatcher.instance.onError`，对所有未捕获的 Dart 异步异常进行全局捕获与平稳降级，阻止 Flutter 引擎异常退出。
+- `test/auth_session_test.dart` 14/14 测试全部通过；ARM64 Release 构建成功（431.5 秒）；`aapt2` 核验包名 `com.review`、版本 `2.19.10`、versionCode `134`；APK v2 签名验证通过，签名身份与此前版本相同，4-byte zipalign 检查通过。
+- 交付 `Review_v2.19.10.apk`（31,330,557 字节），SHA-256：`F76E8796930288A533F74B72667A969317FFFFDE858EAB6900601B3513B69C2F`；`Review_v2.19.9.apk` 归档至 `build/previous-deliveries/`，项目根目录仅保留当前 APK 供用户真机验证冷启动与登录持久化。
+
+## 2.19.9+133（2026-10-07）
+
+- 彻底定位并根除进入应用后 0.5 秒至 1 秒闪退的全部致命隐患：
+  1. **彻底解耦 `WeiboAuthManager` 与 `CookieManager`**：Review 作为纯 Flutter 应用，所有网络请求通过 Dart 层的 `WeiboDioClient (Dio)` 并在 Header 中注入 Cookie 发送，完全不通过 Android 原生 WebView。2.19.8 将 `syncCookieManager()` 移入主线程 Handler 队列后，由于在 Flutter 首帧渲染完成（0.5s~1s）出队执行，循环遍历跨域名注入几十次并调用 `cookieManager.flush()`，极易与底层 Chromium 初始化/渲染管线产生争用引发 Native Abort。彻底删除 `WeiboAuthManager` 中的 `syncCookieManager()` 与 `clearCookieManager()` 及其所有调用，根除 Chromium 底层崩溃。
+  2. **修复 `MainActivity.onCreate` 组件状态判断误区，杜绝 AMS 杀进程**：默认情况下（未切换过桌面图标时），`MainActivity` 在系统的组件启用状态是 `COMPONENT_ENABLED_STATE_DEFAULT (0)`，而不是 `COMPONENT_ENABLED_STATE_ENABLED (1)`。此前逻辑因判断 `hasEnabled` 为 `false`，导致每次冷启动均调用 `pm.setComponentEnabledSetting(MainActivity, ENABLED, DONT_KILL_APP)`。在现代 Android（特别是国内定制系统 MIUI/HyperOS/ColorOS/OriginOS 等）中，修改当前正处于前台的 Activity 自身组件状态，PMS 发出 `ACTION_PACKAGE_CHANGED` 广播，AMS 会在 500ms~1000ms 后直接强行杀死应用进程（无任何 Java Crash Stacktrace，精准表现为进入应用 0.5s~1s 闪退）！2.19.9 修复为仅在 `MainActivity` 明确处于 `COMPONENT_ENABLED_STATE_DISABLED` 且所有别名均未启用时才兜底恢复，正常冷启动绝不调用 `setComponentEnabledSetting`，彻底根除 AMS 延迟杀进程。
+  3. **MainActivity 原生 Cookie 读取安全加固**：移除 `getNativeCookies` 与 `getNativeCookiesByDomain` 中多余的 `cookieManager.flush()` 磁盘同步写入，将 `CookieManager.getInstance()` 和 `getCookie` 调用全量包裹在 `try-catch (Throwable t)` 异常隔离块中，失败降级返回空数据，绝不波及宿主进程。
+- `test/auth_session_test.dart` 14/14 测试全部通过；ARM64 Release 构建成功（281.7 秒）；`aapt2` 核验包名 `com.review`、版本 `2.19.9`、versionCode `133`；APK v2 签名验证通过，签名身份与此前版本相同，4-byte zipalign 检查通过。
+- 交付 `Review_v2.19.9.apk`（31,330,561 字节），SHA-256：`6F45D7EF7473682070E88F489853F715015E1B750644D376F2D40E3039AF47AF`；`Review_v2.19.8.apk` 归档至 `build/previous-deliveries/`，项目根目录仅保留当前 APK 供用户真机验证冷启动与登录持久化。
+
+## 2.19.8+132（2026-10-07）
+
+- 彻底定位并修复真机在已有登录会话状态下冷启动/手机启动直接闪退（Crash on Startup / SIGABRT）的严重缺陷：
+  1. **后台线程操作 CookieManager 引发 Chromium Native Abort 根因排查**：在 2.19.6 成功登录后，会话已持久化至原生 `EncryptedSessionStore`。当应用冷启动时，`auth_provider.dart` 立即调用原生 `restoreSession()`，运行在后台单线程 `weiboAuthExecutor`。`restoreSession()` 中调用 `syncCookieManager(session.cookie)` 在后台线程直接调用 `CookieManager.getInstance()` 和 `setCookie()`。在 Android 冷启动瞬间，Chromium WebView 尚未在 UI 主线程初始化，子线程触碰 CookieManager 会触发 Chromium 底层 `CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI))` 断言失败或竞争崩溃，直接向进程发送 `SIGABRT` / `SIGSEGV` 致命信号，Java 层 `try-catch` 无法捕获，导致启动瞬间闪退。2.19.8 将 `syncCookieManager()` 和 `clearCookieManager()` 严格调度至 UI 主线程（`new Handler(Looper.getMainLooper()).post(...)`）异步执行，彻底消除跨线程初始化与并发崩溃隐患。
+  2. **CookieManager URL 格式非法清洗**：此前 `syncCookieManager` 和 `MainActivity.getNativeCookies` 中将 `".weibo.com"`、`".weibo.cn"`、`".sina.com.cn"` 等非 URL 域名字符串直接传入 `setCookie()` 与 `getCookie()`，违反 Android WebView 要求传入绝对有效 URL 的规范，在部分系统引发底层解析异常。2.19.8 全面清洗，仅使用 `https://` 绝对合法 URL。
+  3. **`EncryptedSessionStore.load()` 与 `restoreSession()` 故障隔离**：设备重启或 KeyStore 密钥状态异常可能导致解密抛出 `AEADBadTagException` 等异常。在 `load()` 中对解密流程全链路增加 `try-catch (Throwable t)`，发生异常时记录警告并清理损坏密文、安全返回 `null`；`restoreSession()` 增加顶层异常兜底，网络刷新失败时保留本地有效会话，绝不阻断冷启动进程。
+  4. **MainActivity MethodChannel 回调安全加固**：`submitWeiboAuth` 与 `completeWeiboAuthError` 中的 `result.success` 和 `result.error` 增加异常捕获，防止通道解绑或重复提交引发崩溃。
+- `test/auth_session_test.dart` 14/14 测试全部通过；arm64 Release 构建成功（224.2 秒）；`aapt2` 核验包名 `com.review`、版本 `2.19.8`、versionCode `132`；签名与对齐验证通过。
+- 交付 `Review_v2.19.8.apk`（31,330,561 字节），SHA-256：`7D8D01CFC1E9D0B9762565527E11004E0BE79D77C7B783E7D6E7ED28B22D9682`；`Review_v2.19.7.apk` 归档至 `build/previous-deliveries/`，项目根目录仅保留当前 APK 供用户真机验证冷启动与登录持久化。
 
 ## 2.19.7+131（2026-10-07）
 

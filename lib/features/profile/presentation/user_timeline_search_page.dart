@@ -1,5 +1,6 @@
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
 import '../../feed/data/models/weibo_status_model.dart';
@@ -100,7 +101,7 @@ class _UserTimelineSearchPageState
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: ReviewFrostedAppBar(
         titleSpacing: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),

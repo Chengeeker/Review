@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:extended_image/extended_image.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
@@ -496,9 +497,11 @@ class _WeiboArticlePageState extends ConsumerState<WeiboArticlePage> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final document = _document;
+    final topContentInset = MediaQuery.paddingOf(context).top + kToolbarHeight;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      appBar: ReviewFrostedAppBar(
         leading: IconButton(
           icon: const BackButtonIcon(),
           tooltip: '返回',
@@ -524,7 +527,12 @@ class _WeiboArticlePageState extends ConsumerState<WeiboArticlePage> {
                       physics: const AlwaysScrollableScrollPhysics(),
                       slivers: [
                         SliverPadding(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            topContentInset + 12,
+                            16,
+                            32,
+                          ),
                           sliver: SliverList(
                             delegate: SliverChildListDelegate(
                               _buildDocumentWidgets(document, colorScheme),

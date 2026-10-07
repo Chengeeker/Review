@@ -1,7 +1,10 @@
 import 'package:dio/dio.dart';
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
+import 'package:review/core/widgets/review_refresh_header.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/network/weibo_dio_client.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
@@ -49,9 +52,9 @@ bool _isAccessibleTopicResponse(dynamic payload) {
 }
 
 Map<String, dynamic> _topicRequestParameters(int page) => {
-      'tabid': _followedTopicsTabId,
-      'page': page,
-    };
+  'tabid': _followedTopicsTabId,
+  'page': page,
+};
 
 String _topicReferer(String uid) =>
     'https://weibo.com/u/page/follow/$uid/$_followedTopicsTabId';
@@ -146,10 +149,12 @@ class _FollowedTopicsPageState extends ConsumerState<FollowedTopicsPage> {
         final res = await client.dio.get(
           '/ajax/profile/topicContent',
           queryParameters: _topicRequestParameters(_page),
-          options: Options(headers: {
-            'Referer': _topicReferer(uid),
-            'X-Requested-With': 'XMLHttpRequest',
-          }),
+          options: Options(
+            headers: {
+              'Referer': _topicReferer(uid),
+              'X-Requested-With': 'XMLHttpRequest',
+            },
+          ),
         );
         responseMessage = res.data is Map
             ? _topicResponseMessage(Map<String, dynamic>.from(res.data))
@@ -174,7 +179,8 @@ class _FollowedTopicsPageState extends ConsumerState<FollowedTopicsPage> {
         }
       }
       if (data is Map) {
-        final maxPage = int.tryParse(
+        final maxPage =
+            int.tryParse(
               (data['max_page'] ?? data['maxPage'] ?? '1').toString(),
             ) ??
             1;
@@ -211,24 +217,28 @@ class _FollowedTopicsPageState extends ConsumerState<FollowedTopicsPage> {
   }
 
   Map<String, dynamic>? _extractChaohuaItem(Map<String, dynamic> item) {
-    final title = item['topic_name']?.toString() ??
+    final title =
+        item['topic_name']?.toString() ??
         item['title']?.toString() ??
         item['name']?.toString() ??
         '';
 
     if (title.isEmpty) return null;
 
-    final avatar = item['pic']?.toString() ??
+    final avatar =
+        item['pic']?.toString() ??
         item['avatar']?.toString() ??
         item['avatar_large']?.toString() ??
         '';
 
-    final desc = item['content1']?.toString() ??
+    final desc =
+        item['content1']?.toString() ??
         item['intro']?.toString() ??
         item['description']?.toString() ??
         '';
 
-    final followCount = item['content2']?.toString() ??
+    final followCount =
+        item['content2']?.toString() ??
         (item['follow_count'] != null ? '粉丝：${item['follow_count']}' : '');
 
     final statusCount = item['status_count'] is int
@@ -270,9 +280,10 @@ class _FollowedTopicsPageState extends ConsumerState<FollowedTopicsPage> {
     final isLoggedIn = authState.isLoggedIn;
 
     return Scaffold(
+      extendBodyBehindAppBar: !widget.embedded,
       appBar: widget.embedded
           ? null
-          : AppBar(
+          : ReviewFrostedAppBar(
               title: Text(
                 widget.ownerName?.isNotEmpty == true
                     ? '${widget.ownerName}关注的超话'
@@ -285,13 +296,16 @@ class _FollowedTopicsPageState extends ConsumerState<FollowedTopicsPage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.diamond_outlined,
-                      size: 60,
-                      color: colorScheme.primary.withValues(alpha: 0.6)),
+                  Icon(
+                    Icons.diamond_outlined,
+                    size: 60,
+                    color: colorScheme.primary.withValues(alpha: 0.6),
+                  ),
                   const SizedBox(height: 16),
-                  const Text('登录后即可同步您关注的超话',
-                      style:
-                          TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                  const Text(
+                    '登录后即可同步您关注的超话',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
                   const SizedBox(height: 16),
                   FilledButton.icon(
                     onPressed: () {
@@ -306,9 +320,9 @@ class _FollowedTopicsPageState extends ConsumerState<FollowedTopicsPage> {
               ),
             )
           : EasyRefresh(
-              onRefresh: () => HapticFeedbackUtil.refresh(
-                () => _fetchTopics(refresh: true),
-              ),
+              header: widget.embedded ? null : reviewFrostedAppBarRefreshHeader,
+              onRefresh: () =>
+                  HapticFeedbackUtil.refresh(() => _fetchTopics(refresh: true)),
               onLoad: () async {
                 _page++;
                 await _fetchTopics(refresh: false);
@@ -318,155 +332,170 @@ class _FollowedTopicsPageState extends ConsumerState<FollowedTopicsPage> {
               },
               child: _isLoading
                   ? Center(
-                      child:
-                          CircularProgressIndicator(color: colorScheme.primary))
+                      child: CircularProgressIndicator(
+                        color: colorScheme.primary,
+                      ),
+                    )
                   : _topics.isEmpty
-                      ? Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.diamond_outlined,
-                                  size: 54,
-                                  color: colorScheme.onSurfaceVariant
-                                      .withValues(alpha: 0.4)),
-                              const SizedBox(height: 12),
-                              Text(
-                                _emptyMessage.isNotEmpty
-                                    ? _emptyMessage
-                                    : '暂无关注的超话',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                    color: colorScheme.onSurfaceVariant,
-                                    fontSize: 14),
-                              ),
-                            ],
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.diamond_outlined,
+                            size: 54,
+                            color: colorScheme.onSurfaceVariant.withValues(
+                              alpha: 0.4,
+                            ),
                           ),
-                        )
-                      : ListView.separated(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 8),
-                          itemCount: _topics.length,
-                          separatorBuilder: (_, __) =>
-                              const Divider(height: 1, indent: 68),
-                          itemBuilder: (context, index) {
-                            final t = _topics[index];
-                            final title = t['title']?.toString() ?? '超话';
-                            final avatar = t['avatar']?.toString() ?? '';
-                            final desc = t['desc']?.toString() ?? '';
-                            final followCount =
-                                t['followCount']?.toString() ?? '';
-                            final statusCount = t['statusCount'] as int? ?? 0;
-                            final containerid =
-                                t['containerid']?.toString() ?? '';
+                          const SizedBox(height: 12),
+                          Text(
+                            _emptyMessage.isNotEmpty
+                                ? _emptyMessage
+                                : '暂无关注的超话',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: colorScheme.onSurfaceVariant,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: EdgeInsets.fromLTRB(
+                        12,
+                        MediaQuery.paddingOf(context).top +
+                            (widget.embedded ? 0 : kToolbarHeight) +
+                            8,
+                        12,
+                        8,
+                      ),
+                      itemCount: _topics.length,
+                      separatorBuilder: (_, __) =>
+                          const Divider(height: 1, indent: 68),
+                      itemBuilder: (context, index) {
+                        final t = _topics[index];
+                        final title = t['title']?.toString() ?? '超话';
+                        final avatar = t['avatar']?.toString() ?? '';
+                        final desc = t['desc']?.toString() ?? '';
+                        final followCount = t['followCount']?.toString() ?? '';
+                        final statusCount = t['statusCount'] as int? ?? 0;
+                        final containerid = t['containerid']?.toString() ?? '';
 
-                            return ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 6),
-                              leading: avatar.isNotEmpty
-                                  ? ClipRRect(
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: CachedNetworkImage(
-                                        avatar,
-                                        width: 48,
-                                        height: 48,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) => Container(
-                                          width: 48,
-                                          height: 48,
-                                          decoration: BoxDecoration(
-                                            color: colorScheme.primaryContainer,
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                          ),
-                                          child: Icon(Icons.diamond_rounded,
-                                              color: colorScheme
-                                                  .onPrimaryContainer),
-                                        ),
-                                      ),
-                                    )
-                                  : Container(
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 6,
+                          ),
+                          leading: avatar.isNotEmpty
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: CachedNetworkImage(
+                                    avatar,
+                                    width: 48,
+                                    height: 48,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Container(
                                       width: 48,
                                       height: 48,
                                       decoration: BoxDecoration(
                                         color: colorScheme.primaryContainer,
                                         borderRadius: BorderRadius.circular(12),
                                       ),
-                                      child: Icon(Icons.diamond_rounded,
-                                          color:
-                                              colorScheme.onPrimaryContainer),
-                                    ),
-                              title: Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      title,
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                      child: Icon(
+                                        Icons.diamond_rounded,
+                                        color: colorScheme.onPrimaryContainer,
+                                      ),
                                     ),
                                   ),
-                                  const SizedBox(width: 4),
-                                  Icon(Icons.diamond_rounded,
-                                      size: 16, color: colorScheme.primary),
-                                ],
+                                )
+                              : Container(
+                                  width: 48,
+                                  height: 48,
+                                  decoration: BoxDecoration(
+                                    color: colorScheme.primaryContainer,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(
+                                    Icons.diamond_rounded,
+                                    color: colorScheme.onPrimaryContainer,
+                                  ),
+                                ),
+                          title: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  title,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (followCount.isNotEmpty || statusCount > 0)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 3),
-                                      child: Text(
-                                        [
-                                          if (followCount.isNotEmpty)
-                                            followCount,
-                                          if (statusCount > 0)
-                                            '$statusCount 帖子',
-                                        ].join(' · '),
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w500,
-                                          color: colorScheme.primary,
-                                        ),
-                                      ),
-                                    ),
-                                  if (desc.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 2),
-                                      child: Text(
-                                        desc,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: colorScheme.onSurfaceVariant,
-                                        ),
-                                      ),
-                                    ),
-                                ],
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.diamond_rounded,
+                                size: 16,
+                                color: colorScheme.primary,
                               ),
-                              trailing: const Icon(Icons.chevron_right_rounded),
-                              onTap: () {
-                                if (containerid.isNotEmpty) {
-                                  Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                      builder: (ctx) => ChaohuaDetailPage(
-                                        containerid: containerid,
-                                        title: title,
-                                        avatar: avatar,
-                                        desc: desc,
-                                        followCount: followCount,
-                                        statusCount: statusCount,
-                                      ),
+                            ],
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (followCount.isNotEmpty || statusCount > 0)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 3),
+                                  child: Text(
+                                    [
+                                      if (followCount.isNotEmpty) followCount,
+                                      if (statusCount > 0) '$statusCount 帖子',
+                                    ].join(' · '),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: colorScheme.primary,
                                     ),
-                                  );
-                                }
-                              },
-                            );
+                                  ),
+                                ),
+                              if (desc.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Text(
+                                    desc,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: () {
+                            if (containerid.isNotEmpty) {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (ctx) => ChaohuaDetailPage(
+                                    containerid: containerid,
+                                    title: title,
+                                    avatar: avatar,
+                                    desc: desc,
+                                    followCount: followCount,
+                                    statusCount: statusCount,
+                                  ),
+                                ),
+                              );
+                            }
                           },
-                        ),
+                        );
+                      },
+                    ),
             ),
     );
   }

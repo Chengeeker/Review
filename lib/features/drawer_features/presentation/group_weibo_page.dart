@@ -1,6 +1,9 @@
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
+import 'package:review/core/widgets/review_refresh_header.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/network/weibo_dio_client.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
 import '../../feed/data/models/weibo_status_model.dart';
@@ -48,16 +51,13 @@ class _GroupWeiboPageState extends ConsumerState<GroupWeiboPage> {
     try {
       final res = await client.dio.get(
         '/ajax/statuses/mymblog',
-        queryParameters: {
-          'uid': widget.ownerUid,
-          'page': _page,
-          'feature': 0,
-        },
+        queryParameters: {'uid': widget.ownerUid, 'page': _page, 'feature': 0},
       );
 
       if (res.data is Map<String, dynamic>) {
         final data = res.data as Map<String, dynamic>;
-        final rawList = data['data']?['list'] as List? ??
+        final rawList =
+            data['data']?['list'] as List? ??
             data['data']?['statuses'] as List? ??
             data['list'] as List? ??
             data['statuses'] as List? ??
@@ -88,12 +88,15 @@ class _GroupWeiboPageState extends ConsumerState<GroupWeiboPage> {
     final colorScheme = theme.colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      appBar: ReviewFrostedAppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('群微博',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+            const Text(
+              '群微博',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+            ),
             Text(
               widget.groupName,
               style: TextStyle(fontSize: 12, color: colorScheme.outline),
@@ -102,6 +105,7 @@ class _GroupWeiboPageState extends ConsumerState<GroupWeiboPage> {
         ),
       ),
       body: EasyRefresh(
+        header: reviewFrostedAppBarRefreshHeader,
         onRefresh: () => HapticFeedbackUtil.refresh(
           () => _fetchGroupTimeline(refresh: true),
         ),
@@ -112,35 +116,37 @@ class _GroupWeiboPageState extends ConsumerState<GroupWeiboPage> {
         },
         child: _isLoading
             ? Center(
-                child: CircularProgressIndicator(color: colorScheme.primary))
+                child: CircularProgressIndicator(color: colorScheme.primary),
+              )
             : _statuses.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.feed_outlined,
-                            size: 54,
-                            color: colorScheme.onSurfaceVariant
-                                .withValues(alpha: 0.4)),
-                        const SizedBox(height: 12),
-                        Text(
-                          '暂无群微博动态',
-                          style: TextStyle(
-                              color: colorScheme.onSurfaceVariant,
-                              fontSize: 14),
-                        ),
-                      ],
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.feed_outlined,
+                      size: 54,
+                      color: colorScheme.onSurfaceVariant.withValues(
+                        alpha: 0.4,
+                      ),
                     ),
-                  )
-                : ListView.builder(
-                    itemCount: _statuses.length,
-                    itemBuilder: (context, index) {
-                      return TweetCard(
-                        status: _statuses[index],
-                        isDetail: false,
-                      );
-                    },
-                  ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '暂无群微博动态',
+                      style: TextStyle(
+                        color: colorScheme.onSurfaceVariant,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : ListView.builder(
+                itemCount: _statuses.length,
+                itemBuilder: (context, index) {
+                  return TweetCard(status: _statuses[index], isDetail: false);
+                },
+              ),
       ),
     );
   }

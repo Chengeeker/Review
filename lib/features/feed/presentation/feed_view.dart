@@ -8,6 +8,8 @@ import '../../../core/auth/auth_provider.dart';
 import '../../../core/theme/theme_provider.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
 import '../../../core/widgets/app_avatar.dart';
+import '../../../core/design_system/components/review_frosted_app_bar.dart';
+import '../../../core/widgets/review_refresh_header.dart';
 import '../../auth/presentation/login_page.dart';
 import '../../compose/presentation/compose_tweet_page.dart';
 import '../../home/presentation/main_scaffold.dart';
@@ -87,6 +89,9 @@ class _FeedViewState extends ConsumerState<FeedView>
     final authState = ref.watch(authProvider);
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final topBarBackground =
+        theme.appBarTheme.backgroundColor ?? theme.scaffoldBackgroundColor;
+    final topChromeHeight = MediaQuery.paddingOf(context).top + kToolbarHeight;
 
     final isFriendsTab =
         feedState.currentCategory == 'friends' ||
@@ -121,6 +126,16 @@ class _FeedViewState extends ConsumerState<FeedView>
         behavior: HitTestBehavior.translucent,
         onTap: handleTopBarTap,
         child: AppBar(
+          backgroundColor: topBarBackground.withValues(
+            alpha: reviewFrostedMaterialAlpha,
+          ),
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          flexibleSpace: ReviewFrostedBackdrop(
+            color: topBarBackground,
+            borderColor: colorScheme.outlineVariant,
+          ),
           titleSpacing: 0,
           centerTitle: false,
           // Leading: 侧边栏入口 (当前用户头像，点击呼出全局侧边栏)
@@ -201,56 +216,60 @@ class _FeedViewState extends ConsumerState<FeedView>
       children: [
         // Main Timeline Feed Content
         showLoginBanner
-            ? Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.people_outline_rounded,
-                            size: 56,
-                            color: colorScheme.primary,
-                          ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            '关注流需要登录',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+            ? Padding(
+                padding: EdgeInsets.only(top: topChromeHeight),
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.people_outline_rounded,
+                              size: 56,
+                              color: colorScheme.primary,
                             ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '登录或导入微博账号凭据后，即可同步查看你关注的好友与特别关注动态',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: colorScheme.onSurfaceVariant,
-                              fontSize: 13,
+                            const SizedBox(height: 16),
+                            const Text(
+                              '关注流需要登录',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 20),
-                          FilledButton.icon(
-                            icon: const Icon(Icons.login_rounded),
-                            label: const Text('去登录 / 导入凭据'),
-                            onPressed: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (ctx) => const LoginPage(),
-                                ),
-                              );
-                            },
-                          ),
-                        ],
+                            const SizedBox(height: 8),
+                            Text(
+                              '登录或导入微博账号凭据后，即可同步查看你关注的好友与特别关注动态',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: colorScheme.onSurfaceVariant,
+                                fontSize: 13,
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            FilledButton.icon(
+                              icon: const Icon(Icons.login_rounded),
+                              label: const Text('去登录 / 导入凭据'),
+                              onPressed: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (ctx) => const LoginPage(),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               )
             : EasyRefresh(
+                header: reviewFrostedAppBarRefreshHeader,
                 onRefresh: () async {
                   HapticFeedbackUtil.light();
                   _closeDropdown();
@@ -287,43 +306,51 @@ class _FeedViewState extends ConsumerState<FeedView>
                     physics: const AlwaysScrollableScrollPhysics(),
                     slivers: [
                       if (feedState.isLoading && feedState.statuses.isEmpty)
-                        const SliverFillRemaining(
-                          child: Center(child: CircularProgressIndicator()),
+                        SliverFillRemaining(
+                          child: Padding(
+                            padding: EdgeInsets.only(top: topChromeHeight),
+                            child: const Center(
+                              child: CircularProgressIndicator(),
+                            ),
+                          ),
                         )
                       else if (feedState.statuses.isEmpty)
                         SliverFillRemaining(
-                          child: Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(32),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(
-                                    Icons.inbox_rounded,
-                                    size: 56,
-                                    color: colorScheme.onSurfaceVariant
-                                        .withValues(alpha: 0.5),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  Text(
-                                    feedState.errorMessage ?? '暂无微博内容',
-                                    style: TextStyle(
-                                      color: colorScheme.onSurfaceVariant,
+                          child: Padding(
+                            padding: EdgeInsets.only(top: topChromeHeight),
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(32),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(
+                                      Icons.inbox_rounded,
+                                      size: 56,
+                                      color: colorScheme.onSurfaceVariant
+                                          .withValues(alpha: 0.5),
                                     ),
-                                    textAlign: TextAlign.center,
-                                  ),
-                                  const SizedBox(height: 16),
-                                  OutlinedButton.icon(
-                                    icon: const Icon(
-                                      Icons.refresh_rounded,
-                                      size: 16,
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      feedState.errorMessage ?? '暂无微博内容',
+                                      style: TextStyle(
+                                        color: colorScheme.onSurfaceVariant,
+                                      ),
+                                      textAlign: TextAlign.center,
                                     ),
-                                    label: const Text('重新加载'),
-                                    onPressed: () => ref
-                                        .read(feedControllerProvider.notifier)
-                                        .refreshFeed(),
-                                  ),
-                                ],
+                                    const SizedBox(height: 16),
+                                    OutlinedButton.icon(
+                                      icon: const Icon(
+                                        Icons.refresh_rounded,
+                                        size: 16,
+                                      ),
+                                      label: const Text('重新加载'),
+                                      onPressed: () => ref
+                                          .read(feedControllerProvider.notifier)
+                                          .refreshFeed(),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -331,7 +358,7 @@ class _FeedViewState extends ConsumerState<FeedView>
                       else
                         SliverPadding(
                           padding: EdgeInsets.only(
-                            top: 4,
+                            top: topChromeHeight + 4,
                             bottom: ref.watch(themeProvider).useFloatingNavBar
                                 ? 72.0
                                 : 16.0,
@@ -374,7 +401,7 @@ class _FeedViewState extends ConsumerState<FeedView>
 
         // Animated Top Group Dropdown Panel (对齐截图 1)
         Positioned(
-          top: 0,
+          top: topChromeHeight,
           left: 0,
           right: 0,
           child: SizeTransition(
@@ -397,6 +424,10 @@ class _FeedViewState extends ConsumerState<FeedView>
       ],
     );
 
-    return Scaffold(appBar: materialAppBar, body: body);
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: materialAppBar,
+      body: body,
+    );
   }
 }

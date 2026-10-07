@@ -38,6 +38,10 @@ public final class DeviceId {
         return sInstance;
     }
 
+    public String getDeviceId() {
+        return mCachedId != null ? mCachedId : "";
+    }
+
     public String getDeviceId(Context context) {
         String empty = "";
         if (mCachedId != null && empty.equals(mCachedImei)

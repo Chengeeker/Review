@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 
 typedef ReviewPageBodyBuilder = Widget Function(
   BuildContext context,
@@ -21,11 +22,17 @@ class ReviewPageScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      appBar: ReviewFrostedAppBar(
         automaticallyImplyLeading: showNavigationIcon,
         title: Text(title),
       ),
-      body: bodyBuilder(context, EdgeInsets.zero),
+      body: bodyBuilder(
+        context,
+        EdgeInsets.only(
+          top: MediaQuery.paddingOf(context).top + kToolbarHeight,
+        ),
+      ),
     );
   }
 }

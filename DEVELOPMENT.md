@@ -1,10 +1,10 @@
 # Review 开发与技术架构文档
 
-> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-10-07；当前应用版本：`2.19.7+131`。
+> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-10-07；当前应用版本：`3.0.0+156`。
 >
 > `README.md` 用于项目介绍；本文档维护当前实现，不记录登录 Cookie、Token、密码或其他凭据。
 
-本地完整开发文档统一保存在 `D:\App\开发文档\Review.md`，包含本说明、[变更记录](docs/CHANGELOG.md)、[工程复盘](docs/RETROSPECTIVE.md)和[旧手册归档](docs/archive/Review-legacy-2026-09-23.md)的全文。本仓库保留分主题源文件以便版本管理；修改任一源文件后应同步更新完整文档。旧手册只用于追溯，当前行为以源码、测试和本文档为准。
+本地完整开发文档统一保存在 `D:\App\开发文档\Review.md`，完整汇入本说明、[变更记录](docs/CHANGELOG.md)、[工程复盘](docs/RETROSPECTIVE.md)和[磨砂顶栏设计规范](docs/FROSTED_TOP_BAR_DESIGN_SPEC.md)。本仓库保留这些分主题源文件以便版本管理；修改任一源文件后应运行同步脚本。截至 2026-09-23 的旧版综合手册已从当前汇编中移出，原件仍保存在 `docs/archive/Review-legacy-2026-09-23.md` 供追溯，不作为现行规则；当前行为以源码、测试和本文档为准。
 
 ## 1. 先看结论：哪些内容来自微博，哪些只是本地能力
 
@@ -44,7 +44,9 @@ Review 是 Flutter 编写的微博网页端风格客户端。凡是涉及微博�
 2. **热搜**：微博热搜分类榜单。
 3. **设置**：主题、微博样式、存储、账号和关于应用。
 
-时间线顶部可以打开侧边栏、切换微博分组、进入搜索和快捷发布。应用使用 Material 3，底部导航支持贴底栏和标准材质悬浮栏，可在个性化设置中开关悬浮底栏。
+时间线顶部可以打开侧边栏、切换微博分组、进入搜索和快捷发布。标准页面统一使用 `ReviewFrostedAppBar`；设置首页不显示仅有标题、没有操作的独立顶栏，设置子页面仍保留标准返回顶栏。所有标准顶栏以及时间线、热搜自定义栏、超话详情 SliverAppBar 共用同一材质参数与 `ReviewFrostedBackdrop`：主题 AppBar 色（缺省时回退 Scaffold 背景色）以 alpha 0.45 直接设置在 AppBar Material；上方叠加同色纵向渐变，顶部 alpha 0.95、边界 alpha 0，顶端合成约 0.9725，状态栏一侧更接近不透明、越靠底部分界越透明；`forceMaterialTransparency` 关闭。模糊层按 `ClipRect → BackdropFilter(sigma 20) → 渐变 DecoratedBox` 的顺序直接绘制，不使用 `ShaderMask` 或独立 blur alpha 遮罩；顶部高不透明度色层遮住大部分模糊，向边界透明度渐增，因此模糊观感自然显现。不能仅凭 widget 中存在滤镜判断有效：在适用的页面上还需确认滚动内容确实延伸到顶栏后方。`ClipRect` 限定滤镜范围，不启用全屏 shader 或全局液态玻璃。不能只在 `flexibleSpace` 绘制底色，否则 AppBar Material 透明时部分页面会实际呈现透明。滚动结构安全的页面让内容延伸至顶栏下方，并为列表/滚动内容补回安全区与工具栏高度，使滚动内容经过顶栏时可见磨砂；分组管理、赞和收藏、关注/粉丝列表等使用此布局。超话中心的搜索框和固定分类栏属于顶栏组成，磨砂背景覆盖至分类栏下沿，滚动结果从该边界以下开始；底部边界由顶栏整体材质与下方内容的交界表达，该页关闭标签行下方额外的浅色细线，避免出现双重边界。除上述超话中心外，登录表单、聊天输入区、内嵌网页/视频、其他固定搜索栏或复杂 pinned sliver 页面保持原内容几何，仅复用顶栏材质，避免键盘遮挡、控件重叠和滚动位置变化。时间线分组下拉面板仍是独立的局部面板，不属于顶栏渐变；它使用同主题底色、82% 不透明度和 sigma 20 模糊，区域由 `ClipRRect` 限定。热搜列表首项仍预留状态栏、标题栏和分类 Tab 高度，空/加载状态居中布局不变。覆盖式顶栏下 EasyRefresh 的安全 inset 不得重复加到触发距离：`reviewFrostedAppBarRefreshHeader` 保持 70dp 阈值并只将 ClassicHeader 指示器下移至完整顶栏以下；全局默认 header 与非覆盖式页面行为不变。应用使用 Material 3，底部导航支持贴底栏和标准材质悬浮栏，可在个性化设置中开关悬浮底栏。可迁移至其他应用的顶栏设计、Flutter 实现步骤和防错验收清单见[磨砂顶栏设计规范](docs/FROSTED_TOP_BAR_DESIGN_SPEC.md)。
+
+顶栏模糊只使用一个 sigma 20 的 `BackdropFilter`，由外层 `ClipRect` 限定范围；其 child 绘制固定 flexibleSpace 内容和纵向主题色渐变。不套 `ShaderMask`，也不指定 `BlendMode.src`。颜色层从状态栏侧 alpha 0.95 过渡至分界线侧 alpha 0；叠加 AppBar Material alpha 0.45 后，顶部底色合成约 0.9725 不透明，边界处保留 0.45。因为渐变色层覆盖在模糊结果上，状态栏侧只透出极少背景，边界侧磨砂更明显；这是颜色叠层带来的视觉变化，不是第二个模糊遮罩。
 
 ### 2.2 时间线和微博卡片
 
@@ -221,7 +223,7 @@ lib/
 - Material 水波纹通过 `HapticSplashFactory` 提供全局一次轻触；业务回调会消费同一次手势的自动反馈，不会重复震动。取消点击不会额外触发，Live 图播放/暂停按钮使用普通水波纹并只在动作入口触发一次轻触。
 - 触感工具保留约 40ms 的硬件抖动冷却，并使用 300ms 的同手势消费窗口，避免全局反馈与业务反馈叠加；没有 Material 水波纹的 GestureDetector 仍可由业务回调独立触发。公共头像组件的点击入口会消费全局水波纹反馈，确保只触发一次轻触；微博正文 `@用户` 使用内联点击识别器，因此在其跳转回调中调用 `HapticFeedbackUtil.light()`，遵守全局触感开关和防重复规则；所有下拉刷新入口统一通过 `HapticFeedbackUtil.refresh` 触发一次轻触。发布页定位按钮不再在业务方法开头重复触发轻触；成功选中地点后仅保留一次中等反馈。
 - 公共头像点击区域至少为 48dp，并声明头像按钮语义；头像占位符按 Unicode code point 取首字符。Toast 根据安全区和键盘高度调整位置，并通过 live region 向读屏器公布内容。
-- 搜索页与热搜榜共用 `HotSearchBadge`；设置页分组共用 `AppSectionCard`。统一使用 `showAppDialog` 的确认弹窗，设置/存储路径底部菜单使用主题的圆角、背景和拖动条。
+- 搜索页与热搜榜共用 `HotSearchBadge`；搜索页嵌套的热搜 ListView/GridView 显式使用零 padding，避免默认继承顶部安全区而在榜单卡片内产生空白；设置首页使用私有 `_SettingsSectionCard`，设置子页及其他分组页面继续使用 `AppSectionCard`。统一使用 `showAppDialog` 的确认弹窗，设置/存储路径底部菜单使用主题的圆角、背景和拖动条。
 - 时间线底栏单击支持回顶/返回上次位置，双击回顶并刷新；时间线顶栏双击支持回顶和二次刷新。
 - 热搜底栏再次单击回到当前分类顶部，双击回顶并刷新当前分类；热搜顶栏双击不在顶部时回顶、已在顶部时刷新当前分类。手势使用现有的 300ms 单/双击判定，不新增依赖。
 - 用户主页顶栏也使用相同的双击判定：不在顶部时双击平滑回顶，已经在顶部时再次双击刷新当前用户微博；单击不改变原有标题、搜索和分享操作。
@@ -229,10 +231,12 @@ lib/
 
 ### 7.2 图片画廊
 
-`ImageGalleryPage` 支持双击放大、捏合缩放、横向分页、Live Photo 播放切换、下载原图/Live 视频和合并保存到系统相册。
+顶部返回、页码/Live Photo 和下载控件与底部缩略条共用所在路由的动画状态：push 期间透明且不可交互，路由进入 completed 后以 140ms 淡入；pop 一开始立即禁用点击并淡出。顶部按钮含 `BackdropFilter` 和 fragment shader，禁止把整组按钮包进 `Opacity`/`AnimatedOpacity` 透明合成层，以免磨砂滤镜采样到黑色中间层；应分别渐变按钮图标透明度、玻璃底色和模糊强度。该处理只作用于叠层控件，不改变 Hero 尺寸、主图 PageView 视口/约束、定位几何或图片手势。
+
+`ImageGalleryPage` 支持双击放大、捏合缩放、横向分页、Live Photo 播放切换、下载原图/Live 视频和合并保存到系统相册。Live Photo、普通视频和 GIF 必须互斥分类：实际非 GIF 的 `video_url`、`videoUrl` 或 `video` 字符串/URL 字段才进入视频播放器；视频类型标记本身不能启动一个缺少播放地址的空播放器。GIF 按媒体类型或图片 URL 扩展名识别；当没有真实视频直链时，GIF URL 优先于冲突的旧 `fid`/Live Photo 元数据，继续作为图片画廊资源显示。只有明确 Live Photo 元数据、`livephoto_video` 或 `/livephoto/` 媒体地址且资源不是 GIF 时才走手动播放控制器。进入 Live Photo 默认暂停，顶部按钮负责播放/暂停。
 
 - 从微博图片网格点击普通图片时，通过 Flutter `Hero` 将对应缩略图连续放大到全屏画廊；返回时反向缩回来源位置。配对标识按来源网格实例、媒体下标和图片身份生成，只有当前画廊页挂载 Hero，避免缓存邻页一起飞回。普通图片回程读取两端实际 `ExtendedRenderImage` 或 `RenderImage` 的解码像素、fit、alignment、布局变换及圆角；手势图使用已绘制的 destinationRect/layoutRect 保存当前缩放和平移，先去除绘制偏移再映射到 Hero 坐标。冻结完整图片平面后，逐帧插值图片四边与裁切圆角，让图片在途中逐渐收敛到来源的实际 cover 区域；不再重新布局手势子树并叠加统一缩放。临时 image.clone() 只共享既有像素句柄，飞行卸载即 dispose，不新增请求或缓存。未解码时保持原子树回退；自动网页卡片保留完整显示分支，视频不参与该 Hero。现有路由、分页、滚轮和媒体生命周期不变，无新增动画依赖。回归使用正式画廊路由及 ExtendedRawImage，对横图/竖图和放大平移状态逐像素比较回程起点与圆角目标；设备观感仍须真机复测。
-- 所有多图/混合媒体画廊（2 项及以上，不限于超过 9 张）显示横向缩略图滚轮：当前项正常显示并有白边，其他项覆盖半透明白色蒙层，视频叠加播放图标。缩略图仅限制解码宽度 160px、高度按原图比例计算，再以 `BoxFit.cover` 裁切。滚轮使用 `ClampingScrollPhysics` 和关闭逐页吸附；手指拖动及松手后的惯性期间，主图直接镜像滚轮的连续页位置，不把多页变化放入逐页动画队列，因此快滑到末尾时主图不会在后面慢慢追赶。主图每次跨过一张图时触发 `HapticFeedbackUtil.selectionTick()`；该滚动专用触感使用 12ms 节流，不改变全局普通操作 40ms 节流。停稳时主图和滚轮同步用 `easeOutCubic` 在 120ms 内吸附到最近项；滚动期间暂停视频/Live Photo 的激活，最终选中后才恢复，避免快滑时逐个初始化媒体。主图手动翻页会接管同步并打断旧滚轮惯性。缩略条位于底部安全区上方 32dp，高 64dp；`ExtendedImageGesturePageView` 始终使用全屏视口，顶栏和缩略条只叠加在图片上层。控件显隐不再改变视口尺寸，因此不会重置图片缩放、平移或中心位置。手势缩放最低为 fit 尺寸 1.0，避免缩到适配尺寸以下后重置居中造成多余空白；统一居中初始对齐以保留手指焦点缩放。单项不显示缩略条；单张静态图片按整个屏幕居中。收起控件时只隐藏叠层，继续惰性构建、复用缓存，不预加载全部原图/视频。
+- 所有多图/混合媒体画廊（2 项及以上，不限于超过 9 张）显示横向缩略图滚轮：当前项正常显示并有白边，其他项覆盖半透明白色蒙层，视频叠加播放图标。缩略图仅限制解码宽度 160px、高度按原图比例计算，再以 `BoxFit.cover` 裁切。滚轮使用 `ClampingScrollPhysics` 和关闭逐页吸附；手指拖动及松手后的惯性期间，主图直接镜像滚轮的连续页位置，不把多页变化放入逐页动画队列，因此快滑到末尾时主图不会在后面慢慢追赶。主图每次跨过一张图时触发 `HapticFeedbackUtil.selectionTick()`；该滚动专用触感使用 12ms 节流，不改变全局普通操作 40ms 节流。停稳时主图和滚轮同步用 `easeOutCubic` 在 120ms 内吸附到最近项；滚动期间暂停视频/Live Photo 的激活，最终选中后才恢复，避免快滑时逐个初始化媒体。主图手动翻页会接管同步并打断旧滚轮惯性。缩略条位于底部安全区上方 32dp，高 64dp；`ExtendedImageGesturePageView` 始终使用全屏视口，顶栏和缩略条只叠加在图片上层。控件显隐不再改变视口尺寸，因此不会重置图片缩放、平移或中心位置。缩略条监听所在路由动画：push 期间透明且不可交互，路由动画完成后以 140ms 淡入；pop 状态一开始即透明并禁用命中，再于退场过程中淡出。这个动画只包围缩略条，不改变 Hero 尺寸、主图 PageView 视口/约束、定位几何或图片手势。手势缩放最低为 fit 尺寸 1.0，避免缩到适配尺寸以下后重置居中造成多余空白；统一居中初始对齐以保留手指焦点缩放。单项不显示缩略条；单张静态图片按整个屏幕居中。收起控件时只隐藏叠层，继续惰性构建、复用缓存，不预加载全部原图/视频。
 - 图片夹视频复用现有 `WeiboVideoPlayerPage` 的嵌入模式，不另写播放器：从网格点击图片或视频进入同一完整媒体顺序；当前项为视频时使用真实视频地址播放，非当前视频只展示封面。显式当前下标通知确保分页保留的屏外子项也卸载播放器，初始化回调检查 mounted 和控制器身份，避免切走后后台自动播放。嵌入模式不重复显示返回栏、不修改画廊屏幕方向；单视频仍可独立打开。播放器横滑进度手势移除，横滑交给画廊切换内容；进度条、双击快进/快退及纵滑亮度/音量继续保留。离开视频后释放播放资源，视频保存使用视频地址而不是封面。
 - 图片自身不再因斜向滑动误触发“滑出销毁”；单指横向分页由页面处理。
 - 画廊主图视口始终覆盖整个屏幕；顶栏按钮在状态栏安全区内叠加，缩略条在底部安全区上方 32dp 叠加。显示或隐藏这些控件不会重新约束主图，因此图片保持当前屏幕位置、缩放和平移；单张静态图片也按整个屏幕居中。
@@ -341,9 +345,23 @@ lib/
 - **原生刷新机制**：`account/getoauth` 作为 GET 请求，仅在原生 `lastRefreshAt` 达到 21,000,000 ms（约 5 小时 50 分钟）后触发刷新。应用冷启动时通过 `EncryptedSessionStore` 本地恢复，不因单次瞬时网络波动判定会话失效。
 - **账号退出规范**：退出登录同步清理 native 加密会话、Review 本地 Cookie/Token/账号状态以及原生 `CookieManager` 中的所有 Cookie。手动导入 Cookie 成功后亦会清理之前的 native session，杜绝账号凭据交织。
 - **认证日志脱敏（2.19.7）**：只记录 HTTP 状态、会话字段是否存在和异常类型；不得记录登录响应 JSON、Cookie、Token、异常消息或请求表单。服务端错误提示可供用户界面展示，但不得写入日志。
+- **冷启动闪退治理（2.19.8）**：
+  1. **后台线程操作 CookieManager 引发 Chromium SIGABRT 根因**：用户成功登录并持久化 session 后，应用在冷启动时触发 `restoreSession()`。2.19.6 将 `syncCookieManager()` 放置在后台单线程 `weiboAuthExecutor` 中执行。冷启动瞬间 Chromium WebView 尚未在主 UI 线程完成初始化，在子线程直接调用 `CookieManager.getInstance()` 或 `setCookie()` 会触发 Chromium native 底层断言 `CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI))` 失败或竞争崩溃，产生底层 `SIGABRT` / `SIGSEGV` 致命信号，Java 层 `try-catch` 无法捕获导致秒退。2.19.8 将 `syncCookieManager()` 与 `clearCookieManager()` 严格调度至 UI 主线程（`Handler(Looper.getMainLooper()).post`）异步执行，并在主线程做全异常隔离。
+  2. **CookieManager URL 格式非法**：此前将非绝对 URL（如 `".weibo.com"`、`".weibo.cn"`）直接传入 `setCookie()` 与 `getCookie()`，在部分 WebView 版本下导致解析异常。2.19.8 全面规范化为合法的 `https://` 绝对地址。
+  3. **`EncryptedSessionStore.load()` 与 `restoreSession()` 故障隔离**：设备重启或 KeyStore 状态波动可能导致解密抛出 `AEADBadTagException` 等异常。在 `load()` 中实现全异常捕获并降级为安全返回 `null`（同时清理损坏密文）；`restoreSession()` 增加顶层异常兜底，网络刷新失败时保留本地有效会话，确保冷启动链路绝对不可阻断。
+- **冷启动 0.5s~1s 闪退最终根治（2.19.10）**：
+  1. **彻底绝缘 Android 原生 `CookieManager`**：在 `MainActivity.kt` 中完全删除 `import android.webkit.CookieManager`。已登录用户冷启动时，`FeedController.initAndLoad()` 在首帧渲染后约 0.5s~1s 调用 `reconcileNativeSession()`，触发 MethodChannel `getNativeCookiesByDomain`。在没有 WebView 初始化的纯 Flutter 进程中，主线程调用 `CookieManager.getInstance()` 并连续读取 8 个域名的 Cookie 会强行唤起系统 Chromium 引擎，在多核并发与缺失上下文时直接引发 C++ 底层 `SIGSEGV / SIGABRT` 致命崩溃（Linux 信号无法被 Java 捕获）。2.19.10 将 `getNativeCookies`、`getNativeCookiesByDomain` 和 `clearNativeCookies` 完全静态化返回安全空数据，原生端彻底零 `CookieManager` 依赖，彻底切断崩溃链路。
+  2. **MainActivity 安装全局未捕获异常崩溃日志落盘**：在 `MainActivity.onCreate` 中安装全局 `Thread.setDefaultUncaughtExceptionHandler`，一旦发生任何未捕获异常，立即自动写入私有目录 `latest_crash.txt`，并通过 MethodChannel 提供 `getLatestCrashLog` 查询能力。
+  3. **彻底清除 `onCreate` 中的组件启用状态检测**：将 `onCreate` 中触碰 `packageManager.setComponentEnabledSetting` 的历史自愈代码完全剥离，消除任何可能因包状态变更广播导致 AMS 延迟杀进程的潜在隐患。
+  4. **Flutter 顶层与平台调度异常兜底**：在 `lib/main.dart` 中配置 `FlutterError.onError` 与 `PlatformDispatcher.instance.onError`，对所有未捕获的 Dart 异步异常进行全局捕获与平稳降级，阻止 Flutter 引擎异常退出。
+- **冷启动后台线程 JNI aa4 缺失引发 SIGABRT 根治（2.19.11）**：
+  1. **斩断冷启动死循环链路**：在 `WeiboAuthManager.java` 的 `restoreSession()` 中彻底移除同步调用 `api().refresh(session)`，直接返回本地 KeyStore 安全解密的 `session`（包含合法 `uid` 与 `cookie`），冷启动链路瞬间秒开（0 毫秒阻塞、0 崩溃风险）。
+  2. **完整对齐上游 Share `WeicoSecurityUtils` JNI 规范**：依据上游 `WeicoSecurityUtils.smali` 完整重建 Java 壳层，补齐底层 native `generateS` 所依赖的 `aa4(String, String, String)` 静态回调及纯 Java 散列选取算法 `toSecurityValue`、`sha512`、`toHex`；同时补齐 `aa2`、`aa3`、`aaa`、`securityPsd`、`sinaPushParse`、`charToByte`、`hexString2Bytes` 以及全部底层 Native 导出签名，彻底杜绝 `mid == null` 和 `Fatal signal 6 (SIGABRT)`。
 
 ## 9. 设置页当前范围
 
+- **设置首页布局**：主设置页不显示仅有“设置”标题的独立顶栏，内容在状态栏安全区外再留 20dp 顶部间距；各设置子页面保留可返回的磨砂顶栏。
+- **设置首页视觉**：分为“偏好与功能”“存储与备份”“账号设置”“关于与支持”，沿用 `ReviewPreferenceTile` 与页面私有 `_SettingsSectionCard`；设置行标题使用当前主题 `titleMedium`（Material 3 默认 16sp），分组标题使用 `titleSmall`（默认 14sp），辅助内容使用 `bodyMedium`（默认 14sp），不再硬编码更大的字号或覆盖主题文字样式。图标与箭头 24dp；卡片零默认外边距、低层级 `surfaceContainerLow`（纯黑主题使用 `surfaceContainer`）、24dp 圆角且无阴影/描边。卡片内分割线缩进 56dp，对齐文字起点（屏幕坐标 72dp = 页面外边距 16dp + tile 内边距 16dp + 24dp leading + 16dp gap）；不得沿用 Lurk 曾出现的父级 padding 与卡片 margin 双重外扩。标题已说明用途的行不重复显示说明；保留 WebDAV 的备份范围提示、动态凭据有效状态和应用版本等重要辅助信息。保留至少 8dp 垂直触控留白、状态栏安全区和悬浮底栏底部空间；不修改账号/备份回调或全局 CardTheme。
 - **个性化**：明暗模式、Material 3 预置色与 Monet 动态取色、纯黑深色模式（开关仅显示名称）、悬浮底栏、触感反馈、字体粗细和屏幕刷新率。
 - **微博样式**：相对/绝对时间、星期/年份/时区/秒数、发布设备、卡片背景布局、正文字号、行间距、链接颜色、备注和名字、主页背景图、用户活动图标、大图片模式、图片圆角、菜单位置、IP 属地显示方式、主页赞过的微博。
 - **存储**：图片/视频保存路径和本地历史数据；当前不提供“退出时自动清理缓存”或“立即清理缓存”入口。
@@ -382,6 +400,8 @@ $env:Path = "$taskJavaHome\bin;$env:Path"
 
 本机 JDK 17 在默认用户临时目录曾因 `PipeImpl` 无法建立 Unix-domain loopback 管道而报 `Unable to establish loopback connection`；`JAVA_TOOL_OPTIONS` 中的 `-Djdk.net.unixdomain.tmpdir` 必须指向已创建的项目内目录，上面的临时目录只在当前 PowerShell 进程生效，构建后可清理。Release 构建使用 `--no-pub` 保持 `pubspec.lock` 锁定的依赖和镜像来源不变；有意更新依赖时，单独运行 `flutter pub get` 并审查锁文件变更后再构建。签名从 Git 忽略的本地 `android/key.properties` 和密钥文件读取，口令不写入文档。
 
+`android/app/build.gradle.kts` 必须按顺序应用 `com.android.application`、`org.jetbrains.kotlin.android`、`dev.flutter.flutter-gradle-plugin`。应用脚本同时使用 `android {}` 与 `kotlin {}` DSL；移除 Kotlin Android 插件会导致 Kotlin DSL accessor 缺失，Release 编译报 `android`/`kotlin` 等未定义。
+
 构建结果通常位于：
 
 ```text
@@ -418,4 +438,9 @@ Copy-Item -LiteralPath 'build\app\outputs\flutter-apk\app-release.apk' -Destinat
 4. 修复网络问题时保留原微博内容，避免空响应、鉴权歧义或回退接口覆盖有效数据；对重试设置明确上限。
 5. 修复交互时检查全局 Ink 触感是否已经提供反馈，避免在业务回调中再次震动；涉及 Android 系统栏、定位、媒体或相册时同时检查原生通道和 Flutter 页面退出清理。
 6. 修改后至少执行相关测试、`flutter test`、`git diff --check`，并核对版本、APK 元数据、README 是否保持用户要求的状态。
-7. 开发文档的本地统一成稿是 `D:\App\开发文档\Review.md`，必须包含当前说明、变更记录、工程复盘与历史手册的完整正文；更新任何分主题源文件后运行 `tool/sync_review_documentation.ps1` 同步成稿，不能将统一文档退回成只有链接的索引页。
+7. 开发文档的本地统一成稿是 `D:\App\开发文档\Review.md`，必须包含当前说明、变更记录、工程复盘、可迁移设计规范与历史手册的完整正文；更新任何分主题源文件后运行 `tool/sync_review_documentation.ps1` 同步成稿，不能将统一文档退回成只有链接的索引页。
+
+### 磨砂顶栏规范维护
+
+- [磨砂顶栏设计规范](docs/FROSTED_TOP_BAR_DESIGN_SPEC.md) 是可单独复用的完整规范，也是统一开发文档中的组成部分；修改顶栏材质、固定内容布局、分隔线或验收标准时，同步维护该文件并重建 `D:\App\开发文档\Review.md`。
+- 超话中心采用覆盖式滚动：列表视口从屏幕顶部开始绘制在整个磨砂顶栏后方；固定搜索/分类区为 108dp（搜索框布局 62dp、分类行 38dp、标签下方 8dp 磨砂留白）。首项 padding 在视口内部补齐状态栏安全区、工具栏、固定区和 4dp 内容间距；合计 inset 保持原布局不变，标签下沿与磨砂边界之间则有清晰余量。不要把列表视口放在顶栏下方的 `Column`/外层 `Padding` 中，否则滚动内容无法穿过完整顶栏，模糊会像从标签下方才开始。

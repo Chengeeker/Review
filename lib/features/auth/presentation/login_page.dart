@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -331,7 +332,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final busy = _isRequestingCode || _isLoggingIn;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: ReviewFrostedAppBar(
         title: const Text('账号登录'),
         actions: [
           TextButton(

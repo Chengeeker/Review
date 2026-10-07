@@ -8,7 +8,9 @@ import '../../../core/storage/storage_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/theme_provider.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
+import '../../../core/design_system/components/review_frosted_app_bar.dart';
 import '../../../core/widgets/hot_search_badge.dart';
+import '../../../core/widgets/review_refresh_header.dart';
 import '../data/search_repository.dart';
 import 'search_results_page.dart';
 import 'search_view.dart';
@@ -116,8 +118,22 @@ class HotTrendsViewState extends ConsumerState<HotTrendsView>
     final fontWeightAdjustment = ref
         .watch(themeProvider)
         .effectiveFontWeightAdjustment;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final topBarBackground =
+        theme.appBarTheme.backgroundColor ?? theme.scaffoldBackgroundColor;
 
     final appBar = AppBar(
+      backgroundColor: topBarBackground.withValues(
+        alpha: reviewFrostedMaterialAlpha,
+      ),
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      flexibleSpace: ReviewFrostedBackdrop(
+        color: topBarBackground,
+        borderColor: colorScheme.outlineVariant,
+      ),
       title: const Text('微博热搜', style: TextStyle(fontWeight: FontWeight.bold)),
       actions: [
         // 搜索按钮 (打开搜索落地页)
@@ -155,6 +171,8 @@ class HotTrendsViewState extends ConsumerState<HotTrendsView>
         tabs: _categories.map((c) => Tab(text: c['name'])).toList(),
       ),
     );
+    final topChromeHeight =
+        MediaQuery.paddingOf(context).top + appBar.preferredSize.height;
 
     final body = TabBarView(
       controller: _tabController,
@@ -163,10 +181,12 @@ class HotTrendsViewState extends ConsumerState<HotTrendsView>
         return _HotCategoryListView(
           key: _categoryListKeys[index],
           categoryKey: category['key']!,
+          topChromeHeight: topChromeHeight,
         );
       }),
     );
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: PreferredSize(
         preferredSize: appBar.preferredSize,
         child: GestureDetector(
@@ -183,8 +203,13 @@ class HotTrendsViewState extends ConsumerState<HotTrendsView>
 /// 单个分类的热搜列表
 class _HotCategoryListView extends ConsumerStatefulWidget {
   final String categoryKey;
+  final double topChromeHeight;
 
-  const _HotCategoryListView({super.key, required this.categoryKey});
+  const _HotCategoryListView({
+    super.key,
+    required this.categoryKey,
+    required this.topChromeHeight,
+  });
 
   @override
   ConsumerState<_HotCategoryListView> createState() =>
@@ -261,38 +286,44 @@ class _HotCategoryListViewState extends ConsumerState<_HotCategoryListView>
     final colorScheme = theme.colorScheme;
 
     if (_isLoading) {
-      return Center(
-        child: CircularProgressIndicator(color: colorScheme.primary),
+      return Padding(
+        padding: EdgeInsets.only(top: widget.topChromeHeight),
+        child: Center(
+          child: CircularProgressIndicator(color: colorScheme.primary),
+        ),
       );
     }
 
     if (_items.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.local_fire_department_outlined,
-              size: 48,
-              color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '暂无该分类热搜',
-              style: TextStyle(
-                color: colorScheme.onSurfaceVariant,
-                fontSize: 14,
+      return Padding(
+        padding: EdgeInsets.only(top: widget.topChromeHeight),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.local_fire_department_outlined,
+                size: 48,
+                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
               ),
-            ),
-            const SizedBox(height: 16),
-            FilledButton.tonal(
-              onPressed: () {
-                setState(() => _isLoading = true);
-                _fetchList();
-              },
-              child: const Text('重新加载'),
-            ),
-          ],
+              const SizedBox(height: 12),
+              Text(
+                '暂无该分类热搜',
+                style: TextStyle(
+                  color: colorScheme.onSurfaceVariant,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.tonal(
+                onPressed: () {
+                  setState(() => _isLoading = true);
+                  _fetchList();
+                },
+                child: const Text('重新加载'),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -301,10 +332,16 @@ class _HotCategoryListViewState extends ConsumerState<_HotCategoryListView>
     final double bottomNavPadding = themeState.useFloatingNavBar ? 72.0 : 16.0;
 
     return EasyRefresh(
+      header: reviewFrostedAppBarRefreshHeader,
       onRefresh: () => HapticFeedbackUtil.refresh(_fetchList),
       child: ListView.separated(
         controller: _scrollController,
-        padding: EdgeInsets.fromLTRB(16, 8, 16, bottomNavPadding),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          widget.topChromeHeight + 8,
+          16,
+          bottomNavPadding,
+        ),
         itemCount: _items.length,
         separatorBuilder: (_, __) =>
             const Divider(height: 1, indent: 52, thickness: 0.5),

@@ -11,7 +11,6 @@ import android.media.AudioManager
 import android.provider.Settings
 import android.view.View
 import android.view.WindowInsets
-import android.webkit.CookieManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -49,7 +48,11 @@ class MainActivity : FlutterActivity() {
         weiboAuthExecutor.execute {
             try {
                 val value = operation(getWeiboAuthManager())
-                runOnUiThread { result.success(value) }
+                runOnUiThread {
+                    try {
+                        result.success(value)
+                    } catch (_: Throwable) {}
+                }
             } catch (error: Throwable) {
                 completeWeiboAuthError(result, error)
             }
@@ -91,7 +94,11 @@ class MainActivity : FlutterActivity() {
                 else -> "微博登录初始化或请求失败（$errorTypes），请截图反馈"
             }
         }
-        runOnUiThread { result.error("WEIBO_AUTH_$category", message, null) }
+        runOnUiThread {
+            try {
+                result.error("WEIBO_AUTH_$category", message, null)
+            } catch (_: Throwable) {}
+        }
     }
 
     private fun loginInputError(result: MethodChannel.Result, message: String) {
@@ -101,28 +108,18 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         super.onCreate(savedInstanceState)
         try {
-            val pm = packageManager
-            val components = listOf(
-                "com.review.MainActivity",
-                "com.review.MainActivityAlias1",
-                "com.review.MainActivityAlias2"
-            )
-            var hasEnabled = false
-            for (comp in components) {
-                val state = pm.getComponentEnabledSetting(android.content.ComponentName(packageName, comp))
-                if (state == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
-                    hasEnabled = true
-                    break
-                }
+            val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+            Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+                try {
+                    val crashFile = java.io.File(filesDir, "latest_crash.txt")
+                    val sw = java.io.StringWriter()
+                    val pw = java.io.PrintWriter(sw)
+                    throwable.printStackTrace(pw)
+                    crashFile.writeText("Time: ${java.util.Date()}\nThread: ${thread.name}\n$sw")
+                } catch (_: Throwable) {}
+                defaultHandler?.uncaughtException(thread, throwable)
             }
-            if (!hasEnabled) {
-                pm.setComponentEnabledSetting(
-                    android.content.ComponentName(packageName, "com.review.MainActivity"),
-                    android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-                    android.content.pm.PackageManager.DONT_KILL_APP
-                )
-            }
-        } catch (_: Exception) {}
+        } catch (_: Throwable) {}
         handleIntent(intent)
     }
 
@@ -327,102 +324,24 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "getNativeCookies" -> {
-                    try {
-                        val cookieManager = CookieManager.getInstance()
-                        cookieManager.flush()
-                        val cookieList = mutableListOf<String>()
-                        val domains = listOf(
-                            "https://weibo.com",
-                            "https://m.weibo.cn",
-                            "https://passport.weibo.com",
-                            "https://sina.cn",
-                            "https://weibo.cn",
-                            "https://m.weibo.com",
-                            "https://login.sina.com.cn",
-                            "m.weibo.cn",
-                            "weibo.com",
-                            ".weibo.com",
-                            "weibo.cn",
-                            ".weibo.cn",
-                            ".sina.com.cn",
-                            "sina.cn",
-                            ".sina.cn"
-                        )
-                        for (domain in domains) {
-                            val c = cookieManager.getCookie(domain)
-                            if (!c.isNullOrEmpty()) {
-                                cookieList.add(c)
-                            }
-                        }
-                        val combined = cookieList.distinct().joinToString("; ")
-                        result.success(combined)
-                    } catch (e: Exception) {
-                        result.error("ERROR", e.message, null)
-                    }
+                    result.success("")
                 }
                 "getNativeCookiesByDomain" -> {
-                    try {
-                        val cookieManager = CookieManager.getInstance()
-                        cookieManager.flush()
-
-                        fun readCookie(urls: List<String>): String {
-                            val values = mutableListOf<String>()
-                            for (url in urls) {
-                                val cookie = cookieManager.getCookie(url)
-                                if (!cookie.isNullOrEmpty()) values.add(cookie)
-                            }
-                            return values.distinct().joinToString("; ")
-                        }
-
-                        result.success(
-                            mapOf(
-                                "desktop" to readCookie(
-                                    listOf(
-                                        "https://weibo.com",
-                                        "weibo.com",
-                                        ".weibo.com",
-                                        "https://m.weibo.com",
-                                        "m.weibo.com"
-                                    )
-                                ),
-                                "mobile" to readCookie(
-                                    listOf(
-                                        "https://m.weibo.cn",
-                                        "m.weibo.cn",
-                                        "https://weibo.cn",
-                                        "weibo.cn",
-                                        ".weibo.cn"
-                                    )
-                                ),
-                                "sso" to readCookie(
-                                    listOf(
-                                        "https://login.sina.com.cn",
-                                        "login.sina.com.cn",
-                                        "https://passport.weibo.com",
-                                        "passport.weibo.com",
-                                        "https://passport.sina.cn",
-                                        "passport.sina.cn",
-                                        "https://sina.cn",
-                                        "sina.cn",
-                                        ".sina.com.cn",
-                                        ".sina.cn"
-                                    )
-                                )
-                            )
-                        )
-                    } catch (e: Exception) {
-                        result.error("ERROR", e.message, null)
-                    }
+                    result.success(emptyMap<String, String>())
                 }
                 "clearNativeCookies" -> {
+                    result.success(true)
+                }
+                "getLatestCrashLog" -> {
                     try {
-                        val cookieManager = CookieManager.getInstance()
-                        cookieManager.removeAllCookies {
-                            cookieManager.flush()
-                            result.success(true)
+                        val crashFile = java.io.File(filesDir, "latest_crash.txt")
+                        if (crashFile.exists()) {
+                            result.success(crashFile.readText())
+                        } else {
+                            result.success(null)
                         }
-                    } catch (e: Exception) {
-                        result.error("ERROR", e.message, null)
+                    } catch (_: Throwable) {
+                        result.success(null)
                     }
                 }
                 "getSystemLocation" -> {

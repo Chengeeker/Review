@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/utils/app_dialog.dart';
 import '../../../core/utils/app_toast.dart';
@@ -167,9 +168,13 @@ class _GroupManagementPageState extends ConsumerState<GroupManagementPage>
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final topContentInset = MediaQuery.paddingOf(context).top +
+        kToolbarHeight +
+        kTextTabBarHeight;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      appBar: ReviewFrostedAppBar(
         title: const Text('分组管理'),
         actions: [
           AnimatedBuilder(
@@ -217,20 +222,24 @@ class _GroupManagementPageState extends ConsumerState<GroupManagementPage>
         controller: _tabController,
         children: [
           // Tab 0: Personal User Groups (对齐截图 3)
-          _buildPersonalGroupsTab(colorScheme, textTheme),
+          _buildPersonalGroupsTab(colorScheme, textTheme, topContentInset),
 
           // Tab 1: Default Groups (对齐截图 2)
-          _buildDefaultGroupsTab(colorScheme, textTheme),
+          _buildDefaultGroupsTab(colorScheme, textTheme, topContentInset),
 
           // Tab 2: Hot Groups (对齐截图 4)
-          _buildHotGroupsTab(colorScheme, textTheme),
+          _buildHotGroupsTab(colorScheme, textTheme, topContentInset),
         ],
       ),
     );
   }
 
   /// 个人分组 Tab
-  Widget _buildPersonalGroupsTab(ColorScheme colorScheme, TextTheme textTheme) {
+  Widget _buildPersonalGroupsTab(
+    ColorScheme colorScheme,
+    TextTheme textTheme,
+    double topContentInset,
+  ) {
     if (_myPersonalGroups.isEmpty) {
       return Center(
         child: Column(
@@ -249,7 +258,7 @@ class _GroupManagementPageState extends ConsumerState<GroupManagementPage>
     }
 
     return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: EdgeInsets.fromLTRB(0, topContentInset + 8, 0, 8),
       itemCount: _myPersonalGroups.length,
       separatorBuilder: (_, __) => Divider(
           height: 1, color: colorScheme.outlineVariant.withValues(alpha: 0.2)),
@@ -312,9 +321,13 @@ class _GroupManagementPageState extends ConsumerState<GroupManagementPage>
   }
 
   /// 默认分组 Tab (对齐截图 2)
-  Widget _buildDefaultGroupsTab(ColorScheme colorScheme, TextTheme textTheme) {
+  Widget _buildDefaultGroupsTab(
+    ColorScheme colorScheme,
+    TextTheme textTheme,
+    double topContentInset,
+  ) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(16, topContentInset + 16, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -396,9 +409,13 @@ class _GroupManagementPageState extends ConsumerState<GroupManagementPage>
   }
 
   /// 热门分组 Tab (对齐截图 4)
-  Widget _buildHotGroupsTab(ColorScheme colorScheme, TextTheme textTheme) {
+  Widget _buildHotGroupsTab(
+    ColorScheme colorScheme,
+    TextTheme textTheme,
+    double topContentInset,
+  ) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.fromLTRB(16, topContentInset + 16, 16, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

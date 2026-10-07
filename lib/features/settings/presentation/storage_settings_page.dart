@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/storage/storage_service.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
+import '../../../core/widgets/app_section_card.dart';
 
 /// 存储设置页面 (管理图片与视频存储路径)
 class StorageSettingsPage extends ConsumerStatefulWidget {
@@ -53,9 +56,13 @@ class _StorageSettingsPageState extends ConsumerState<StorageSettingsPage> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(title,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16)),
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
                     IconButton(
                       icon: const Icon(Icons.close_rounded),
                       onPressed: () => Navigator.pop(ctx),
@@ -66,16 +73,22 @@ class _StorageSettingsPageState extends ConsumerState<StorageSettingsPage> {
                 Text(
                   '保存${isVideo ? "视频" : "图片"}时，文件将自动归类并存储至相册对应文件夹下。',
                   style: TextStyle(
-                      fontSize: 12, color: colorScheme.onSurfaceVariant),
+                    fontSize: 14,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                 ),
                 const SizedBox(height: 12),
 
                 // Option 0: Picture/Review/
                 ListTile(
-                  title: const Text('默认路径',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: const Text('Picture/Review/',
-                      style: TextStyle(fontSize: 12)),
+                  title: const Text(
+                    '默认路径',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                  ),
+                  subtitle: const Text(
+                    'Picture/Review/',
+                    style: TextStyle(fontSize: 14),
+                  ),
                   leading: Radio<int>(
                     value: 0,
                     groupValue: currentType,
@@ -106,10 +119,14 @@ class _StorageSettingsPageState extends ConsumerState<StorageSettingsPage> {
 
                 // Option 1: Picture/Review/自己的用户昵称
                 ListTile(
-                  title: const Text('按本人昵称前缀归类',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text('Picture/Review/$myNickname/',
-                      style: const TextStyle(fontSize: 12)),
+                  title: const Text(
+                    '按本人昵称前缀归类',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                  ),
+                  subtitle: Text(
+                    'Picture/Review/$myNickname/',
+                    style: const TextStyle(fontSize: 14),
+                  ),
                   leading: Radio<int>(
                     value: 1,
                     groupValue: currentType,
@@ -140,10 +157,14 @@ class _StorageSettingsPageState extends ConsumerState<StorageSettingsPage> {
 
                 // Option 2: Picture/Review/该条微博发布用户昵称
                 ListTile(
-                  title: const Text('按博主昵称前缀归类',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: const Text('Picture/Review/该条微博发布用户昵称/',
-                      style: TextStyle(fontSize: 12)),
+                  title: const Text(
+                    '按博主昵称前缀归类',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                  ),
+                  subtitle: const Text(
+                    'Picture/Review/该条微博发布用户昵称/',
+                    style: TextStyle(fontSize: 14),
+                  ),
                   leading: Radio<int>(
                     value: 2,
                     groupValue: currentType,
@@ -182,8 +203,7 @@ class _StorageSettingsPageState extends ConsumerState<StorageSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
     final storageService = ref.watch(storageServiceProvider);
     final authState = ref.watch(authProvider);
     final myNickname = authState.nickname ?? 'MyProfile';
@@ -191,52 +211,62 @@ class _StorageSettingsPageState extends ConsumerState<StorageSettingsPage> {
     final imagePathType = storageService.getImageSavePathType();
     final videoPathType = storageService.getVideoSavePathType();
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('存储设置'),
-      ),
+      extendBodyBehindAppBar: true,
+      appBar: ReviewFrostedAppBar(title: const Text('存储设置')),
       body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          MediaQuery.paddingOf(context).top + kToolbarHeight + 12,
+          16,
+          12,
+        ),
         children: [
           // 1. 媒体保存路径卡片
-          Card(
-            elevation: 0,
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: theme.dividerColor.withValues(alpha: 0.1),
-                width: 0.8,
-              ),
-            ),
+          AppSectionCard(
             child: Column(
               children: [
                 ListTile(
-                  leading:
-                      Icon(Icons.image_outlined, color: colorScheme.primary),
-                  title: const Text('图片存储路径',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  leading: Icon(
+                    Icons.image_outlined,
+                    color: colorScheme.primary,
+                  ),
+                  title: const Text(
+                    '图片存储路径',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                  ),
                   subtitle: Text(
-                      _getPathSummary(imagePathType, myNickname,
-                          isVideo: false),
-                      style: const TextStyle(fontSize: 12)),
+                    _getPathSummary(imagePathType, myNickname, isVideo: false),
+                    style: const TextStyle(fontSize: 14),
+                  ),
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => _showPathSelectorDialog(
-                      context, storageService, myNickname,
-                      isVideo: false),
+                    context,
+                    storageService,
+                    myNickname,
+                    isVideo: false,
+                  ),
                 ),
-                const Divider(height: 1, indent: 56),
+                const Divider(height: 1, indent: 72),
                 ListTile(
-                  leading: Icon(Icons.video_library_outlined,
-                      color: colorScheme.primary),
-                  title: const Text('视频存储路径',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  leading: Icon(
+                    Icons.video_library_outlined,
+                    color: colorScheme.primary,
+                  ),
+                  title: const Text(
+                    '视频存储路径',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                  ),
                   subtitle: Text(
-                      _getPathSummary(videoPathType, myNickname, isVideo: true),
-                      style: const TextStyle(fontSize: 12)),
+                    _getPathSummary(videoPathType, myNickname, isVideo: true),
+                    style: const TextStyle(fontSize: 14),
+                  ),
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => _showPathSelectorDialog(
-                      context, storageService, myNickname,
-                      isVideo: true),
+                    context,
+                    storageService,
+                    myNickname,
+                    isVideo: true,
+                  ),
                 ),
               ],
             ),

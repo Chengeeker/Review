@@ -21,6 +21,8 @@ class ReviewChoiceTile<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     return RadioGroup<T>(
       groupValue: groupValue,
       onChanged: (selectedValue) {
@@ -30,8 +32,22 @@ class ReviewChoiceTile<T> extends StatelessWidget {
       },
       child: RadioListTile<T>(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-        title: Text(title),
-        subtitle: summary == null ? null : Text(summary!),
+        title: Text(
+          title,
+          style: theme.listTileTheme.titleTextStyle?.copyWith(
+            fontSize: 16,
+            color: colorScheme.onSurface,
+          ),
+        ),
+        subtitle: summary == null
+            ? null
+            : Text(
+                summary!,
+                style: theme.listTileTheme.subtitleTextStyle?.copyWith(
+                  fontSize: 14,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
         value: value,
       ),
     );

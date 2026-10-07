@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -159,7 +160,7 @@ class _InAppBrowserPageState extends ConsumerState<InAppBrowserPage> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: ReviewFrostedAppBar(
         leading: IconButton(
           icon: const BackButtonIcon(),
           tooltip: '返回',

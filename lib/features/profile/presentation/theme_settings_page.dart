@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/design_system/components/review_card.dart';
 import '../../../core/design_system/components/review_choice_tile.dart';
 import '../../../core/design_system/components/review_page_scaffold.dart';
 import '../../../core/design_system/components/review_switch_tile.dart';
@@ -10,6 +9,7 @@ import '../../../core/theme/custom_app_icon_provider.dart';
 import '../../../core/theme/theme_provider.dart';
 import '../../../core/utils/app_dialog.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
+import '../../../core/widgets/app_section_card.dart';
 import 'custom_app_icon_page.dart';
 import 'screen_refresh_rate_page.dart';
 
@@ -63,7 +63,7 @@ class ThemeSettingsPage extends ConsumerWidget {
                 title: Text(
                   label,
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 16,
                     fontWeight: context.adjustWeight(
                       isSelected ? FontWeight.bold : FontWeight.w600,
                     ),
@@ -73,7 +73,7 @@ class ThemeSettingsPage extends ConsumerWidget {
                 subtitle: Text(
                   desc,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 14,
                     color: isSelected
                         ? colorScheme.primary.withValues(alpha: 0.8)
                         : colorScheme.onSurfaceVariant,
@@ -109,16 +109,7 @@ class ThemeSettingsPage extends ConsumerWidget {
         ).add(contentInsets),
         children: [
           // 1. 明暗模式 (Theme Mode)
-          ReviewCard(
-            elevation: 0,
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-                width: 0.8,
-              ),
-            ),
+          AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -127,9 +118,9 @@ class ThemeSettingsPage extends ConsumerWidget {
                   child: Text(
                     '明暗模式',
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: 15,
                       fontWeight: context.adjustWeight(FontWeight.bold),
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurfaceVariant,
                       letterSpacing: 0.0,
                     ),
                   ),
@@ -143,7 +134,7 @@ class ThemeSettingsPage extends ConsumerWidget {
                       .read(themeProvider.notifier)
                       .setThemeMode(ThemeMode.system),
                 ),
-                const Divider(height: 1, indent: 56),
+                const Divider(height: 1, indent: 72),
                 ReviewChoiceTile<ThemeMode>(
                   title: '浅色模式',
                   value: ThemeMode.light,
@@ -152,7 +143,7 @@ class ThemeSettingsPage extends ConsumerWidget {
                       .read(themeProvider.notifier)
                       .setThemeMode(ThemeMode.light),
                 ),
-                const Divider(height: 1, indent: 56),
+                const Divider(height: 1, indent: 72),
                 ReviewChoiceTile<ThemeMode>(
                   title: '深色模式',
                   value: ThemeMode.dark,
@@ -181,19 +172,10 @@ class ThemeSettingsPage extends ConsumerWidget {
               ],
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
 
           // 色彩方案 (Color Palette)
-          ReviewCard(
-            elevation: 0,
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-                width: 0.8,
-              ),
-            ),
+          AppSectionCard(
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Column(
@@ -204,9 +186,9 @@ class ThemeSettingsPage extends ConsumerWidget {
                     child: Text(
                       '色彩方案',
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: 15,
                         fontWeight: context.adjustWeight(FontWeight.bold),
-                        color: colorScheme.primary,
+                        color: colorScheme.onSurfaceVariant,
                         letterSpacing: 0.0,
                       ),
                     ),
@@ -239,7 +221,7 @@ class ThemeSettingsPage extends ConsumerWidget {
                       child: Text(
                         'Material 3 预置主题色',
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: 14,
                           color: colorScheme.onSurfaceVariant,
                           height: 1.35,
                           letterSpacing: 0.0,
@@ -282,19 +264,10 @@ class ThemeSettingsPage extends ConsumerWidget {
               ),
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
 
           // 3. 字体粗细 (Font Weight - 弹窗选择 5 档：偏细、默认、中等、偏粗、加粗)
-          ReviewCard(
-            elevation: 0,
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-                width: 0.8,
-              ),
-            ),
+          AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -303,9 +276,9 @@ class ThemeSettingsPage extends ConsumerWidget {
                   child: Text(
                     '字体粗细',
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: 15,
                       fontWeight: context.adjustWeight(FontWeight.bold),
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurfaceVariant,
                       letterSpacing: 0.0,
                     ),
                   ),
@@ -322,7 +295,7 @@ class ThemeSettingsPage extends ConsumerWidget {
                   title: Text(
                     '自定义应用字体粗细',
                     style: TextStyle(
-                      fontSize: 15,
+                      fontSize: 16,
                       fontWeight: context.adjustWeight(FontWeight.w600),
                       height: 1.35,
                       letterSpacing: 0.0,
@@ -331,7 +304,7 @@ class ThemeSettingsPage extends ConsumerWidget {
                   subtitle: Text(
                     '当前：${_getFontWeightLabel(themeState.customFontWeightDelta)}',
                     style: TextStyle(
-                      fontSize: 12.5,
+                      fontSize: 14,
                       height: 1.4,
                       letterSpacing: 0.0,
                       color: colorScheme.onSurfaceVariant,
@@ -377,19 +350,10 @@ class ThemeSettingsPage extends ConsumerWidget {
               ],
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
 
           // 底部导航
-          ReviewCard(
-            elevation: 0,
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-                width: 0.8,
-              ),
-            ),
+          AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -398,9 +362,9 @@ class ThemeSettingsPage extends ConsumerWidget {
                   child: Text(
                     '底部导航',
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: 15,
                       fontWeight: context.adjustWeight(FontWeight.bold),
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurfaceVariant,
                       letterSpacing: 0.0,
                     ),
                   ),
@@ -422,19 +386,10 @@ class ThemeSettingsPage extends ConsumerWidget {
               ],
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
 
           // 5. 自定义应用图标 (Custom App Icon)
-          ReviewCard(
-            elevation: 0,
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-                width: 0.8,
-              ),
-            ),
+          AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -443,9 +398,9 @@ class ThemeSettingsPage extends ConsumerWidget {
                   child: Text(
                     '应用图标',
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: 15,
                       fontWeight: context.adjustWeight(FontWeight.bold),
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurfaceVariant,
                       letterSpacing: 0.0,
                     ),
                   ),
@@ -462,7 +417,7 @@ class ThemeSettingsPage extends ConsumerWidget {
                   title: Text(
                     '自定义应用图标',
                     style: TextStyle(
-                      fontSize: 15,
+                      fontSize: 16,
                       fontWeight: context.adjustWeight(FontWeight.w600),
                       height: 1.35,
                       letterSpacing: 0.0,
@@ -471,7 +426,7 @@ class ThemeSettingsPage extends ConsumerWidget {
                   subtitle: Text(
                     iconState.currentDisplayName,
                     style: TextStyle(
-                      fontSize: 12.5,
+                      fontSize: 14,
                       height: 1.4,
                       letterSpacing: 0.0,
                       color: colorScheme.onSurfaceVariant,
@@ -491,19 +446,10 @@ class ThemeSettingsPage extends ConsumerWidget {
               ],
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
 
           // 6. 屏幕帧率设置 (Screen Refresh Rate)
-          ReviewCard(
-            elevation: 0,
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-                width: 0.8,
-              ),
-            ),
+          AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -512,9 +458,9 @@ class ThemeSettingsPage extends ConsumerWidget {
                   child: Text(
                     '屏幕显示',
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: 15,
                       fontWeight: context.adjustWeight(FontWeight.bold),
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurfaceVariant,
                       letterSpacing: 0.0,
                     ),
                   ),
@@ -531,7 +477,7 @@ class ThemeSettingsPage extends ConsumerWidget {
                   title: Text(
                     '屏幕帧率设置',
                     style: TextStyle(
-                      fontSize: 15,
+                      fontSize: 16,
                       fontWeight: context.adjustWeight(FontWeight.w600),
                       height: 1.35,
                       letterSpacing: 0.0,
@@ -540,7 +486,7 @@ class ThemeSettingsPage extends ConsumerWidget {
                   subtitle: Text(
                     _getRefreshRateLabel(themeState.screenRefreshRateMode),
                     style: TextStyle(
-                      fontSize: 12.5,
+                      fontSize: 14,
                       height: 1.4,
                       letterSpacing: 0.0,
                       color: colorScheme.onSurfaceVariant,
@@ -560,19 +506,10 @@ class ThemeSettingsPage extends ConsumerWidget {
               ],
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
 
           // 7. 触感与震动 (Haptic Feedback)
-          ReviewCard(
-            elevation: 0,
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(
-                color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
-                width: 0.8,
-              ),
-            ),
+          AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -581,9 +518,9 @@ class ThemeSettingsPage extends ConsumerWidget {
                   child: Text(
                     '触感与震动',
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: 15,
                       fontWeight: context.adjustWeight(FontWeight.bold),
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurfaceVariant,
                       letterSpacing: 0.0,
                     ),
                   ),

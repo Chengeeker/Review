@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:extended_image/extended_image.dart';
@@ -738,7 +739,7 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
 
     if (_currentStatus == null) {
       return Scaffold(
-        appBar: AppBar(
+        appBar: ReviewFrostedAppBar(
           title: const Text('文章详情'),
         ),
         body: const Center(
@@ -753,7 +754,7 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
         child: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: _handleTopBarTap,
-          child: AppBar(
+          child: ReviewFrostedAppBar(
             title: const Text('文章详情'),
             actions: [
               IconButton(

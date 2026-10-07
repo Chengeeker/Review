@@ -1,6 +1,9 @@
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
+import 'package:review/core/widgets/review_refresh_header.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/network/weibo_dio_client.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
 import '../../../core/utils/weibo_text_parser.dart';
@@ -14,10 +17,7 @@ import '../../feed/presentation/widgets/tweet_card.dart';
 class MentionsPage extends StatefulWidget {
   final int initialTabIndex;
 
-  const MentionsPage({
-    super.key,
-    this.initialTabIndex = 0,
-  });
+  const MentionsPage({super.key, this.initialTabIndex = 0});
 
   @override
   State<MentionsPage> createState() => _MentionsPageState();
@@ -31,7 +31,10 @@ class _MentionsPageState extends State<MentionsPage>
   void initState() {
     super.initState();
     _tabController = TabController(
-        length: 2, vsync: this, initialIndex: widget.initialTabIndex);
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialTabIndex,
+    );
   }
 
   @override
@@ -43,13 +46,16 @@ class _MentionsPageState extends State<MentionsPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      appBar: ReviewFrostedAppBar(
         title: const Text('@我的', style: TextStyle(fontWeight: FontWeight.bold)),
         bottom: TabBar(
           controller: _tabController,
           indicatorSize: TabBarIndicatorSize.label,
-          labelStyle:
-              const TextStyle(fontWeight: FontWeight.bold, fontSize: 14.5),
+          labelStyle: const TextStyle(
+            fontWeight: FontWeight.bold,
+            fontSize: 14.5,
+          ),
           tabs: const [
             Tab(text: '@我的微博'),
             Tab(text: '@我的评论'),
@@ -109,7 +115,8 @@ class _MentionsStatusesListViewState
       );
       if (res.data is Map<String, dynamic>) {
         final data = res.data as Map<String, dynamic>;
-        final rawList = data['data']?['statuses'] as List? ??
+        final rawList =
+            data['data']?['statuses'] as List? ??
             data['statuses'] as List? ??
             [];
         for (final item in rawList) {
@@ -138,9 +145,9 @@ class _MentionsStatusesListViewState
     final colorScheme = Theme.of(context).colorScheme;
 
     return EasyRefresh(
-      onRefresh: () => HapticFeedbackUtil.refresh(
-        () => _fetchMentions(refresh: true),
-      ),
+      header: reviewFrostedAppBarRefreshHeader,
+      onRefresh: () =>
+          HapticFeedbackUtil.refresh(() => _fetchMentions(refresh: true)),
       onLoad: () async {
         _page++;
         await _fetchMentions(refresh: false);
@@ -149,32 +156,32 @@ class _MentionsStatusesListViewState
       child: _isLoading
           ? Center(child: CircularProgressIndicator(color: colorScheme.primary))
           : _statuses.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.alternate_email_rounded,
-                          size: 54,
-                          color: colorScheme.onSurfaceVariant
-                              .withValues(alpha: 0.4)),
-                      const SizedBox(height: 12),
-                      Text(
-                        '暂无@你的微博',
-                        style: TextStyle(
-                            color: colorScheme.onSurfaceVariant, fontSize: 14),
-                      ),
-                    ],
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.alternate_email_rounded,
+                    size: 54,
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                   ),
-                )
-              : ListView.builder(
-                  itemCount: _statuses.length,
-                  itemBuilder: (context, index) {
-                    return TweetCard(
-                      status: _statuses[index],
-                      isDetail: false,
-                    );
-                  },
-                ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '暂无@你的微博',
+                    style: TextStyle(
+                      color: colorScheme.onSurfaceVariant,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : ListView.builder(
+              itemCount: _statuses.length,
+              itemBuilder: (context, index) {
+                return TweetCard(status: _statuses[index], isDetail: false);
+              },
+            ),
     );
   }
 }
@@ -221,7 +228,8 @@ class _MentionsCommentsListViewState
       );
       if (res.data is Map<String, dynamic>) {
         final data = res.data as Map<String, dynamic>;
-        final rawList = data['data']?['comments'] as List? ??
+        final rawList =
+            data['data']?['comments'] as List? ??
             data['comments'] as List? ??
             [];
         extracted.addAll(rawList.whereType<Map<String, dynamic>>());
@@ -246,9 +254,9 @@ class _MentionsCommentsListViewState
     final colorScheme = Theme.of(context).colorScheme;
 
     return EasyRefresh(
-      onRefresh: () => HapticFeedbackUtil.refresh(
-        () => _fetchComments(refresh: true),
-      ),
+      header: reviewFrostedAppBarRefreshHeader,
+      onRefresh: () =>
+          HapticFeedbackUtil.refresh(() => _fetchComments(refresh: true)),
       onLoad: () async {
         _page++;
         await _fetchComments(refresh: false);
@@ -257,86 +265,96 @@ class _MentionsCommentsListViewState
       child: _isLoading
           ? Center(child: CircularProgressIndicator(color: colorScheme.primary))
           : _comments.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.chat_bubble_outline_rounded,
+                    size: 54,
+                    color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    '暂无@你的评论',
+                    style: TextStyle(
+                      color: colorScheme.onSurfaceVariant,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : ListView.separated(
+              itemCount: _comments.length,
+              separatorBuilder: (_, __) =>
+                  const Divider(height: 1, indent: 64, thickness: 0.5),
+              itemBuilder: (context, index) {
+                final c = _comments[index];
+                final user = c['user'] is Map
+                    ? (c['user'] as Map<String, dynamic>)
+                    : {};
+                final text =
+                    c['text_raw']?.toString() ?? c['text']?.toString() ?? '';
+                final nick = user['screen_name']?.toString() ?? '微博用户';
+                final avatar =
+                    user['avatar_hd']?.toString() ??
+                    user['profile_image_url']?.toString() ??
+                    '';
+                final createdAt = c['created_at']?.toString() ?? '';
+
+                return ListTile(
+                  leading: AppAvatar(url: avatar, size: 40, name: nick),
+                  title: Text(
+                    nick,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(Icons.chat_bubble_outline_rounded,
-                          size: 54,
-                          color: colorScheme.onSurfaceVariant
-                              .withValues(alpha: 0.4)),
-                      const SizedBox(height: 12),
-                      Text(
-                        '暂无@你的评论',
-                        style: TextStyle(
-                            color: colorScheme.onSurfaceVariant, fontSize: 14),
+                      if (createdAt.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          WeiboTimeFormatter.format(rawDate: createdAt),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: colorScheme.outline,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 4),
+                      Text.rich(
+                        TextSpan(
+                          children: WeiboTextParser.parse(
+                            rawText: text,
+                            context: context,
+                            defaultStyle: TextStyle(
+                              fontSize: 14,
+                              color: colorScheme.onSurface,
+                            ),
+                          ),
+                        ),
                       ),
                     ],
                   ),
-                )
-              : ListView.separated(
-                  itemCount: _comments.length,
-                  separatorBuilder: (_, __) =>
-                      const Divider(height: 1, indent: 64, thickness: 0.5),
-                  itemBuilder: (context, index) {
-                    final c = _comments[index];
-                    final user = c['user'] is Map
-                        ? (c['user'] as Map<String, dynamic>)
-                        : {};
-                    final text = c['text_raw']?.toString() ??
-                        c['text']?.toString() ??
-                        '';
-                    final nick = user['screen_name']?.toString() ?? '微博用户';
-                    final avatar = user['avatar_hd']?.toString() ??
-                        user['profile_image_url']?.toString() ??
-                        '';
-                    final createdAt = c['created_at']?.toString() ?? '';
-
-                    return ListTile(
-                      leading: AppAvatar(url: avatar, size: 40, name: nick),
-                      title: Text(nick,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 14)),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (createdAt.isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              WeiboTimeFormatter.format(rawDate: createdAt),
-                              style: TextStyle(
-                                  fontSize: 12, color: colorScheme.outline),
-                            ),
-                          ],
-                          const SizedBox(height: 4),
-                          Text.rich(
-                            TextSpan(
-                              children: WeiboTextParser.parse(
-                                rawText: text,
-                                context: context,
-                                defaultStyle: TextStyle(
-                                  fontSize: 14,
-                                  color: colorScheme.onSurface,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      onTap: () {
-                        final status = c['status'];
-                        if (status is Map<String, dynamic>) {
-                          final statusModel = WeiboStatusModel.fromJson(status);
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                                builder: (ctx) =>
-                                    StatusDetailPage(status: statusModel)),
-                          );
-                        }
-                      },
-                    );
+                  onTap: () {
+                    final status = c['status'];
+                    if (status is Map<String, dynamic>) {
+                      final statusModel = WeiboStatusModel.fromJson(status);
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (ctx) =>
+                              StatusDetailPage(status: statusModel),
+                        ),
+                      );
+                    }
                   },
-                ),
+                );
+              },
+            ),
     );
   }
 }

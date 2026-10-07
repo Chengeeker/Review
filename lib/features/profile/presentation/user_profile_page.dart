@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
 import '../../../core/auth/auth_provider.dart';
@@ -1008,7 +1009,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
         child: GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: _handleTopBarTap,
-          child: AppBar(
+          child: ReviewFrostedAppBar(
             title: Text(_user.screenName),
             actions: [
               IconButton(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/constants/api_constants.dart';
@@ -59,7 +60,7 @@ class _WeiboVideoLinkPageState extends ConsumerState<WeiboVideoLinkPage> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      appBar: AppBar(
+      appBar: ReviewFrostedAppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
         title: Text(widget.title ?? '微博视频'),

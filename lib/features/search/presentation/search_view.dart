@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/storage/storage_service.dart';
 import '../../../core/theme/app_theme.dart';
@@ -198,9 +199,11 @@ class _SearchViewState extends ConsumerState<SearchView> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isQuerying = _searchController.text.trim().isNotEmpty;
+    final topContentInset = MediaQuery.paddingOf(context).top + kToolbarHeight;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      appBar: ReviewFrostedAppBar(
         titleSpacing: 0,
         title: Container(
           height: 40,
@@ -285,9 +288,9 @@ class _SearchViewState extends ConsumerState<SearchView> {
         ],
       ),
       body: isQuerying
-          ? _buildSuggestionsView(context, colorScheme)
+          ? _buildSuggestionsView(context, colorScheme, topContentInset)
           : ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: EdgeInsets.fromLTRB(16, topContentInset + 12, 16, 12),
               children: [
                 // 1. 第一部分：搜索历史
                 _buildSearchHistorySection(context, colorScheme),
@@ -304,7 +307,11 @@ class _SearchViewState extends ConsumerState<SearchView> {
   }
 
   /// 搜索联想与用户直达卡片视图
-  Widget _buildSuggestionsView(BuildContext context, ColorScheme colorScheme) {
+  Widget _buildSuggestionsView(
+    BuildContext context,
+    ColorScheme colorScheme,
+    double topContentInset,
+  ) {
     final query = _searchController.text.trim();
     final users = _suggestResult?.users ?? [];
     final suggestions = _suggestResult?.suggestions ?? [];
@@ -316,7 +323,7 @@ class _SearchViewState extends ConsumerState<SearchView> {
     }
 
     return ListView(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: EdgeInsets.fromLTRB(16, topContentInset + 12, 16, 12),
       children: [
         // 1. 精准匹配用户直达卡片 (支持显示头像、ID、认证信息、粉丝数等)
         if (users.isNotEmpty) ...[
@@ -729,6 +736,7 @@ class _SearchViewState extends ConsumerState<SearchView> {
   ) {
     if (_isHotSearchVertical) {
       return ListView.builder(
+        padding: EdgeInsets.zero,
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         itemCount: items.length + 1,
@@ -743,6 +751,7 @@ class _SearchViewState extends ConsumerState<SearchView> {
     }
 
     return GridView.builder(
+      padding: EdgeInsets.zero,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(

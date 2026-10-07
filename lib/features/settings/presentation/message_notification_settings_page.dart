@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/storage/storage_service.dart';
 import '../../../core/utils/app_toast.dart';
+import '../../../core/widgets/app_section_card.dart';
 
 class MessageNotificationSettingsPage extends ConsumerStatefulWidget {
   const MessageNotificationSettingsPage({super.key});
@@ -34,12 +36,14 @@ class _MessageNotificationSettingsPageState
 
   Future<void> _loadAndRequestPermission() async {
     final storage = ref.read(storageServiceProvider);
-    final wasEnabled =
-        storage.getBool(StorageService.keyMessageNotificationsEnabled);
+    final wasEnabled = storage.getBool(
+      StorageService.keyMessageNotificationsEnabled,
+    );
     if (mounted) {
       setState(() {
-        _enabled =
-            storage.getBool(StorageService.keyMessageNotificationsEnabled);
+        _enabled = storage.getBool(
+          StorageService.keyMessageNotificationsEnabled,
+        );
         _mentions = storage.getBool(
           StorageService.keyMessageNotificationMentions,
           defaultValue: true,
@@ -69,7 +73,9 @@ class _MessageNotificationSettingsPageState
     });
     if (!granted && wasEnabled) {
       await storage.setBool(
-          StorageService.keyMessageNotificationsEnabled, false);
+        StorageService.keyMessageNotificationsEnabled,
+        false,
+      );
       await _syncBackgroundWorker();
     } else if (_enabled) {
       await _syncBackgroundWorker();
@@ -78,8 +84,9 @@ class _MessageNotificationSettingsPageState
 
   Future<bool> _requestPermission() async {
     try {
-      return await _channel
-              .invokeMethod<bool>('requestNotificationPermission') ??
+      return await _channel.invokeMethod<bool>(
+            'requestNotificationPermission',
+          ) ??
           false;
     } on MissingPluginException {
       return false;
@@ -143,39 +150,52 @@ class _MessageNotificationSettingsPageState
     final colors = Theme.of(context).colorScheme;
     if (_loading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('订阅消息提醒')),
+        extendBodyBehindAppBar: true,
+        appBar: ReviewFrostedAppBar(title: const Text('订阅消息提醒')),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title:
-            const Text('订阅消息提醒', style: TextStyle(fontWeight: FontWeight.bold)),
+      extendBodyBehindAppBar: true,
+      appBar: ReviewFrostedAppBar(
+        title: const Text(
+          '订阅消息提醒',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+        padding: EdgeInsets.fromLTRB(
+          16,
+          MediaQuery.paddingOf(context).top + kToolbarHeight + 8,
+          16,
+          24,
+        ),
         children: [
-          Card(
+          AppSectionCard(
             child: Column(
               children: [
                 SwitchListTile(
-                  secondary: Icon(Icons.notifications_active_outlined,
-                      color: colors.primary),
-                  title: const Text('订阅消息提醒',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  secondary: Icon(
+                    Icons.notifications_active_outlined,
+                    color: colors.primary,
+                  ),
+                  title: const Text(
+                    '订阅消息提醒',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                  ),
                   subtitle: Text(
                     _permissionGranted
                         ? '允许后台定期检查微博未读消息'
                         : _requestingPermission
-                            ? '正在请求系统通知权限…'
-                            : '未授予系统通知权限',
-                    style: const TextStyle(fontSize: 12),
+                        ? '正在请求系统通知权限…'
+                        : '未授予系统通知权限',
+                    style: const TextStyle(fontSize: 14),
                   ),
                   value: _enabled && _permissionGranted,
                   onChanged: _requestingPermission ? null : _setEnabled,
                 ),
-                const Divider(height: 1, indent: 56),
+                const Divider(height: 1, indent: 72),
                 _categoryTile(
                   icon: Icons.alternate_email_rounded,
                   title: '@通知',
@@ -186,7 +206,7 @@ class _MessageNotificationSettingsPageState
                     value,
                   ),
                 ),
-                const Divider(height: 1, indent: 56),
+                const Divider(height: 1, indent: 72),
                 _categoryTile(
                   icon: Icons.favorite_border_rounded,
                   title: '点赞通知',
@@ -197,7 +217,7 @@ class _MessageNotificationSettingsPageState
                     value,
                   ),
                 ),
-                const Divider(height: 1, indent: 56),
+                const Divider(height: 1, indent: 72),
                 _categoryTile(
                   icon: Icons.chat_bubble_outline_rounded,
                   title: '回复通知',
@@ -208,7 +228,7 @@ class _MessageNotificationSettingsPageState
                     value,
                   ),
                 ),
-                const Divider(height: 1, indent: 56),
+                const Divider(height: 1, indent: 72),
                 _categoryTile(
                   icon: Icons.forum_outlined,
                   title: '私信通知',
@@ -229,7 +249,7 @@ class _MessageNotificationSettingsPageState
               '后台提醒采用 Android 周期任务轮询，系统通常至少间隔 15 分钟执行一次；省电策略、网络状态可能造成更长延迟。提醒只在本机读取未读计数，不在通知中展示微博正文。',
               style: TextStyle(
                 color: colors.onSurfaceVariant,
-                fontSize: 12,
+                fontSize: 14,
                 height: 1.45,
               ),
             ),
@@ -248,8 +268,8 @@ class _MessageNotificationSettingsPageState
   }) {
     return SwitchListTile(
       secondary: Icon(icon),
-      title: Text(title),
-      subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+      title: Text(title, style: const TextStyle(fontSize: 16)),
+      subtitle: Text(subtitle, style: const TextStyle(fontSize: 14)),
       value: value,
       onChanged: _enabled && _permissionGranted ? onChanged : null,
     );

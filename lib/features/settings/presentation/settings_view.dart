@@ -18,9 +18,7 @@ import 'storage_settings_page.dart';
 import 'webdav_backup_page.dart';
 import 'message_notification_settings_page.dart';
 import '../../../core/theme/custom_app_icon_provider.dart';
-import '../../../core/design_system/components/review_page_scaffold.dart';
 import '../../../core/design_system/components/review_preference_tile.dart';
-import '../../../core/widgets/app_section_card.dart';
 
 /// 纯粹的系统设置大厅 (底栏第 3 个 Tab)
 class SettingsView extends ConsumerWidget {
@@ -37,31 +35,28 @@ class SettingsView extends ConsumerWidget {
     // 当开启悬浮胶囊底栏时，预留适度紧凑的底部边距，防止遮挡退出登录与底部设置项
     final bottomNavPadding = themeState.useFloatingNavBar ? 72.0 : 16.0;
 
-    return ReviewPageScaffold(
-      title: '设置',
-      showNavigationIcon: false,
-      bodyBuilder: (context, contentInsets) => ListView(
+    return Scaffold(
+      body: ListView(
         padding: EdgeInsets.fromLTRB(
           16,
-          12,
+          MediaQuery.paddingOf(context).top + 20,
           16,
           bottomNavPadding,
-        ).add(contentInsets),
+        ),
         children: [
-          // 1. 个性化与样式管理
-          AppSectionCard(
+          _buildSectionTitle(context, '偏好与功能'),
+          const SizedBox(height: 12),
+          // 个性化与样式管理
+          _SettingsSectionCard(
             child: Column(
               children: [
                 // 个性化 (明暗、颜色、导航、触感)
                 ReviewPreferenceTile(
                   leading: Icon(
                     Icons.palette_outlined,
-                    color: colorScheme.primary,
+                    color: colorScheme.onSurfaceVariant,
                   ),
                   title: '个性化',
-                  subtitle: '明暗模式、色彩方案、悬浮胶囊底栏与触感反馈',
-                  titleStyle: const TextStyle(fontWeight: FontWeight.w600),
-                  subtitleStyle: const TextStyle(fontSize: 12.5),
                   onTap: () {
                     HapticFeedbackUtil.light();
                     Navigator.of(context).push(
@@ -77,12 +72,9 @@ class SettingsView extends ConsumerWidget {
                 ReviewPreferenceTile(
                   leading: Icon(
                     Icons.style_outlined,
-                    color: colorScheme.primary,
+                    color: colorScheme.onSurfaceVariant,
                   ),
                   title: '微博样式',
-                  subtitle: '卡片排版、时间格式、IP属地与点赞博文过滤',
-                  titleStyle: const TextStyle(fontWeight: FontWeight.w600),
-                  subtitleStyle: const TextStyle(fontSize: 12.5),
                   onTap: () {
                     HapticFeedbackUtil.light();
                     Navigator.of(context).push(
@@ -92,47 +84,41 @@ class SettingsView extends ConsumerWidget {
                     );
                   },
                 ),
+                const Divider(height: 1, indent: 56),
+                ReviewPreferenceTile(
+                  leading: Icon(
+                    Icons.notifications_active_outlined,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  title: '订阅消息提醒',
+                  onTap: () {
+                    HapticFeedbackUtil.light();
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (ctx) =>
+                            const MessageNotificationSettingsPage(),
+                      ),
+                    );
+                  },
+                ),
               ],
             ),
           ),
-          const SizedBox(height: 14),
-
-          AppSectionCard(
-            child: ReviewPreferenceTile(
-              leading: Icon(
-                Icons.notifications_active_outlined,
-                color: colorScheme.primary,
-              ),
-              title: '订阅消息提醒',
-              subtitle: '后台提醒 @、点赞、回复和私信',
-              titleStyle: const TextStyle(fontWeight: FontWeight.w600),
-              subtitleStyle: const TextStyle(fontSize: 12.5),
-              onTap: () {
-                HapticFeedbackUtil.light();
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (ctx) => const MessageNotificationSettingsPage(),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 32),
+          _buildSectionTitle(context, '存储与备份'),
+          const SizedBox(height: 12),
 
           // 2. 存储设置与 WebDAV 备份
-          AppSectionCard(
+          _SettingsSectionCard(
             child: Column(
               children: [
                 // 存储设置 (图片与视频存储路径)
                 ReviewPreferenceTile(
                   leading: Icon(
                     Icons.folder_open_outlined,
-                    color: colorScheme.primary,
+                    color: colorScheme.onSurfaceVariant,
                   ),
                   title: '存储设置',
-                  subtitle: '图片/视频存储路径',
-                  titleStyle: const TextStyle(fontWeight: FontWeight.w600),
-                  subtitleStyle: const TextStyle(fontSize: 12.5),
                   onTap: () {
                     HapticFeedbackUtil.light();
                     Navigator.of(context).push(
@@ -148,12 +134,10 @@ class SettingsView extends ConsumerWidget {
                 ReviewPreferenceTile(
                   leading: Icon(
                     Icons.cloud_sync_outlined,
-                    color: colorScheme.primary,
+                    color: colorScheme.onSurfaceVariant,
                   ),
                   title: 'WebDAV备份',
-                  subtitle: '使用 WebDAV 备份个性化设置，不包含微博 Cookie、Token 或 WebDAV 密码',
-                  titleStyle: const TextStyle(fontWeight: FontWeight.w600),
-                  subtitleStyle: const TextStyle(fontSize: 12.5),
+                  subtitle: '仅备份应用设置，不包含微博登录凭据或 WebDAV 密码',
                   onTap: () {
                     HapticFeedbackUtil.light();
                     Navigator.of(context).push(
@@ -166,22 +150,20 @@ class SettingsView extends ConsumerWidget {
               ],
             ),
           ),
-          const SizedBox(height: 14),
-
-          // 3. 账号管理与关于
-          AppSectionCard(
+          const SizedBox(height: 32),
+          _buildSectionTitle(context, '账号设置'),
+          const SizedBox(height: 12),
+          // 账号管理
+          _SettingsSectionCard(
             child: Column(
               children: [
                 if (!isLoggedIn)
                   ReviewPreferenceTile(
                     leading: Icon(
                       Icons.login_rounded,
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurfaceVariant,
                     ),
                     title: '登录账号',
-                    subtitle: '短信验证码、扫码或导入账号凭据',
-                    titleStyle: const TextStyle(fontWeight: FontWeight.w600),
-                    subtitleStyle: const TextStyle(fontSize: 12),
                     onTap: () {
                       HapticFeedbackUtil.light();
                       Navigator.of(context).push(
@@ -201,15 +183,8 @@ class SettingsView extends ConsumerWidget {
                     ),
                     title: '检测账号凭据有效性',
                     subtitle: authState.isCookieExpired
-                        ? '⚠️ 凭据已失效，点击重新登录'
-                        : '验证当前 Cookie 与访问令牌是否过期有效',
-                    titleStyle: const TextStyle(fontWeight: FontWeight.w600),
-                    subtitleStyle: TextStyle(
-                      fontSize: 12,
-                      color: authState.isCookieExpired
-                          ? colorScheme.error
-                          : null,
-                    ),
+                        ? '凭据已失效，点击检查'
+                        : '${authState.nickname ?? "已登录用户"} · UID ${authState.uid ?? "未知"}',
                     trailing: authState.isValidating
                         ? const SizedBox(
                             width: 18,
@@ -342,12 +317,9 @@ class SettingsView extends ConsumerWidget {
                   ReviewPreferenceTile(
                     leading: Icon(
                       Icons.key_rounded,
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurfaceVariant,
                     ),
                     title: '导出账号凭据 / Cookie',
-                    subtitle: '查看并复制当前账号完整 Cookie 或 SUB 凭据',
-                    titleStyle: const TextStyle(fontWeight: FontWeight.w600),
-                    subtitleStyle: const TextStyle(fontSize: 12.5),
                     onTap: () => _showExportCookieDialog(
                       context,
                       authState,
@@ -355,21 +327,13 @@ class SettingsView extends ConsumerWidget {
                     ),
                   ),
                 ],
-                const Divider(height: 1, indent: 56),
-                ReviewPreferenceTile(
-                  leading: Icon(
-                    Icons.info_outline_rounded,
-                    color: colorScheme.primary,
-                  ),
-                  title: '关于 Review',
-                  subtitle: '版本 ${ApiConstants.appVersion}',
-                  titleStyle: const TextStyle(fontWeight: FontWeight.w600),
-                  subtitleStyle: const TextStyle(fontSize: 12.5),
-                  onTap: () => _showAboutDialog(context, ref),
-                ),
                 if (isLoggedIn) ...[
                   const Divider(height: 1, indent: 56),
                   ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    minLeadingWidth: 24,
+                    horizontalTitleGap: 16,
+                    minVerticalPadding: 8,
                     leading: const Icon(
                       Icons.logout_rounded,
                       color: Colors.redAccent,
@@ -418,8 +382,31 @@ class SettingsView extends ConsumerWidget {
               ],
             ),
           ),
+          const SizedBox(height: 32),
+          _buildSectionTitle(context, '关于与支持'),
+          const SizedBox(height: 12),
+          _SettingsSectionCard(
+            child: ReviewPreferenceTile(
+              leading: Icon(
+                Icons.info_outline_rounded,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              title: '关于 Review',
+              subtitle: '版本 ${ApiConstants.appVersion}',
+              onTap: () => _showAboutDialog(context, ref),
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildSectionTitle(BuildContext context, String title) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Text(
+      title,
+      style: Theme.of(context).textTheme.titleSmall
+          ?.copyWith(color: colorScheme.onSurfaceVariant),
     );
   }
 
@@ -776,6 +763,31 @@ class SettingsView extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _SettingsSectionCard extends StatelessWidget {
+  final Widget child;
+
+  const _SettingsSectionCard({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      shadowColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      color: colorScheme.surface == Colors.black
+          ? colorScheme.surfaceContainer
+          : colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24),
+        side: BorderSide.none,
+      ),
+      child: child,
     );
   }
 }

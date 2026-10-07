@@ -73,6 +73,7 @@ class _ImageResponse extends Stream<List<int>> implements HttpClientResponse {
 class _FakeVideoPlatform extends VideoPlayerPlatform {
   final created = <int>[];
   final played = <int>[];
+  final paused = <int>[];
   final disposed = <int>[];
   final seeks = <Duration>[];
   bool delayInitialization = false;
@@ -110,7 +111,9 @@ class _FakeVideoPlatform extends VideoPlayerPlatform {
   }
 
   @override
-  Future<void> pause(int playerId) async {}
+  Future<void> pause(int playerId) async {
+    paused.add(playerId);
+  }
   @override
   Future<void> dispose(int playerId) async {
     disposed.add(playerId);
@@ -206,6 +209,118 @@ void main() {
     await tester.pump();
     await _flushPlayerDisposal(tester);
     expect(backend.disposed, contains(2));
+    await tester.pump(const Duration(seconds: 1));
+    await _flushPlayerDisposal(tester);
+    debugNetworkImageHttpClientProvider = null;
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('mixed gallery keeps Live Photo paused until its control is used',
+      (tester) async {
+    final normalVideo = WeiboPicModel.fromJson({
+      'pid': 'normal-video',
+      'type': 'video',
+      'video_url': 'https://video.weibo.com/media/normal.mp4',
+    });
+    expect(normalVideo.isVideo, isTrue);
+    expect(normalVideo.isLivePhoto, isFalse);
+
+    final videoFieldMp4 = WeiboPicModel.fromJson({
+      'pid': 'video-field-mp4',
+      'fid': 'must-not-become-livephoto',
+      'video': 'https://video.weibo.com/media/clip.mp4',
+      'thumbnail': {'url': 'https://example.com/clip-cover.jpg'},
+    });
+    expect(videoFieldMp4.isVideo, isTrue);
+    expect(videoFieldMp4.isLivePhoto, isFalse);
+    expect(videoFieldMp4.videoUrl,
+        equals('https://video.weibo.com/media/clip.mp4'));
+    expect(videoFieldMp4.livePhotoVideoUrl, isNull);
+
+    final gif = WeiboPicModel.fromJson({
+      'pid': 'gif-with-fid',
+      'fid': 'must-not-become-livephoto',
+      'thumbnail': {
+        'url':
+            'https://wx1.sinaimg.cn/orj360/62762bd0gy1ihtmluvbm6g20b406c7wr.gif?from=weibo',
+      },
+    });
+    expect(gif.isGif, isTrue);
+    expect(gif.isVideo, isFalse);
+    expect(gif.isLivePhoto, isFalse);
+    expect(gif.livePhotoVideoUrl, isNull);
+
+    final gifWithConflictingMetadata = WeiboPicModel.fromJson({
+      'pid': 'gif-with-stale-player-metadata',
+      'type': 'video',
+      'isVideo': true,
+      'fid': 'must-not-become-livephoto',
+      'livePhotoVideoUrl':
+          'https://video.weibo.com/media/livephoto/stale.mp4',
+      'thumbnail': {
+        'url':
+            'https://wx1.sinaimg.cn/orj360/62762bd0gy1ihtmluvbm6g20b406c7wr.gif?from=weibo',
+      },
+    });
+    expect(gifWithConflictingMetadata.isGif, isTrue);
+    expect(gifWithConflictingMetadata.isVideo, isFalse);
+    expect(gifWithConflictingMetadata.isLivePhoto, isFalse);
+    expect(gifWithConflictingMetadata.videoUrl, isNull);
+    expect(gifWithConflictingMetadata.livePhotoVideoUrl, isNull);
+
+    final mp4WithGifPoster = WeiboPicModel.fromJson({
+      'pid': 'video-with-gif-preview',
+      'type': 'video',
+      'video_url': 'https://video.weibo.com/media/clip.mp4',
+      'thumbnail': {
+        'url': 'https://example.com/animated-poster.gif',
+      },
+    });
+    expect(mp4WithGifPoster.isVideo, isTrue);
+    expect(mp4WithGifPoster.isGif, isFalse);
+    expect(mp4WithGifPoster.isLivePhoto, isFalse);
+
+    final livePhoto = WeiboPicModel.fromJson({
+      'pid': 'live-photo',
+      'type': 'livephoto',
+      'video_url': 'https://video.weibo.com/media/livephoto/live-photo.mp4',
+      'thumbnail': {'url': 'https://example.com/live-photo.jpg'},
+    });
+    expect(livePhoto.isLivePhoto, isTrue);
+    expect(livePhoto.isVideo, isFalse);
+
+    await tester.pumpWidget(ProviderScope(
+        child: MaterialApp(
+            home: ImageGalleryPage(
+      pics: [_photo, livePhoto, _photo],
+      initialIndex: 0,
+      statusId: 'live-photo-test',
+    ))));
+    await tester.pump();
+    final pager = tester.widget<ExtendedImageGesturePageView>(
+        find.byType(ExtendedImageGesturePageView));
+    pager.controller.jumpToPage(1);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('播放 Live 图'), findsOneWidget);
+    expect(backend.played, isEmpty,
+        reason: 'opening the Live Photo must not autoplay');
+    final pauseCountBeforeTap = backend.paused.length;
+
+    await tester.tap(find.text('播放 Live 图'));
+    await tester.pump();
+    expect(backend.played, hasLength(1));
+    expect(find.text('暂停 Live 图'), findsOneWidget);
+
+    await tester.tap(find.text('暂停 Live 图'));
+    await tester.pump();
+    expect(backend.paused, hasLength(pauseCountBeforeTap + 1));
+    expect(find.text('播放 Live 图'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    await _flushPlayerDisposal(tester);
     await tester.pump(const Duration(seconds: 1));
     await _flushPlayerDisposal(tester);
     debugNetworkImageHttpClientProvider = null;

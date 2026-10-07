@@ -3,6 +3,7 @@ import java.io.FileInputStream
 
 plugins {
     id("com.android.application")
+    id("org.jetbrains.kotlin.android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
@@ -44,8 +45,8 @@ android {
         applicationId = "com.review"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        versionCode = 131
-        versionName = "2.19.7"
+        versionCode = 156
+        versionName = "3.0.0"
         ndk {
             abiFilters.add("arm64-v8a")
         }

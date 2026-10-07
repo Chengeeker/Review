@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:crypto/crypto.dart';
@@ -1165,7 +1166,7 @@ class _ComposeTweetPageState extends ConsumerState<ComposeTweetPage> {
         }
       },
       child: Scaffold(
-        appBar: AppBar(
+        appBar: ReviewFrostedAppBar(
           title: Text(isEditing ? '编辑微博' : '发微博'),
           actions: [
             _publishSettingChip(

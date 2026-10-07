@@ -1,6 +1,7 @@
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:extended_image/extended_image.dart';
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/storage/storage_service.dart';
@@ -208,7 +209,7 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage>
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: ReviewFrostedAppBar(
         titleSpacing: 0,
         title: Container(
           height: 40,

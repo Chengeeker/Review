@@ -43,30 +43,41 @@ final class EncryptedSessionStore {
         if (!saved) throw new IllegalStateException("encrypted session write failed");
     }
 
-    WeiboSession load() throws Exception {
-        SharedPreferences prefs = preferences();
-        String ivValue = prefs.getString(IV, null);
-        String dataValue = prefs.getString(DATA, null);
-        if (ivValue == null || dataValue == null) return null;
-
-        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-        cipher.init(Cipher.DECRYPT_MODE, getKey(), new GCMParameterSpec(128,
-                Base64.decode(ivValue, Base64.NO_WRAP)));
-        byte[] plaintext = cipher.doFinal(Base64.decode(dataValue, Base64.NO_WRAP));
+    WeiboSession load() {
         try {
-            return WeiboSession.fromJson(new JSONObject(new String(plaintext, StandardCharsets.UTF_8)));
-        } finally {
-            java.util.Arrays.fill(plaintext, (byte) 0);
+            SharedPreferences prefs = preferences();
+            String ivValue = prefs.getString(IV, null);
+            String dataValue = prefs.getString(DATA, null);
+            if (ivValue == null || dataValue == null) return null;
+
+            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            cipher.init(Cipher.DECRYPT_MODE, getKey(), new GCMParameterSpec(128,
+                    Base64.decode(ivValue, Base64.NO_WRAP)));
+            byte[] plaintext = cipher.doFinal(Base64.decode(dataValue, Base64.NO_WRAP));
+            try {
+                return WeiboSession.fromJson(new JSONObject(new String(plaintext, StandardCharsets.UTF_8)));
+            } finally {
+                java.util.Arrays.fill(plaintext, (byte) 0);
+            }
+        } catch (Throwable t) {
+            android.util.Log.w("EncryptedSessionStore",
+                    "Failed to load/decrypt session (" + t.getClass().getSimpleName() + "): " + t.getMessage());
+            try {
+                preferences().edit().clear().apply();
+            } catch (Throwable ignored) {}
+            return null;
         }
     }
 
-    void clear() throws Exception {
-        if (!preferences().edit().clear().commit()) {
-            throw new IllegalStateException("encrypted session clear failed");
-        }
-        KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
-        keyStore.load(null);
-        if (keyStore.containsAlias(ALIAS)) keyStore.deleteEntry(ALIAS);
+    void clear() {
+        try {
+            preferences().edit().clear().apply();
+        } catch (Throwable ignored) {}
+        try {
+            KeyStore keyStore = KeyStore.getInstance("AndroidKeyStore");
+            keyStore.load(null);
+            if (keyStore.containsAlias(ALIAS)) keyStore.deleteEntry(ALIAS);
+        } catch (Throwable ignored) {}
     }
 
     private SharedPreferences preferences() {

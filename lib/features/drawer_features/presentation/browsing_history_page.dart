@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/storage/storage_service.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
@@ -128,7 +129,8 @@ class _BrowsingHistoryPageState extends ConsumerState<BrowsingHistoryPage> {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
-      appBar: AppBar(
+      extendBodyBehindAppBar: true,
+      appBar: ReviewFrostedAppBar(
         title:
             const Text('浏览记录', style: TextStyle(fontWeight: FontWeight.bold)),
         actions: [

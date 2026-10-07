@@ -443,37 +443,64 @@ class WeiboPicModel {
     final h = geo?['height'] ?? json['height'] ?? 0;
 
     final type = json['type']?.toString().toLowerCase();
+    final explicitlyLivePhoto = type == 'livephoto' ||
+        json['is_livephoto'] == true ||
+        json['live_photo'] != null;
+    final explicitlyVideo = type == 'video' ||
+        json['is_video'] == true ||
+        json['isVideo'] == true;
 
-    // Parse Live Photo video stream URL
-    String? videoUrl;
-    if (json['video'] is String && (json['video'] as String).isNotEmpty) {
-      videoUrl = json['video'] as String;
-    } else if (json['video'] is Map && json['video']['url'] != null) {
-      videoUrl = json['video']['url']?.toString();
-    } else if (json['video_url'] != null) {
-      videoUrl = json['video_url']?.toString();
-    } else if (json['livephoto_video'] != null) {
-      videoUrl = json['livephoto_video']?.toString();
-    } else if (json['fid'] != null && json['fid'].toString().isNotEmpty) {
+    final videoField = json['video'];
+    final directVideoUrl = _firstNonEmptyValue([
+      json['video_url'],
+      json['videoUrl'],
+      if (videoField is String) videoField,
+      if (videoField is Map) videoField['url'],
+    ]);
+    final explicitLivePhotoUrl = _firstNonEmptyValue([
+      json['livephoto_video'],
+      json['livePhotoVideoUrl'],
+    ]);
+    bool isGifUrl(String url) {
+      final path = Uri.tryParse(url)?.path ?? url.split('?').first;
+      return path.toLowerCase().endsWith('.gif');
+    }
+    final hasGifImageUrl = [thumbnail, large, original].any(isGifUrl);
+    final directVideoIsGif =
+        directVideoUrl != null && isGifUrl(directVideoUrl);
+    final isGifSource = type == 'gif' ||
+        directVideoIsGif ||
+        (directVideoUrl == null && hasGifImageUrl);
+
+    // `fid` is only a legacy Live Photo fallback. It must not turn GIFs or
+    // incomplete video metadata into synthetic `/livephoto/` MP4s.
+    String? videoUrl = explicitLivePhotoUrl ?? directVideoUrl;
+    if (!isGifSource &&
+        videoUrl == null &&
+        (explicitlyLivePhoto || !explicitlyVideo) &&
+        json['fid'] != null &&
+        json['fid'].toString().isNotEmpty) {
       videoUrl = 'https://video.weibo.com/media/livephoto/${json['fid']}.mp4';
     }
 
-    final isLive = type == 'livephoto' ||
-        json['is_livephoto'] == true ||
-        json['live_photo'] != null ||
-        (videoUrl != null && videoUrl.isNotEmpty);
+    final isLivePhotoStream = [videoUrl, directVideoUrl].any(
+      (url) => url?.toLowerCase().contains('/livephoto/') ?? false,
+    );
+    final isLive = !isGifSource &&
+        (explicitlyLivePhoto ||
+            explicitLivePhotoUrl != null ||
+            isLivePhotoStream ||
+            (!explicitlyVideo && directVideoUrl == null && videoUrl != null));
 
     final isLong = json['is_long'] == true ||
         json['cut_type'] == 1 ||
         (h > 0 && w > 0 && h / w > 2.0);
 
-    final isVideo = type == 'video' ||
-        json['is_video'] == true ||
-        (json['video_url'] != null &&
-            json['video_url'].toString().isNotEmpty) ||
-        (json['isVideo'] == true);
+    // Do not open a video player from a type flag alone: it requires a real,
+    // non-GIF media URL. Otherwise the gallery overlays empty video controls.
+    final isVideo = !isGifSource && !isLive && directVideoUrl != null;
 
-    final vUrl = json['video_url']?.toString() ?? json['videoUrl']?.toString();
+    final vUrl = isVideo ? directVideoUrl : null;
     final vDur =
         json['video_duration']?.toString() ?? json['videoDuration']?.toString();
     final vTitle =
@@ -491,10 +518,10 @@ class WeiboPicModel {
       original: original,
       width: w.toDouble(),
       height: h.toDouble(),
-      isGif: type == 'gif' || thumbnail.endsWith('.gif'),
+      isGif: isGifSource && !isLive && !isVideo,
       isLongPic: isLong,
       isLivePhoto: isLive,
-      livePhotoVideoUrl: videoUrl,
+      livePhotoVideoUrl: isLive ? videoUrl : null,
       isVideo: isVideo,
       videoUrl: vUrl,
       videoDuration: vDur,

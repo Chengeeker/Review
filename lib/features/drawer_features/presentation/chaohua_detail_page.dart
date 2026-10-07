@@ -1,8 +1,11 @@
 import 'package:dio/dio.dart';
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:extended_image/extended_image.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
+
 import '../../../core/network/weibo_dio_client.dart';
 import '../../../core/utils/app_toast.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
@@ -98,8 +101,10 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
   }
 
   Future<void> _resolveAndLoad() async {
-    final cleanTitle =
-        widget.title.replaceAll('[超话]', '').replaceAll('超话', '').trim();
+    final cleanTitle = widget.title
+        .replaceAll('[超话]', '')
+        .replaceAll('超话', '')
+        .trim();
     final searchRepo = ref.read(searchRepositoryProvider);
     final results = await searchRepo.searchChaohua(cleanTitle);
 
@@ -110,8 +115,9 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
         setState(() {
           _headerTitle = match.title;
           _headerAvatar = match.image.isNotEmpty ? match.image : _headerAvatar;
-          _headerDesc =
-              match.description.isNotEmpty ? match.description : _headerDesc;
+          _headerDesc = match.description.isNotEmpty
+              ? match.description
+              : _headerDesc;
         });
       }
     } else if (_currentContainerId.isEmpty) {
@@ -127,7 +133,10 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
     final cid = _currentContainerId;
     _channels = [
       ChaohuaChannel(
-          title: '热门', flowId: '${cid}_-_recommend', channelId: 'recommend'),
+        title: '热门',
+        flowId: '${cid}_-_recommend',
+        channelId: 'recommend',
+      ),
       ChaohuaChannel(title: '最新', flowId: '${cid}_-_feed', channelId: 'feed'),
       ChaohuaChannel(title: '精华', flowId: '${cid}_-_soul', channelId: 'soul'),
     ];
@@ -157,21 +166,21 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
     try {
       final res = await client.dio.get(
         '/ajax_proxy/chaohua/page/extend',
-        queryParameters: {
-          'page_id': _currentContainerId,
-          'show_recommend': 1,
-        },
-        options: Options(headers: {
-          'Referer': 'https://weibo.com/p/$_currentContainerId',
-          'X-Requested-With': 'XMLHttpRequest',
-        }),
+        queryParameters: {'page_id': _currentContainerId, 'show_recommend': 1},
+        options: Options(
+          headers: {
+            'Referer': 'https://weibo.com/p/$_currentContainerId',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+        ),
       );
       if (res.data is Map<String, dynamic>) {
         final data = res.data as Map<String, dynamic>;
         if (mounted) {
           setState(() {
             _isFollowed = data['is_followed'] == true;
-            _followBtnText = data['follow_btn_text']?.toString() ??
+            _followBtnText =
+                data['follow_btn_text']?.toString() ??
                 (_isFollowed ? '已关注' : '关注');
             _isChecked = data['is_checked'] == true;
             _checkinBtnText = _isChecked ? '已签到' : '签到';
@@ -181,8 +190,10 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
     } catch (_) {}
   }
 
-  Future<void> _fetchFeedForChannel(ChaohuaChannel channel,
-      {bool refresh = false}) async {
+  Future<void> _fetchFeedForChannel(
+    ChaohuaChannel channel, {
+    bool refresh = false,
+  }) async {
     final flowId = channel.flowId;
     if (refresh) {
       _channelPages[flowId] = 1;
@@ -199,14 +210,13 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
     try {
       final res = await client.dio.get(
         '/ajax_proxy/chaohua/page',
-        queryParameters: {
-          'containerid': flowId,
-          'page': page,
-        },
-        options: Options(headers: {
-          'Referer': 'https://weibo.com/p/$_currentContainerId',
-          'X-Requested-With': 'XMLHttpRequest',
-        }),
+        queryParameters: {'containerid': flowId, 'page': page},
+        options: Options(
+          headers: {
+            'Referer': 'https://weibo.com/p/$_currentContainerId',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+        ),
       );
 
       if (res.data is Map<String, dynamic>) {
@@ -224,8 +234,9 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
                 final fId = c['flowId']?.toString() ?? '';
                 final chId = c['channelId']?.toString();
                 if (title.isNotEmpty && fId.isNotEmpty) {
-                  parsedChannels.add(ChaohuaChannel(
-                      title: title, flowId: fId, channelId: chId));
+                  parsedChannels.add(
+                    ChaohuaChannel(title: title, flowId: fId, channelId: chId),
+                  );
                 }
               }
             }
@@ -284,14 +295,16 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
         }
 
         if (nextStatuses.isEmpty) {
-          final rawStatuses = json['statuses'] as List? ??
+          final rawStatuses =
+              json['statuses'] as List? ??
               json['data']?['statuses'] as List? ??
               [];
           for (final s in rawStatuses) {
             if (s is Map) {
               try {
-                final model =
-                    WeiboStatusModel.fromJson(Map<String, dynamic>.from(s));
+                final model = WeiboStatusModel.fromJson(
+                  Map<String, dynamic>.from(s),
+                );
                 if (model.id.isNotEmpty) nextStatuses.add(model);
               } catch (_) {}
             }
@@ -307,8 +320,9 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
         } else {
           final existing = _channelStatuses[flowId] ?? [];
           final existingIds = existing.map((e) => e.id).toSet();
-          final newUnique =
-              nextStatuses.where((e) => !existingIds.contains(e.id)).toList();
+          final newUnique = nextStatuses
+              .where((e) => !existingIds.contains(e.id))
+              .toList();
           existing.addAll(newUnique);
           _channelStatuses[flowId] = existing;
         }
@@ -346,7 +360,8 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
           (!_isFollowed && (code == 100000 || code == 10000))) {
         setState(() {
           _isFollowed = !_isFollowed;
-          _followBtnText = data['follow_btn_text']?.toString() ??
+          _followBtnText =
+              data['follow_btn_text']?.toString() ??
               (_isFollowed ? '已关注' : '关注');
         });
         if (mounted) {
@@ -441,6 +456,8 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final topBarBackground =
+        theme.appBarTheme.backgroundColor ?? theme.scaffoldBackgroundColor;
     final displayTitle = _headerTitle ?? widget.title;
     final displayAvatar = _headerAvatar ?? widget.avatar ?? '';
     final displayDesc = _headerDesc ?? widget.desc ?? '';
@@ -454,11 +471,22 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
               pinned: true,
               expandedHeight: 0,
               elevation: 0,
-              scrolledUnderElevation: 1.0,
+              scrolledUnderElevation: 0,
+              backgroundColor: topBarBackground.withValues(
+                alpha: reviewFrostedMaterialAlpha,
+              ),
+              surfaceTintColor: Colors.transparent,
+              forceMaterialTransparency: false,
+              flexibleSpace: ReviewFrostedBackdrop(
+                color: topBarBackground,
+                borderColor: colorScheme.outlineVariant,
+              ),
               title: Text(
                 displayTitle,
-                style:
-                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 17),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 17,
+                ),
               ),
               actions: [
                 IconButton(
@@ -479,8 +507,9 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
                 child: Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest
-                        .withValues(alpha: 0.35),
+                    color: colorScheme.surfaceContainerHighest.withValues(
+                      alpha: 0.35,
+                    ),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
                       color: colorScheme.outlineVariant.withValues(alpha: 0.3),
@@ -509,8 +538,11 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
                                   : null,
                             ),
                             child: displayAvatar.isEmpty
-                                ? const Icon(Icons.diamond_rounded,
-                                    size: 28, color: Color(0xFFFF8200))
+                                ? const Icon(
+                                    Icons.diamond_rounded,
+                                    size: 28,
+                                    color: Color(0xFFFF8200),
+                                  )
                                 : null,
                           ),
                           const SizedBox(width: 14),
@@ -520,15 +552,19 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
                               children: [
                                 Row(
                                   children: [
-                                    const Icon(Icons.diamond_rounded,
-                                        size: 18, color: Color(0xFFFF8200)),
+                                    const Icon(
+                                      Icons.diamond_rounded,
+                                      size: 18,
+                                      color: Color(0xFFFF8200),
+                                    ),
                                     const SizedBox(width: 4),
                                     Expanded(
                                       child: Text(
                                         displayTitle,
                                         style: const TextStyle(
-                                            fontSize: 17,
-                                            fontWeight: FontWeight.bold),
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                       ),
@@ -540,8 +576,9 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
                                   Text(
                                     _headerFollowCount!,
                                     style: TextStyle(
-                                        fontSize: 12,
-                                        color: colorScheme.onSurfaceVariant),
+                                      fontSize: 12,
+                                      color: colorScheme.onSurfaceVariant,
+                                    ),
                                   ),
                                 ],
                               ],
@@ -574,18 +611,25 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: _navigateToCompose,
-                              icon:
-                                  const Icon(Icons.edit_note_rounded, size: 18),
-                              label: const Text('发帖',
-                                  style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold)),
+                              icon: const Icon(
+                                Icons.edit_note_rounded,
+                                size: 18,
+                              ),
+                              label: const Text(
+                                '发帖',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                               style: OutlinedButton.styleFrom(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
                                 visualDensity: VisualDensity.compact,
                                 shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                             ),
                           ),
@@ -595,18 +639,22 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
                             child: FilledButton.tonal(
                               onPressed: _toggleFollow,
                               style: FilledButton.styleFrom(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
                                 visualDensity: VisualDensity.compact,
                                 shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                               child: _isFollowingLoading
                                   ? const SizedBox(
                                       width: 16,
                                       height: 16,
                                       child: CircularProgressIndicator(
-                                          strokeWidth: 2))
+                                        strokeWidth: 2,
+                                      ),
+                                    )
                                   : Text(
                                       _followBtnText,
                                       style: TextStyle(
@@ -625,8 +673,9 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
                             child: FilledButton(
                               onPressed: _handleCheckin,
                               style: FilledButton.styleFrom(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
                                 visualDensity: VisualDensity.compact,
                                 backgroundColor: _isChecked
                                     ? colorScheme.surfaceContainerHighest
@@ -635,28 +684,35 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
                                     ? colorScheme.onSurfaceVariant
                                     : colorScheme.onPrimary,
                                 shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                               ),
                               child: _isCheckingIn
                                   ? const SizedBox(
                                       width: 16,
                                       height: 16,
                                       child: CircularProgressIndicator(
-                                          strokeWidth: 2, color: Colors.white))
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
                                   : Row(
                                       mainAxisAlignment:
                                           MainAxisAlignment.center,
                                       children: [
                                         if (_isChecked)
-                                          const Icon(Icons.check_rounded,
-                                              size: 16),
+                                          const Icon(
+                                            Icons.check_rounded,
+                                            size: 16,
+                                          ),
                                         if (_isChecked)
                                           const SizedBox(width: 2),
                                         Text(
                                           _checkinBtnText,
                                           style: const TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.bold),
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -680,9 +736,13 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
                     isScrollable: true,
                     tabAlignment: TabAlignment.start,
                     labelStyle: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 14.5),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14.5,
+                    ),
                     unselectedLabelStyle: const TextStyle(
-                        fontWeight: FontWeight.normal, fontSize: 14.5),
+                      fontWeight: FontWeight.normal,
+                      fontSize: 14.5,
+                    ),
                     indicatorSize: TabBarIndicatorSize.label,
                     indicatorWeight: 3,
                     indicatorColor: colorScheme.primary,
@@ -729,15 +789,18 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.feed_outlined,
-                                    size: 48,
-                                    color: colorScheme.onSurfaceVariant
-                                        .withValues(alpha: 0.5)),
+                                Icon(
+                                  Icons.feed_outlined,
+                                  size: 48,
+                                  color: colorScheme.onSurfaceVariant
+                                      .withValues(alpha: 0.5),
+                                ),
                                 const SizedBox(height: 12),
                                 Text(
                                   '暂无【${channel.title}】相关动态',
                                   style: TextStyle(
-                                      color: colorScheme.onSurfaceVariant),
+                                    color: colorScheme.onSurfaceVariant,
+                                  ),
                                 ),
                               ],
                             ),
@@ -745,18 +808,21 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
                         : NotificationListener<ScrollNotification>(
                             onNotification: (notification) {
                               if (notification.metrics.maxScrollExtent > 0) {
-                                final progress = notification.metrics.pixels /
+                                final progress =
+                                    notification.metrics.pixels /
                                     notification.metrics.maxScrollExtent;
                                 final remainingDistance =
                                     notification.metrics.maxScrollExtent -
-                                        notification.metrics.pixels;
+                                    notification.metrics.pixels;
                                 if (progress >= 0.55 ||
                                     remainingDistance < 1200) {
                                   if (hasMore && !isLoading) {
                                     final curPage = _channelPages[flowId] ?? 1;
                                     _channelPages[flowId] = curPage + 1;
-                                    _fetchFeedForChannel(channel,
-                                        refresh: false);
+                                    _fetchFeedForChannel(
+                                      channel,
+                                      refresh: false,
+                                    );
                                   }
                                 }
                               }
@@ -793,14 +859,14 @@ class _ChaohuaTabHeaderDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     return Container(
       color: backgroundColor,
       child: Column(
-        children: [
-          tabBar,
-          const Divider(height: 1, thickness: 0.5),
-        ],
+        children: [tabBar, const Divider(height: 1, thickness: 0.5)],
       ),
     );
   }

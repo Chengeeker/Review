@@ -1,16 +1,19 @@
 import 'package:extended_image/extended_image.dart';
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/card_display_provider.dart';
 import '../../../core/theme/weibo_style_provider.dart';
 import '../../../core/utils/app_dialog.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
 import '../../../core/widgets/app_avatar.dart';
+import '../../../core/widgets/app_section_card.dart';
 
 /// 微博样式个性化设置页面
 /// 1. 顶部固定区域：真实头像与 3 张精美照片九宫格无缝实时预览；
-/// 2. 底部滑动区域：提供 MD3 Expressive 风格的开关与精细化样式调节项。
+/// 2. 底部滑动区域：提供 Material 3 风格的开关与精细化样式调节项。
 class WeiboStyleSettingsPage extends ConsumerWidget {
   const WeiboStyleSettingsPage({super.key});
 
@@ -39,7 +42,7 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
     final notifier = ref.read(weiboStyleProvider.notifier);
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: ReviewFrostedAppBar(
         title: const Text('微博样式'),
         actions: [
           TextButton(
@@ -69,10 +72,15 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
               ),
             ),
             child: _buildLivePreviewCard(
-                context, style, colorScheme, isDark, theme),
+              context,
+              style,
+              colorScheme,
+              isDark,
+              theme,
+            ),
           ),
 
-          // 2. 下方滑动区域：MD3 Expressive 开关与设置项
+          // 2. 下方滑动区域：设置项
           Expanded(
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -83,67 +91,71 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                   child: Text(
                     '卡片与时间显示',
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: 15,
                       fontWeight: context.adjustWeight(FontWeight.bold),
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurfaceVariant,
                       letterSpacing: 0.0,
                     ),
                   ),
                 ),
-                Card(
-                  elevation: 0,
-                  color: colorScheme.surfaceContainerHighest
-                      .withValues(alpha: 0.4),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    side: BorderSide(
-                      color: theme.dividerColor.withValues(alpha: 0.1),
-                      width: 0.8,
-                    ),
-                  ),
+                AppSectionCard(
                   child: ExpansionTile(
                     shape: const Border(),
                     collapsedShape: const Border(),
-                    leading: Icon(Icons.schedule_rounded,
-                        color: colorScheme.primary),
-                    title: Text('时间显示模式',
-                        style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: context.adjustWeight(FontWeight.w600),
-                            height: 1.35,
-                            letterSpacing: 0.0)),
+                    leading: Icon(
+                      Icons.schedule_rounded,
+                      color: colorScheme.primary,
+                    ),
+                    title: Text(
+                      '时间显示模式',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: context.adjustWeight(FontWeight.w600),
+                        height: 1.35,
+                        letterSpacing: 0.0,
+                      ),
+                    ),
                     subtitle: Text(
                       ref.watch(cardDisplayProvider).timeDisplayMode ==
                               'relative'
                           ? '智能相对时间 (如3分钟前)'
                           : '绝对具体时间 (如2026-08-29)',
                       style: TextStyle(
-                          color: colorScheme.onSurfaceVariant,
-                          fontSize: 12.5,
-                          height: 1.4,
-                          letterSpacing: 0.0),
+                        color: colorScheme.onSurfaceVariant,
+                        fontSize: 14,
+                        height: 1.4,
+                        letterSpacing: 0.0,
+                      ),
                     ),
                     children: [
-                      const Divider(height: 1, indent: 56),
+                      const Divider(height: 1, indent: 72),
                       RadioListTile<String>(
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 2),
-                        title: Text('智能相对时间',
-                            style: TextStyle(
-                                fontSize: 15,
-                                fontWeight:
-                                    context.adjustWeight(FontWeight.w600),
-                                height: 1.35,
-                                letterSpacing: 0.0)),
-                        subtitle: Text('显示“刚刚”、“3分钟前”、“昨天 15:30”等易读时间',
-                            style: TextStyle(
-                                fontSize: 12.5,
-                                height: 1.4,
-                                letterSpacing: 0.0,
-                                color: colorScheme.onSurfaceVariant)),
+                          horizontal: 16,
+                          vertical: 2,
+                        ),
+                        title: Text(
+                          '智能相对时间',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: context.adjustWeight(FontWeight.w600),
+                            height: 1.35,
+                            letterSpacing: 0.0,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '显示“刚刚”、“3分钟前”、“昨天 15:30”等易读时间',
+                          style: TextStyle(
+                            fontSize: 14,
+                            height: 1.4,
+                            letterSpacing: 0.0,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
                         value: 'relative',
-                        groupValue:
-                            ref.watch(cardDisplayProvider).timeDisplayMode,
+                        groupValue: ref
+                            .watch(cardDisplayProvider)
+                            .timeDisplayMode,
                         onChanged: (val) {
                           HapticFeedbackUtil.light();
                           if (val != null)
@@ -152,26 +164,34 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                                 .setTimeDisplayMode(val);
                         },
                       ),
-                      const Divider(height: 1, indent: 56),
+                      const Divider(height: 1, indent: 72),
                       RadioListTile<String>(
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 2),
-                        title: Text('绝对具体时间',
-                            style: TextStyle(
-                                fontSize: 15,
-                                fontWeight:
-                                    context.adjustWeight(FontWeight.w600),
-                                height: 1.35,
-                                letterSpacing: 0.0)),
-                        subtitle: Text('显示“2026-08-29 10:30”等具体年月日时间',
-                            style: TextStyle(
-                                fontSize: 12.5,
-                                height: 1.4,
-                                letterSpacing: 0.0,
-                                color: colorScheme.onSurfaceVariant)),
+                          horizontal: 16,
+                          vertical: 2,
+                        ),
+                        title: Text(
+                          '绝对具体时间',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: context.adjustWeight(FontWeight.w600),
+                            height: 1.35,
+                            letterSpacing: 0.0,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '显示“2026-08-29 10:30”等具体年月日时间',
+                          style: TextStyle(
+                            fontSize: 14,
+                            height: 1.4,
+                            letterSpacing: 0.0,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
                         value: 'absolute',
-                        groupValue:
-                            ref.watch(cardDisplayProvider).timeDisplayMode,
+                        groupValue: ref
+                            .watch(cardDisplayProvider)
+                            .timeDisplayMode,
                         onChanged: (val) {
                           HapticFeedbackUtil.light();
                           if (val != null)
@@ -183,14 +203,18 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                       const Divider(height: 1, indent: 16, endIndent: 16),
                       SwitchListTile(
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 2),
-                        title: Text('显示星期几 (如周五 / Friday)',
-                            style: TextStyle(
-                                fontSize: 14.5,
-                                fontWeight:
-                                    context.adjustWeight(FontWeight.w500),
-                                height: 1.35,
-                                letterSpacing: 0.0)),
+                          horizontal: 16,
+                          vertical: 2,
+                        ),
+                        title: Text(
+                          '显示星期几 (如周五 / Friday)',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: context.adjustWeight(FontWeight.w500),
+                            height: 1.35,
+                            letterSpacing: 0.0,
+                          ),
+                        ),
                         value: ref.watch(cardDisplayProvider).showWeekday,
                         onChanged: (val) {
                           HapticFeedbackUtil.light();
@@ -202,14 +226,18 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                       const Divider(height: 1, indent: 16, endIndent: 16),
                       SwitchListTile(
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 2),
-                        title: Text('显示具体年份 (跨年/强制显示)',
-                            style: TextStyle(
-                                fontSize: 14.5,
-                                fontWeight:
-                                    context.adjustWeight(FontWeight.w500),
-                                height: 1.35,
-                                letterSpacing: 0.0)),
+                          horizontal: 16,
+                          vertical: 2,
+                        ),
+                        title: Text(
+                          '显示具体年份 (跨年/强制显示)',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: context.adjustWeight(FontWeight.w500),
+                            height: 1.35,
+                            letterSpacing: 0.0,
+                          ),
+                        ),
                         value: ref.watch(cardDisplayProvider).showYear,
                         onChanged: (val) {
                           HapticFeedbackUtil.light();
@@ -221,14 +249,18 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                       const Divider(height: 1, indent: 16, endIndent: 16),
                       SwitchListTile(
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 2),
-                        title: Text('显示时区标识 (+0800)',
-                            style: TextStyle(
-                                fontSize: 14.5,
-                                fontWeight:
-                                    context.adjustWeight(FontWeight.w500),
-                                height: 1.35,
-                                letterSpacing: 0.0)),
+                          horizontal: 16,
+                          vertical: 2,
+                        ),
+                        title: Text(
+                          '显示时区标识 (+0800)',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: context.adjustWeight(FontWeight.w500),
+                            height: 1.35,
+                            letterSpacing: 0.0,
+                          ),
+                        ),
                         value: ref.watch(cardDisplayProvider).showTimezone,
                         onChanged: (val) {
                           HapticFeedbackUtil.light();
@@ -240,14 +272,18 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                       const Divider(height: 1, indent: 16, endIndent: 16),
                       SwitchListTile(
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 2),
-                        title: Text('显示秒数 (HH:mm:ss)',
-                            style: TextStyle(
-                                fontSize: 14.5,
-                                fontWeight:
-                                    context.adjustWeight(FontWeight.w500),
-                                height: 1.35,
-                                letterSpacing: 0.0)),
+                          horizontal: 16,
+                          vertical: 2,
+                        ),
+                        title: Text(
+                          '显示秒数 (HH:mm:ss)',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: context.adjustWeight(FontWeight.w500),
+                            height: 1.35,
+                            letterSpacing: 0.0,
+                          ),
+                        ),
                         value: ref.watch(cardDisplayProvider).showSeconds,
                         onChanged: (val) {
                           HapticFeedbackUtil.light();
@@ -259,14 +295,18 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                       const Divider(height: 1, indent: 16, endIndent: 16),
                       SwitchListTile(
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 2),
-                        title: Text('显示发布设备 / 来自...',
-                            style: TextStyle(
-                                fontSize: 14.5,
-                                fontWeight:
-                                    context.adjustWeight(FontWeight.w500),
-                                height: 1.35,
-                                letterSpacing: 0.0)),
+                          horizontal: 16,
+                          vertical: 2,
+                        ),
+                        title: Text(
+                          '显示发布设备 / 来自...',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: context.adjustWeight(FontWeight.w500),
+                            height: 1.35,
+                            letterSpacing: 0.0,
+                          ),
+                        ),
                         value: ref.watch(cardDisplayProvider).showSource,
                         onChanged: (val) {
                           HapticFeedbackUtil.light();
@@ -278,7 +318,7 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                     ],
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 16),
 
                 // ==================== 2. 排版与视觉布局 ====================
                 Padding(
@@ -286,126 +326,148 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                   child: Text(
                     '排版与视觉布局',
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: 15,
                       fontWeight: context.adjustWeight(FontWeight.bold),
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurfaceVariant,
                       letterSpacing: 0.0,
                     ),
                   ),
                 ),
-                Card(
-                  elevation: 0,
-                  color: colorScheme.surfaceContainerHighest
-                      .withValues(alpha: 0.4),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    side: BorderSide(
-                      color: theme.dividerColor.withValues(alpha: 0.1),
-                      width: 0.8,
-                    ),
-                  ),
+                AppSectionCard(
                   child: Column(
                     children: [
                       ListTile(
-                        leading: Icon(Icons.dashboard_customize_outlined,
-                            color: colorScheme.primary),
-                        title: Text('微博背景布局',
-                            style: TextStyle(
-                                fontSize: 15,
-                                fontWeight:
-                                    context.adjustWeight(FontWeight.w600),
-                                height: 1.35,
-                                letterSpacing: 0.0)),
+                        leading: Icon(
+                          Icons.dashboard_customize_outlined,
+                          color: colorScheme.primary,
+                        ),
+                        title: Text(
+                          '微博背景布局',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: context.adjustWeight(FontWeight.w600),
+                            height: 1.35,
+                            letterSpacing: 0.0,
+                          ),
+                        ),
                         subtitle: Text(
                           getCardLayoutTitle(style.cardBackgroundLayout),
                           style: TextStyle(
-                              color: colorScheme.primary,
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w500,
-                              height: 1.4,
-                              letterSpacing: 0.0),
+                            color: colorScheme.primary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            height: 1.4,
+                            letterSpacing: 0.0,
+                          ),
                         ),
                         trailing: const Icon(Icons.chevron_right_rounded),
                         onTap: () => _showCardLayoutDialog(
-                            context, ref, style.cardBackgroundLayout),
+                          context,
+                          ref,
+                          style.cardBackgroundLayout,
+                        ),
                       ),
-                      const Divider(height: 1, indent: 56),
+                      const Divider(height: 1, indent: 72),
                       ListTile(
-                        leading: Icon(Icons.format_size_rounded,
-                            color: colorScheme.primary),
-                        title: Text('正文字体大小',
-                            style: TextStyle(
-                                fontSize: 15,
-                                fontWeight:
-                                    context.adjustWeight(FontWeight.w600),
-                                height: 1.35,
-                                letterSpacing: 0.0)),
-                        subtitle: Text('${style.fontSize.toInt()} pt',
-                            style: TextStyle(
-                                color: colorScheme.primary,
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w500,
-                                height: 1.4,
-                                letterSpacing: 0.0)),
+                        leading: Icon(
+                          Icons.format_size_rounded,
+                          color: colorScheme.primary,
+                        ),
+                        title: Text(
+                          '正文字体大小',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: context.adjustWeight(FontWeight.w600),
+                            height: 1.35,
+                            letterSpacing: 0.0,
+                          ),
+                        ),
+                        subtitle: Text(
+                          '${style.fontSize.toInt()} pt',
+                          style: TextStyle(
+                            color: colorScheme.primary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            height: 1.4,
+                            letterSpacing: 0.0,
+                          ),
+                        ),
                         trailing: const Icon(Icons.chevron_right_rounded),
                         onTap: () =>
                             _showFontSizeDialog(context, ref, style.fontSize),
                       ),
-                      const Divider(height: 1, indent: 56),
+                      const Divider(height: 1, indent: 72),
                       ListTile(
-                        leading: Icon(Icons.format_line_spacing_rounded,
-                            color: colorScheme.primary),
-                        title: Text('正文字体行间距倍数',
-                            style: TextStyle(
-                                fontSize: 15,
-                                fontWeight:
-                                    context.adjustWeight(FontWeight.w600),
-                                height: 1.35,
-                                letterSpacing: 0.0)),
+                        leading: Icon(
+                          Icons.format_line_spacing_rounded,
+                          color: colorScheme.primary,
+                        ),
+                        title: Text(
+                          '正文字体行间距倍数',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: context.adjustWeight(FontWeight.w600),
+                            height: 1.35,
+                            letterSpacing: 0.0,
+                          ),
+                        ),
                         subtitle: Text(
-                            '${style.fontLineHeight.toStringAsFixed(1)}x',
-                            style: TextStyle(
-                                color: colorScheme.primary,
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w500,
-                                height: 1.4,
-                                letterSpacing: 0.0)),
+                          '${style.fontLineHeight.toStringAsFixed(1)}x',
+                          style: TextStyle(
+                            color: colorScheme.primary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            height: 1.4,
+                            letterSpacing: 0.0,
+                          ),
+                        ),
                         trailing: const Icon(Icons.chevron_right_rounded),
                         onTap: () => _showFontLineHeightDialog(
-                            context, ref, style.fontLineHeight),
+                          context,
+                          ref,
+                          style.fontLineHeight,
+                        ),
                       ),
-                      const Divider(height: 1, indent: 56),
+                      const Divider(height: 1, indent: 72),
                       ListTile(
-                        leading: Icon(Icons.location_on_outlined,
-                            color: colorScheme.primary),
-                        title: Text('显示微博发送的 IP 属地',
-                            style: TextStyle(
-                                fontSize: 15,
-                                fontWeight:
-                                    context.adjustWeight(FontWeight.w600),
-                                height: 1.35,
-                                letterSpacing: 0.0)),
+                        leading: Icon(
+                          Icons.location_on_outlined,
+                          color: colorScheme.primary,
+                        ),
+                        title: Text(
+                          '显示微博发送的 IP 属地',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: context.adjustWeight(FontWeight.w600),
+                            height: 1.35,
+                            letterSpacing: 0.0,
+                          ),
+                        ),
                         subtitle: Text(
                           style.showIpLocationMode == 'all'
                               ? '列表和详情都显示'
                               : (style.showIpLocationMode == 'detail_only'
-                                  ? '仅详情显示'
-                                  : '不显示'),
+                                    ? '仅详情显示'
+                                    : '不显示'),
                           style: TextStyle(
-                              color: colorScheme.primary,
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w500,
-                              height: 1.4,
-                              letterSpacing: 0.0),
+                            color: colorScheme.primary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            height: 1.4,
+                            letterSpacing: 0.0,
+                          ),
                         ),
                         trailing: const Icon(Icons.chevron_right_rounded),
                         onTap: () => _showIpLocationDialog(
-                            context, ref, style.showIpLocationMode),
+                          context,
+                          ref,
+                          style.showIpLocationMode,
+                        ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 16),
 
                 // ==================== 3. 功能开关与视觉控制 ====================
                 Padding(
@@ -413,24 +475,14 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                   child: Text(
                     '功能开关与视觉控制',
                     style: TextStyle(
-                      fontSize: 13,
+                      fontSize: 15,
                       fontWeight: context.adjustWeight(FontWeight.bold),
-                      color: colorScheme.primary,
+                      color: colorScheme.onSurfaceVariant,
                       letterSpacing: 0.0,
                     ),
                   ),
                 ),
-                Card(
-                  elevation: 0,
-                  color: colorScheme.surfaceContainerHighest
-                      .withValues(alpha: 0.4),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    side: BorderSide(
-                      color: theme.dividerColor.withValues(alpha: 0.1),
-                      width: 0.8,
-                    ),
-                  ),
+                AppSectionCard(
                   child: Column(
                     children: [
                       _buildMD3eSwitch(
@@ -441,7 +493,7 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                         onChanged: (val) =>
                             notifier.setLinkColorFollowTheme(val),
                       ),
-                      const Divider(height: 1, indent: 56),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
                       _buildMD3eSwitch(
                         context: context,
                         title: '同时显示备注和名字',
@@ -449,7 +501,7 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                         value: style.showRemarkAndName,
                         onChanged: (val) => notifier.setShowRemarkAndName(val),
                       ),
-                      const Divider(height: 1, indent: 56),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
                       _buildMD3eSwitch(
                         context: context,
                         title: '显示个人主页背景图',
@@ -458,7 +510,7 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                         onChanged: (val) =>
                             notifier.setShowBackgroundImage(val),
                       ),
-                      const Divider(height: 1, indent: 56),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
                       _buildMD3eSwitch(
                         context: context,
                         title: '显示微博用户活动图标',
@@ -467,7 +519,7 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                         onChanged: (val) =>
                             notifier.setShowUserActivityIcon(val),
                       ),
-                      const Divider(height: 1, indent: 56),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
                       _buildMD3eSwitch(
                         context: context,
                         title: '大图片九宫格模式',
@@ -475,7 +527,7 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                         value: style.largeImageMode,
                         onChanged: (val) => notifier.setLargeImageMode(val),
                       ),
-                      const Divider(height: 1, indent: 56),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
                       _buildMD3eSwitch(
                         context: context,
                         title: '微博内图片圆角显示',
@@ -484,7 +536,7 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                         onChanged: (val) =>
                             notifier.setRoundedImageCorners(val),
                       ),
-                      const Divider(height: 1, indent: 56),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
                       _buildMD3eSwitch(
                         context: context,
                         title: '菜单键显示在底部',
@@ -492,7 +544,7 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                         value: style.showMenuAtBottom,
                         onChanged: (val) => notifier.setShowMenuAtBottom(val),
                       ),
-                      const Divider(height: 1, indent: 56),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
                       _buildMD3eSwitch(
                         context: context,
                         title: '主页显示赞过的微博',
@@ -527,7 +579,7 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
       title: Text(
         title,
         style: TextStyle(
-          fontSize: 15,
+          fontSize: 16,
           fontWeight: context.adjustWeight(FontWeight.w600),
           height: 1.35,
           letterSpacing: 0.0,
@@ -537,7 +589,7 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
           ? Text(
               subtitle,
               style: TextStyle(
-                fontSize: 12.5,
+                fontSize: 14,
                 color: theme.colorScheme.onSurfaceVariant,
                 height: 1.4,
                 letterSpacing: 0.0,
@@ -545,8 +597,9 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
             )
           : null,
       value: value,
-      thumbIcon:
-          WidgetStateProperty.resolveWith<Icon?>((Set<WidgetState> states) {
+      thumbIcon: WidgetStateProperty.resolveWith<Icon?>((
+        Set<WidgetState> states,
+      ) {
         if (states.contains(WidgetState.selected)) {
           return const Icon(Icons.check, size: 14);
         }
@@ -583,35 +636,39 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
           margin: isFloating
               ? const EdgeInsets.symmetric(horizontal: 4, vertical: 4)
               : (layout == 'card_rounded'
-                  ? const EdgeInsets.symmetric(horizontal: 2, vertical: 2)
-                  : EdgeInsets.zero),
+                    ? const EdgeInsets.symmetric(horizontal: 2, vertical: 2)
+                    : EdgeInsets.zero),
           decoration: BoxDecoration(
             color: isDark ? const Color(0xFF1E1E22) : Colors.white,
             borderRadius: BorderRadius.circular(isRounded ? 16 : 0),
             boxShadow: isFloating
                 ? [
                     BoxShadow(
-                      color:
-                          Colors.black.withValues(alpha: isDark ? 0.45 : 0.12),
+                      color: Colors.black.withValues(
+                        alpha: isDark ? 0.45 : 0.12,
+                      ),
                       blurRadius: 14,
                       offset: const Offset(0, 5),
                     ),
                   ]
                 : (layout == 'card_rounded'
-                    ? [
-                        BoxShadow(
-                          color: Colors.black
-                              .withValues(alpha: isDark ? 0.30 : 0.05),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ]
-                    : null),
+                      ? [
+                          BoxShadow(
+                            color: Colors.black.withValues(
+                              alpha: isDark ? 0.30 : 0.05,
+                            ),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ]
+                      : null),
             border: layout == 'normal'
                 ? Border(
                     bottom: BorderSide(
-                        color: theme.dividerColor.withValues(alpha: 0.3),
-                        width: 0.8))
+                      color: theme.dividerColor.withValues(alpha: 0.3),
+                      width: 0.8,
+                    ),
+                  )
                 : null,
           ),
           padding: const EdgeInsets.all(12),
@@ -624,8 +681,7 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   const AppAvatar(
-                    url:
-                        'https://tvax1.sinaimg.cn/crop.0.0.1080.1080.180/006ZdyPily8h1r6z14w3zj30u00u0dhm.jpg',
+                    url: 'https://tvax1.sinaimg.cn/crop.0.0.1080.1080.180/006ZdyPily8h1r6z14w3zj30u00u0dhm.jpg',
                     size: 38,
                     name: 'Caij',
                     verified: true,
@@ -641,21 +697,27 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                             const Text(
                               'Caij',
                               style: TextStyle(
-                                  fontWeight: FontWeight.bold, fontSize: 14),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
                             ),
                             if (style.showRemarkAndName) ...[
                               const SizedBox(width: 4),
                               Text(
                                 '(小蔡)',
                                 style: TextStyle(
-                                    color: colorScheme.onSurfaceVariant,
-                                    fontSize: 12),
+                                  color: colorScheme.onSurfaceVariant,
+                                  fontSize: 12,
+                                ),
                               ),
                             ],
                             if (style.showUserActivityIcon) ...[
                               const SizedBox(width: 4),
-                              Icon(Icons.verified,
-                                  size: 14, color: colorScheme.primary),
+                              Icon(
+                                Icons.verified,
+                                size: 14,
+                                color: colorScheme.primary,
+                              ),
                             ],
                           ],
                         ),
@@ -664,8 +726,9 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                           '刚刚'
                           '${style.showIpLocationMode != 'none' ? ' · 北京' : ''}',
                           style: TextStyle(
-                              color: colorScheme.onSurfaceVariant,
-                              fontSize: 11),
+                            color: colorScheme.onSurfaceVariant,
+                            fontSize: 11,
+                          ),
                         ),
                       ],
                     ),
@@ -710,8 +773,9 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
 
               // 3 张真实照片九宫格网格预览 (1大2小组合)
               ClipRRect(
-                borderRadius:
-                    BorderRadius.circular(style.roundedImageCorners ? 8 : 0),
+                borderRadius: BorderRadius.circular(
+                  style.roundedImageCorners ? 8 : 0,
+                ),
                 child: SizedBox(
                   height: style.largeImageMode ? 140 : 100,
                   child: Row(
@@ -721,7 +785,8 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                         flex: 5,
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(
-                              style.roundedImageCorners ? 6 : 0),
+                            style.roundedImageCorners ? 6 : 0,
+                          ),
                           child: ExtendedImage.network(
                             'https://picsum.photos/id/1015/600/400',
                             fit: BoxFit.cover,
@@ -735,8 +800,11 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                                       ? const Color(0xFF2C2D35)
                                       : colorScheme.surfaceContainerHigh,
                                   child: Center(
-                                    child: Icon(Icons.image_outlined,
-                                        color: colorScheme.primary, size: 28),
+                                    child: Icon(
+                                      Icons.image_outlined,
+                                      color: colorScheme.primary,
+                                      size: 28,
+                                    ),
                                   ),
                                 );
                               }
@@ -754,7 +822,8 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                             Expanded(
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(
-                                    style.roundedImageCorners ? 6 : 0),
+                                  style.roundedImageCorners ? 6 : 0,
+                                ),
                                 child: ExtendedImage.network(
                                   'https://picsum.photos/id/1018/400/300',
                                   fit: BoxFit.cover,
@@ -768,9 +837,11 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                                             ? const Color(0xFF2C2D35)
                                             : colorScheme.surfaceContainerHigh,
                                         child: Center(
-                                          child: Icon(Icons.image_outlined,
-                                              color: colorScheme.secondary,
-                                              size: 20),
+                                          child: Icon(
+                                            Icons.image_outlined,
+                                            color: colorScheme.secondary,
+                                            size: 20,
+                                          ),
                                         ),
                                       );
                                     }
@@ -783,7 +854,8 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                             Expanded(
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(
-                                    style.roundedImageCorners ? 6 : 0),
+                                  style.roundedImageCorners ? 6 : 0,
+                                ),
                                 child: ExtendedImage.network(
                                   'https://picsum.photos/id/1025/400/300',
                                   fit: BoxFit.cover,
@@ -797,9 +869,11 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                                             ? const Color(0xFF2C2D35)
                                             : colorScheme.surfaceContainerHigh,
                                         child: Center(
-                                          child: Icon(Icons.image_outlined,
-                                              color: colorScheme.tertiary,
-                                              size: 20),
+                                          child: Icon(
+                                            Icons.image_outlined,
+                                            color: colorScheme.tertiary,
+                                            size: 20,
+                                          ),
                                         ),
                                       );
                                     }
@@ -821,17 +895,32 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  Icon(Icons.repeat_rounded,
-                      size: 18, color: colorScheme.onSurfaceVariant),
-                  Icon(Icons.chat_bubble_outline_rounded,
-                      size: 18, color: colorScheme.onSurfaceVariant),
-                  Icon(Icons.favorite_border_rounded,
-                      size: 18, color: colorScheme.onSurfaceVariant),
-                  Icon(Icons.star_border_rounded,
-                      size: 18, color: colorScheme.onSurfaceVariant),
+                  Icon(
+                    Icons.repeat_rounded,
+                    size: 18,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  Icon(
+                    Icons.chat_bubble_outline_rounded,
+                    size: 18,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  Icon(
+                    Icons.favorite_border_rounded,
+                    size: 18,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  Icon(
+                    Icons.star_border_rounded,
+                    size: 18,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                   if (style.showMenuAtBottom)
-                    Icon(Icons.more_horiz_rounded,
-                        size: 18, color: colorScheme.onSurfaceVariant),
+                    Icon(
+                      Icons.more_horiz_rounded,
+                      size: 18,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
                 ],
               ),
             ],
@@ -852,7 +941,10 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
 
   // 对话框：微博背景布局 (5 种选项)
   void _showCardLayoutDialog(
-      BuildContext context, WidgetRef ref, String current) {
+    BuildContext context,
+    WidgetRef ref,
+    String current,
+  ) {
     final options = [
       {'key': 'normal', 'title': '普通布局'},
       {'key': 'floating_rect', 'title': '浮动直角卡片布局'},
@@ -883,8 +975,9 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                     child: Text(
                       opt['title']!,
                       style: TextStyle(
-                        fontWeight:
-                            isSelected ? FontWeight.bold : FontWeight.normal,
+                        fontWeight: isSelected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                         color: isSelected
                             ? Theme.of(context).colorScheme.primary
                             : null,
@@ -892,8 +985,11 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                     ),
                   ),
                   if (isSelected)
-                    Icon(Icons.check_rounded,
-                        color: Theme.of(context).colorScheme.primary, size: 18),
+                    Icon(
+                      Icons.check_rounded,
+                      color: Theme.of(context).colorScheme.primary,
+                      size: 18,
+                    ),
                 ],
               ),
             ),
@@ -905,7 +1001,10 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
 
   // 对话框：字体大小调节
   void _showFontSizeDialog(
-      BuildContext context, WidgetRef ref, double current) {
+    BuildContext context,
+    WidgetRef ref,
+    double current,
+  ) {
     final sizes = [13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0];
     showAppDialog(
       context: context,
@@ -918,10 +1017,12 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
               ref.read(weiboStyleProvider.notifier).setWeiboFontSize(s);
               Navigator.pop(ctx);
             },
-            child: Text('${s.toInt()} pt',
-                style: TextStyle(
-                    fontWeight:
-                        s == current ? FontWeight.bold : FontWeight.normal)),
+            child: Text(
+              '${s.toInt()} pt',
+              style: TextStyle(
+                fontWeight: s == current ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
           );
         }).toList(),
       ),
@@ -930,7 +1031,10 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
 
   // 对话框：字体间距(倍数)
   void _showFontLineHeightDialog(
-      BuildContext context, WidgetRef ref, double current) {
+    BuildContext context,
+    WidgetRef ref,
+    double current,
+  ) {
     final heights = [1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7];
     showAppDialog(
       context: context,
@@ -943,11 +1047,14 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
               ref.read(weiboStyleProvider.notifier).setWeiboFontLineHeight(h);
               Navigator.pop(ctx);
             },
-            child: Text('${h.toStringAsFixed(1)} 倍',
-                style: TextStyle(
-                    fontWeight: (h - current).abs() < 0.05
-                        ? FontWeight.bold
-                        : FontWeight.normal)),
+            child: Text(
+              '${h.toStringAsFixed(1)} 倍',
+              style: TextStyle(
+                fontWeight: (h - current).abs() < 0.05
+                    ? FontWeight.bold
+                    : FontWeight.normal,
+              ),
+            ),
           );
         }).toList(),
       ),
@@ -956,7 +1063,10 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
 
   // 对话框：IP 位置显示模式
   void _showIpLocationDialog(
-      BuildContext context, WidgetRef ref, String current) {
+    BuildContext context,
+    WidgetRef ref,
+    String current,
+  ) {
     showAppDialog(
       context: context,
       builder: (ctx) => SimpleDialog(
@@ -970,11 +1080,14 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                   .setShowIpLocationMode('all');
               Navigator.pop(ctx);
             },
-            child: Text('列表和详情都显示',
-                style: TextStyle(
-                    fontWeight: current == 'all'
-                        ? FontWeight.bold
-                        : FontWeight.normal)),
+            child: Text(
+              '列表和详情都显示',
+              style: TextStyle(
+                fontWeight: current == 'all'
+                    ? FontWeight.bold
+                    : FontWeight.normal,
+              ),
+            ),
           ),
           SimpleDialogOption(
             onPressed: () {
@@ -984,11 +1097,14 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                   .setShowIpLocationMode('detail_only');
               Navigator.pop(ctx);
             },
-            child: Text('仅详情显示',
-                style: TextStyle(
-                    fontWeight: current == 'detail_only'
-                        ? FontWeight.bold
-                        : FontWeight.normal)),
+            child: Text(
+              '仅详情显示',
+              style: TextStyle(
+                fontWeight: current == 'detail_only'
+                    ? FontWeight.bold
+                    : FontWeight.normal,
+              ),
+            ),
           ),
           SimpleDialogOption(
             onPressed: () {
@@ -998,11 +1114,14 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                   .setShowIpLocationMode('none');
               Navigator.pop(ctx);
             },
-            child: Text('不显示',
-                style: TextStyle(
-                    fontWeight: current == 'none'
-                        ? FontWeight.bold
-                        : FontWeight.normal)),
+            child: Text(
+              '不显示',
+              style: TextStyle(
+                fontWeight: current == 'none'
+                    ? FontWeight.bold
+                    : FontWeight.normal,
+              ),
+            ),
           ),
         ],
       ),

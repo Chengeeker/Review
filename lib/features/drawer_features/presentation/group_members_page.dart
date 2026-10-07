@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/network/weibo_dio_client.dart';
 import '../../../core/widgets/app_avatar.dart';
@@ -142,7 +143,7 @@ class _GroupMembersPageState extends ConsumerState<GroupMembersPage> {
     final countDisplay = widget.totalMemberCount > 0 ? widget.totalMemberCount : _allMembers.length;
 
     return Scaffold(
-      appBar: AppBar(
+      appBar: ReviewFrostedAppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
