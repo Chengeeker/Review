@@ -156,6 +156,8 @@ class LinkRoutingService {
     BuildContext context,
     String rawUrl, {
     String? title,
+    String? sourceAuthorId,
+    String? sourceAuthorAvatar,
     bool replaceCurrent = false,
   }) {
     final clean = normalizeOfficialUrl(rawUrl);
@@ -167,7 +169,12 @@ class LinkRoutingService {
     if (articleId != null) {
       _navigate(
         context,
-        WeiboArticlePage(articleId: articleId, title: title),
+        WeiboArticlePage(
+          articleId: articleId,
+          title: title,
+          sourceAuthorId: sourceAuthorId,
+          sourceAuthorAvatar: sourceAuthorAvatar,
+        ),
         replace: replaceCurrent,
       );
       return;

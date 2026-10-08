@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/api_constants.dart';
@@ -56,6 +58,13 @@ class PollVoteResult {
     this.poll,
     this.message,
   });
+}
+
+class FollowActionResult {
+  final bool success;
+  final String? message;
+
+  const FollowActionResult({required this.success, this.message});
 }
 
 class UserGroupsResult {
@@ -522,6 +531,60 @@ class FeedRepository {
       } catch (_) {}
     }
 
+    // 方案 3: 移动端关注流通道 (GET https://m.weibo.cn/feed/friends) - 桌面端无内容或使用移动端会话时回退
+    final mobileCookie = _storage.getMobileCookie()?.trim() ?? '';
+    final storedFull = _storage.getFullCookie()?.trim() ?? '';
+    final hasSession = _storage.isLoggedIn() ||
+        mobileCookie.isNotEmpty ||
+        storedFull.isNotEmpty;
+
+    if (hasSession) {
+      try {
+        final mResponse = await _client.dio.get(
+          'https://m.weibo.cn/feed/friends',
+          queryParameters: {
+            'page': page,
+            if (maxId != '0' && maxId.isNotEmpty) 'max_id': maxId,
+            if (sinceId != '0' && sinceId.isNotEmpty) 'since_id': sinceId,
+          },
+          options: Options(
+            headers: {
+              'Referer': 'https://m.weibo.cn/',
+              'User-Agent':
+                  'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+              'Accept': 'application/json, text/plain, */*',
+              'X-Requested-With': 'XMLHttpRequest',
+            },
+            extra: {'weiboMobileLogin': true},
+          ),
+        );
+        if (mResponse.data is Map) {
+          final data = mResponse.data as Map;
+          final inner = data['data'];
+          final rawStatuses = (inner is Map && inner['statuses'] is List)
+              ? inner['statuses'] as List
+              : (data['statuses'] is List ? data['statuses'] as List : []);
+          final statuses = await _parseStatuses(
+            rawStatuses,
+            resolveLongText: true,
+          );
+          if (statuses.isNotEmpty) {
+            final nextMaxId = (inner is Map ? inner['max_id'] : null)?.toString() ??
+                data['max_id']?.toString() ??
+                statuses.last.id;
+            return TimelineResult(
+              statuses: statuses,
+              maxId: nextMaxId,
+              sinceId: (inner is Map ? inner['since_id'] : null)?.toString() ??
+                  data['since_id']?.toString() ??
+                  '0',
+              hasMore: true,
+            );
+          }
+        }
+      } catch (_) {}
+    }
+
     // Fallback: If not logged in or in visitor mode, fallback to hot timeline
     final fullCookie = _storage.getFullCookie();
     if (fullCookie == null || fullCookie.isEmpty) {
@@ -838,149 +901,425 @@ class FeedRepository {
     return null;
   }
 
-  Future<bool> setLike(String mid) async {
-    try {
-      final res = await _client.dio.post(
-        ApiConstants.setLike,
-        data: {'id': mid},
-        options: Options(
-          headers: {
-            'Referer': 'https://weibo.com/',
-          },
-        ),
+  bool _useMobileSession(StorageService storage) {
+    final desktopCookie = storage.getDesktopCookie()?.trim() ?? '';
+    final mobileCookie = storage.getMobileCookie()?.trim() ?? '';
+    return desktopCookie.isEmpty && mobileCookie.isNotEmpty;
+  }
+
+  String _resolveSessionCookie(StorageService storage, {required bool useMobileSession}) {
+    final desktopCookie = storage.getDesktopCookie()?.trim() ?? '';
+    final mobileCookie = storage.getMobileCookie()?.trim() ?? '';
+    final fullCookie = storage.getFullCookie()?.trim() ?? '';
+    return useMobileSession
+        ? mobileCookie
+        : desktopCookie.isNotEmpty
+        ? desktopCookie
+        : fullCookie;
+  }
+
+  Future<String?> _resolveXsrfToken(String sessionCookie, {required bool useMobileSession}) async {
+    var xsrf = WeiboDioClient.extractXsrfToken(sessionCookie);
+    if (xsrf == null || xsrf.isEmpty || xsrf == 'deleted') {
+      xsrf = await _client.ensureXsrfToken(
+        forceRefresh: true,
+        customCookie: sessionCookie,
+        mobileSession: useMobileSession,
       );
-      return res.data?['ok'] == 1 || res.data?['id'] != null;
+    }
+    return xsrf;
+  }
+
+  Future<bool> setLike(String mid) => setLikeState(mid, like: true);
+
+  Future<bool> cancelLike(String mid) => setLikeState(mid, like: false);
+
+  Future<bool> toggleLike(String mid, {required bool currentlyLiked}) =>
+      setLikeState(mid, like: !currentlyLiked);
+
+  Future<bool> setLikeState(String mid, {required bool like}) async {
+    final numericMid = WeiboStatusModel.mblogidToMid(mid.trim());
+    if (numericMid.isEmpty) return false;
+
+    final storage = _client.storageService;
+    final useMobile = _useMobileSession(storage);
+    final sessionCookie = _resolveSessionCookie(storage, useMobileSession: useMobile);
+    if (sessionCookie.isEmpty) return false;
+
+    final xsrf = await _resolveXsrfToken(sessionCookie, useMobileSession: useMobile);
+
+    const mobileUserAgent =
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
+
+    try {
+      final response = useMobile
+          ? await _client.dio.post(
+              'https://m.weibo.cn/api/attitudes/${like ? 'create' : 'destroy'}',
+              data:
+                  'id=${Uri.encodeQueryComponent(numericMid)}&attitude=heart&st=${Uri.encodeQueryComponent(xsrf ?? '')}',
+              options: Options(
+                contentType: Headers.formUrlEncodedContentType,
+                headers: {
+                  'Referer': 'https://m.weibo.cn/detail/$numericMid',
+                  'User-Agent': mobileUserAgent,
+                },
+                extra: {
+                  'weiboMobileLogin': true,
+                  if (xsrf != null) 'weiboXsrfToken': xsrf,
+                },
+              ),
+            )
+          : await _client.dio.post(
+              like ? ApiConstants.setLike : ApiConstants.cancelLike,
+              data: {'id': numericMid},
+              options: Options(
+                headers: {
+                  'Referer': 'https://weibo.com/',
+                  'Origin': 'https://weibo.com',
+                },
+                extra: {
+                  if (xsrf != null) 'weiboXsrfToken': xsrf,
+                },
+              ),
+            );
+
+      final data = response.data;
+      if (data is Map) {
+        if (data['ok'] == 1 || data['ok'] == true) return true;
+        if (like && (data['id'] != null || data['data'] != null)) return true;
+        if (!like && (data['result'] == true || data['result'] == 1)) return true;
+        final msg = data['msg']?.toString() ?? data['message']?.toString() ?? '';
+        if (msg.contains('成功') ||
+            (like && msg.contains('已赞')) ||
+            (!like && (msg.contains('取消') || msg.contains('未赞')))) {
+          return true;
+        }
+      }
+      return false;
     } catch (_) {
       return false;
     }
   }
 
-  Future<bool> cancelLike(String mid) async {
-    try {
-      final res = await _client.dio.post(
-        ApiConstants.cancelLike,
-        data: {'id': mid},
-        options: Options(
-          headers: {
-            'Referer': 'https://weibo.com/',
-          },
-        ),
-      );
-      return res.data?['ok'] == 1 || res.data?['result'] == true;
-    } catch (_) {
-      return false;
-    }
-  }
+  Future<bool> createFavorite(String mid) =>
+      setFavoriteState(mid, favorite: true);
 
-  Future<bool> toggleLike(String mid, {required bool currentlyLiked}) async {
-    if (currentlyLiked) {
-      return cancelLike(mid);
-    } else {
-      return setLike(mid);
-    }
-  }
-
-  Future<bool> createFavorite(String mid) async {
-    try {
-      final res = await _client.dio.post(
-        ApiConstants.createFavorites,
-        data: {'id': mid},
-        options: Options(
-          headers: {
-            'Referer': 'https://weibo.com/',
-          },
-        ),
-      );
-      return res.data?['ok'] == 1 || res.data?['status'] != null;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<bool> destroyFavorite(String mid) async {
-    try {
-      final res = await _client.dio.post(
-        ApiConstants.destroyFavorites,
-        data: {'id': mid},
-        options: Options(
-          headers: {
-            'Referer': 'https://weibo.com/',
-          },
-        ),
-      );
-      return res.data?['ok'] == 1 || res.data?['status'] != null;
-    } catch (_) {
-      return false;
-    }
-  }
+  Future<bool> destroyFavorite(String mid) =>
+      setFavoriteState(mid, favorite: false);
 
   Future<bool> toggleFavorite(String mid,
-      {required bool currentlyFavorited}) async {
-    if (currentlyFavorited) {
-      return destroyFavorite(mid);
-    } else {
-      return createFavorite(mid);
+      {required bool currentlyFavorited}) =>
+      setFavoriteState(mid, favorite: !currentlyFavorited);
+
+  Future<bool> setFavoriteState(String mid, {required bool favorite}) async {
+    final numericMid = WeiboStatusModel.mblogidToMid(mid.trim());
+    if (numericMid.isEmpty) return false;
+
+    final storage = _client.storageService;
+    final useMobile = _useMobileSession(storage);
+    final sessionCookie = _resolveSessionCookie(storage, useMobileSession: useMobile);
+    if (sessionCookie.isEmpty) return false;
+
+    final xsrf = await _resolveXsrfToken(sessionCookie, useMobileSession: useMobile);
+
+    const mobileUserAgent =
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
+
+    try {
+      final response = useMobile
+          ? await _client.dio.post(
+              'https://m.weibo.cn/api/favorites/${favorite ? 'create' : 'destory'}',
+              data:
+                  'id=${Uri.encodeQueryComponent(numericMid)}&st=${Uri.encodeQueryComponent(xsrf ?? '')}',
+              options: Options(
+                contentType: Headers.formUrlEncodedContentType,
+                headers: {
+                  'Referer': 'https://m.weibo.cn/',
+                  'User-Agent': mobileUserAgent,
+                },
+                extra: {
+                  'weiboMobileLogin': true,
+                  if (xsrf != null) 'weiboXsrfToken': xsrf,
+                },
+              ),
+            )
+          : await _client.dio.post(
+              favorite
+                  ? ApiConstants.createFavorites
+                  : ApiConstants.destroyFavorites,
+              data: {'id': numericMid},
+              options: Options(
+                headers: {
+                  'Referer': 'https://weibo.com/',
+                  'Origin': 'https://weibo.com',
+                },
+                extra: {
+                  if (xsrf != null) 'weiboXsrfToken': xsrf,
+                },
+              ),
+            );
+
+      final data = response.data;
+      if (data is Map) {
+        if (data['ok'] == 1 || data['ok'] == true) return true;
+        if (data['status'] != null || data['data'] != null) return true;
+        final msg = data['msg']?.toString() ?? data['message']?.toString() ?? '';
+        if (msg.contains('成功') ||
+            (favorite && msg.contains('已收藏')) ||
+            (!favorite && (msg.contains('取消') || msg.contains('未收藏')))) {
+          return true;
+        }
+      }
+      return false;
+    } catch (_) {
+      return false;
     }
   }
 
   /// Delete status by MID
   Future<bool> deleteTweet(String mid) async {
+    final numericMid = WeiboStatusModel.mblogidToMid(mid.trim());
+    if (numericMid.isEmpty) return false;
+
+    final storage = _client.storageService;
+    final useMobile = _useMobileSession(storage);
+    final sessionCookie = _resolveSessionCookie(storage, useMobileSession: useMobile);
+    if (sessionCookie.isEmpty) return false;
+
+    final xsrf = await _resolveXsrfToken(sessionCookie, useMobileSession: useMobile);
+
+    const mobileUserAgent =
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
+
     try {
-      final res = await _client.dio.post(
-        '/ajax/statuses/destroy',
-        data: {'id': mid},
-        options: Options(
-          headers: {
-            'Referer': 'https://weibo.com/',
-          },
-        ),
-      );
-      return res.data?['ok'] == 1 || res.data?['id'] != null;
+      final response = useMobile
+          ? await _client.dio.post(
+              'https://m.weibo.cn/profile/delMyblog',
+              data:
+                  'mid=${Uri.encodeQueryComponent(numericMid)}&st=${Uri.encodeQueryComponent(xsrf ?? '')}',
+              options: Options(
+                contentType: Headers.formUrlEncodedContentType,
+                headers: {
+                  'Referer': 'https://m.weibo.cn/',
+                  'User-Agent': mobileUserAgent,
+                },
+                extra: {
+                  'weiboMobileLogin': true,
+                  if (xsrf != null) 'weiboXsrfToken': xsrf,
+                },
+              ),
+            )
+          : await _client.dio.post(
+              '/ajax/statuses/destroy',
+              data: {'id': numericMid},
+              options: Options(
+                headers: {
+                  'Referer': 'https://weibo.com/',
+                  'Origin': 'https://weibo.com',
+                },
+                extra: {
+                  if (xsrf != null) 'weiboXsrfToken': xsrf,
+                },
+              ),
+            );
+
+      final data = response.data;
+      if (data is Map) {
+        if (data['ok'] == 1 || data['ok'] == true) return true;
+        if (data['id'] != null) return true;
+        final msg = data['msg']?.toString() ?? data['message']?.toString() ?? '';
+        if (msg.contains('成功') || msg.contains('删除')) return true;
+      }
+      return false;
     } catch (_) {
       return false;
     }
   }
 
-  /// Unfollow user by UID (支持多路直连)
-  Future<bool> unfollowUser(String uid) async {
-    if (uid.isEmpty) return false;
-    // 1. Desktop Ajax endpoint
-    try {
-      final res = await _client.dio.post(
-        ApiConstants.destroyFollow,
-        data: {'uid': uid},
-        options: Options(
-          headers: {
-            'Referer': 'https://weibo.com/u/$uid',
-          },
-        ),
-      );
-      if (res.data is Map) {
-        final ok = res.data['ok'] == 1 ||
-            res.data['result'] == true ||
-            res.data['status'] == 1;
-        if (ok) return true;
-      }
-    } catch (_) {}
+  Future<FollowActionResult> followUser(String uid) =>
+      setFollowState(uid, follow: true);
 
-    // 2. Mobile REST fallback
-    try {
-      final res = await _client.dio.post(
-        'https://m.weibo.cn/api/friendships/destory',
-        data: {'uid': uid},
-        options: Options(
-          contentType: Headers.formUrlEncodedContentType,
-          headers: {
-            'Referer': 'https://m.weibo.cn/profile/$uid',
-          },
-        ),
-      );
-      if (res.data is Map) {
-        return res.data['ok'] == 1 || res.data['result'] == true;
-      }
-    } catch (_) {}
+  Future<FollowActionResult> unfollowUser(String uid) =>
+      setFollowState(uid, follow: false);
 
+  /// Use the endpoint matching the verified session scope. A native login may
+  /// be mobile-only until desktop SSO catches up; never send that Cookie to the
+  /// desktop endpoint as though it were a verified desktop session.
+  Future<FollowActionResult> setFollowState(
+    String uid, {
+    required bool follow,
+  }) async {
+    final targetUid = uid.trim();
+    if (!RegExp(r'^\d+$').hasMatch(targetUid)) {
+      return const FollowActionResult(
+        success: false,
+        message: '用户编号无效，无法执行关注操作',
+      );
+    }
+
+    final storage = _client.storageService;
+    final desktopCookie = storage.getDesktopCookie()?.trim() ?? '';
+    final mobileCookie = storage.getMobileCookie()?.trim() ?? '';
+    final fullCookie = storage.getFullCookie()?.trim() ?? '';
+    final useMobileSession = desktopCookie.isEmpty && mobileCookie.isNotEmpty;
+    final sessionCookie = useMobileSession
+        ? mobileCookie
+        : desktopCookie.isNotEmpty
+        ? desktopCookie
+        : fullCookie;
+    if (sessionCookie.isEmpty) {
+      return const FollowActionResult(
+        success: false,
+        message: '未找到可用的微博会话，请重新登录后重试',
+      );
+    }
+
+    var xsrf = WeiboDioClient.extractXsrfToken(sessionCookie);
+    if (xsrf == null || xsrf.isEmpty || xsrf == 'deleted') {
+      xsrf = await _client.ensureXsrfToken(
+        forceRefresh: true,
+        customCookie: sessionCookie,
+        mobileSession: useMobileSession,
+      );
+    }
+    if (xsrf == null || xsrf.isEmpty || xsrf == 'deleted') {
+      return const FollowActionResult(
+        success: false,
+        message: '微博验证令牌获取失败，请稍后重试',
+      );
+    }
+
+    try {
+      final response = useMobileSession
+          ? await _client.dio.post(
+              'https://m.weibo.cn/api/friendships/${follow ? 'create' : 'destory'}',
+              data:
+                  'uid=${Uri.encodeQueryComponent(targetUid)}&st=${Uri.encodeQueryComponent(xsrf)}',
+              options: Options(
+                contentType: Headers.formUrlEncodedContentType,
+                headers: {
+                  'Referer': 'https://m.weibo.cn/u/$targetUid',
+                  'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+                },
+                extra: {'weiboMobileLogin': true, 'weiboXsrfToken': xsrf},
+              ),
+            )
+          : await _client.dio.post(
+              follow ? ApiConstants.followUser : ApiConstants.destroyFollow,
+              data: {'uid': targetUid},
+              options: Options(
+                headers: {
+                  'Referer': 'https://weibo.com/u/$targetUid',
+                  'Origin': 'https://weibo.com',
+                },
+                extra: {'weiboXsrfToken': xsrf},
+              ),
+            );
+
+      if (_isFollowActionSuccess(response.data, follow: follow)) {
+        return const FollowActionResult(success: true);
+      }
+      return FollowActionResult(
+        success: false,
+        message:
+            _followActionMessage(response.data) ??
+            '微博未确认${follow ? '关注' : '取消关注'}操作成功',
+      );
+    } on DioException catch (error) {
+      final serverMessage = _followActionMessage(error.response?.data);
+      if (serverMessage != null) {
+        return FollowActionResult(success: false, message: serverMessage);
+      }
+      final status = error.response?.statusCode;
+      if (status != null) {
+        return FollowActionResult(
+          success: false,
+          message: '微博接口请求失败（HTTP $status）',
+        );
+      }
+      final timedOut =
+          error.type == DioExceptionType.connectionTimeout ||
+          error.type == DioExceptionType.sendTimeout ||
+          error.type == DioExceptionType.receiveTimeout;
+      return FollowActionResult(
+        success: false,
+        message: timedOut ? '微博接口请求超时，请稍后重试' : '微博接口连接失败，请检查网络',
+      );
+    } catch (_) {
+      return const FollowActionResult(
+        success: false,
+        message: '微博关注操作失败，请稍后重试',
+      );
+    }
+  }
+
+  bool _isFollowActionSuccess(dynamic rawData, {required bool follow}) {
+    dynamic data = rawData;
+    if (data is String) {
+      try {
+        data = jsonDecode(data);
+      } catch (_) {
+        return _followMessageConfirmsState(data, follow: follow);
+      }
+    }
+    if (data is! Map) return false;
+    for (final candidate in [data, if (data['data'] is Map) data['data']]) {
+      if (candidate['ok'] == 1 || candidate['ok'] == true) return true;
+      if (candidate['code'] == 100000 || candidate['code'] == '100000') {
+        return true;
+      }
+      if (candidate['result'] == 1 || candidate['result'] == true) return true;
+      if (candidate['status'] == 1 || candidate['status'] == true) return true;
+      if (candidate['ok'] == 0 || candidate['ok'] == false) return false;
+
+      if (candidate['id'] != null ||
+          candidate['idstr'] != null ||
+          candidate['screen_name'] != null) {
+        if (candidate.containsKey('following')) {
+          return candidate['following'] == follow;
+        }
+        return true;
+      }
+      if (_followMessageConfirmsState(
+        _followActionMessage(candidate) ?? '',
+        follow: follow,
+      )) {
+        return true;
+      }
+    }
     return false;
+  }
+
+  bool _followMessageConfirmsState(String message, {required bool follow}) {
+    final normalized = message.trim();
+    if (normalized.isEmpty ||
+        normalized.contains('失败') ||
+        normalized.contains('未成功') ||
+        normalized.contains('错误')) {
+      return false;
+    }
+    if (normalized.contains('取消关注') || normalized.contains('已取消')) {
+      return !follow;
+    }
+    return follow
+        ? normalized.contains('关注成功') || normalized.contains('已关注')
+        : normalized.contains('取消成功');
+  }
+
+  String? _followActionMessage(dynamic data) {
+    if (data is! Map) return null;
+    final message =
+        (data['msg'] ??
+                data['errmsg'] ??
+                data['error_description'] ??
+                data['message'] ??
+                data['error'])
+            ?.toString()
+            .trim();
+    if (message != null && message.isNotEmpty) return message;
+    final inner = data['data'];
+    if (inner is Map) return _followActionMessage(inner);
+    return null;
   }
 }
 

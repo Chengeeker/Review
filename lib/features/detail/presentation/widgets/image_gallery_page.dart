@@ -317,6 +317,8 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
   bool _thumbnailUserScrolling = false;
   bool _thumbnailSettling = false;
   int _thumbnailSyncEpoch = 0;
+  double _videoBottomControlsHeight = 0;
+  double? _thumbnailScrollBottom;
 
   // Live Photo Controller Cache
   final Map<int, VideoPlayerController> _liveControllers = {};
@@ -630,10 +632,24 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
   }
 
   void _toggleChrome() {
-    if (!mounted) return;
-    final showChrome = !_showChrome;
-    setState(() => _showChrome = showChrome);
-    _setSystemStatusBarVisible(showChrome);
+    _setChromeVisible(!_showChrome);
+  }
+
+  void _setChromeVisible(bool visible) {
+    if (!mounted || _showChrome == visible) return;
+    setState(() => _showChrome = visible);
+    _setSystemStatusBarVisible(visible);
+  }
+
+  double get _thumbnailBottom =>
+      _thumbnailScrollBottom ??
+      (widget.pics[_currentIndex].isVideo && _videoBottomControlsHeight > 0
+          ? _videoBottomControlsHeight + 8
+          : MediaQuery.paddingOf(context).bottom + 32);
+
+  void _setVideoBottomControlsHeight(double height) {
+    if (!mounted || _videoBottomControlsHeight == height) return;
+    setState(() => _videoBottomControlsHeight = height);
   }
 
   void _handleGalleryTap(TapUpDetails details) {
@@ -711,6 +727,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
       ]).whenComplete(() {
         if (!mounted || epoch != _thumbnailSyncEpoch) return;
         _thumbnailSettling = false;
+        setState(() => _thumbnailScrollBottom = null);
         _activateCurrentMedia();
       }),
     );
@@ -734,6 +751,8 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
     if (notification.depth != 0) return false;
     if (notification is ScrollStartNotification &&
         notification.dragDetails != null) {
+      // The reel must stay under the finger while paging unloads the player.
+      _thumbnailScrollBottom = _thumbnailBottom;
       _thumbnailSyncEpoch++;
       _thumbnailSettling = false;
       _thumbnailUserScrolling = true;
@@ -773,6 +792,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                 onTap: () {
                   HapticFeedbackUtil.light();
                   _thumbnailSyncEpoch++;
+                  _thumbnailScrollBottom = null;
                   _thumbnailUserScrolling = false;
                   _thumbnailSettling = false;
                   _thumbnailController.jumpToPage(index);
@@ -858,6 +878,9 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                 onNotification: (notification) {
                   if (notification.depth == 0 &&
                       notification.dragDetails != null) {
+                    if (_thumbnailScrollBottom != null) {
+                      setState(() => _thumbnailScrollBottom = null);
+                    }
                     _thumbnailSyncEpoch++;
                     _thumbnailUserScrolling = false;
                     _thumbnailSettling = false;
@@ -916,6 +939,10 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                                 authorName: widget.authorName,
                                 embedded: true,
                                 onToggleChrome: _toggleChrome,
+                                onFullscreenChanged: (isFullscreen) =>
+                                    _setChromeVisible(!isFullscreen),
+                                onBottomControlsHeightChanged:
+                                    _setVideoBottomControlsHeight,
                               )
                             : ExtendedImage.network(
                                 pic.previewUrl,
@@ -1070,7 +1097,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
               Positioned(
                 left: 12,
                 right: 12,
-                bottom: MediaQuery.paddingOf(context).bottom + 32,
+                bottom: _thumbnailBottom,
                 child: Visibility(
                   visible: _showChrome,
                   maintainState: true,

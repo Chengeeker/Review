@@ -1120,16 +1120,48 @@ class _ComposeTweetPageState extends ConsumerState<ComposeTweetPage> {
         }
       } else {
         // Standard new tweet post
-        final response = await client.dio.post(
-          '/ajax/statuses/update',
-          data: postPayload,
-          options: Options(
-            contentType: Headers.formUrlEncodedContentType,
-            headers: {'Referer': 'https://weibo.com/'},
-          ),
-        );
+        dynamic postData;
+        try {
+          final response = await client.dio.post(
+            '/ajax/statuses/update',
+            data: postPayload,
+            options: Options(
+              contentType: Headers.formUrlEncodedContentType,
+              headers: {'Referer': 'https://weibo.com/'},
+            ),
+          );
+          postData = response.data;
+        } catch (_) {}
 
-        if (_isPublishSuccess(response.data)) {
+        // Fallback: Mobile endpoint m.weibo.cn/api/statuses/update
+        if (!_isPublishSuccess(postData)) {
+          try {
+            final st = await client.ensureXsrfToken(mobileSession: true) ?? '';
+            final mobilePayload = <String, dynamic>{
+              'content': finalContent,
+              if (st.isNotEmpty) 'st': st,
+              if (pids.isNotEmpty) 'picId': pids.join(','),
+            };
+            final mResponse = await client.dio.post(
+              'https://m.weibo.cn/api/statuses/update',
+              data: mobilePayload,
+              options: Options(
+                contentType: Headers.formUrlEncodedContentType,
+                headers: {
+                  'Referer': 'https://m.weibo.cn/',
+                  'User-Agent':
+                      'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+                  'X-Requested-With': 'XMLHttpRequest',
+                  if (st.isNotEmpty) 'X-XSRF-TOKEN': st,
+                },
+                extra: {'weiboMobileLogin': true},
+              ),
+            );
+            postData = mResponse.data;
+          } catch (_) {}
+        }
+
+        if (_isPublishSuccess(postData)) {
           if (mounted) {
             AppToast.show(context, '🎉 微博发布成功！');
             ref.read(feedControllerProvider.notifier).refreshFeed();

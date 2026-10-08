@@ -1,6 +1,164 @@
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show PredictiveBackEvent;
 
 import '../utils/haptic_feedback_util.dart';
+
+const _stackedPageTransition = _StackedPageTransitionsBuilder();
+const _reviewPageTransitionsTheme = PageTransitionsTheme(
+  builders: {
+    TargetPlatform.android: _stackedPageTransition,
+    TargetPlatform.fuchsia: _stackedPageTransition,
+    TargetPlatform.linux: _stackedPageTransition,
+    TargetPlatform.macOS: _stackedPageTransition,
+    TargetPlatform.windows: _stackedPageTransition,
+    TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+  },
+);
+
+class _StackedPageTransitionsBuilder extends PageTransitionsBuilder {
+  const _StackedPageTransitionsBuilder();
+
+  @override
+  Duration get transitionDuration => const Duration(milliseconds: 320);
+
+  @override
+  Duration get reverseTransitionDuration => const Duration(milliseconds: 220);
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    if (MediaQuery.disableAnimationsOf(context)) return child;
+
+    final direction = Directionality.of(context);
+    final startX = direction == TextDirection.ltr ? 1.0 : -1.0;
+    final transition = _StackedPageTransition(
+      animation: animation,
+      startX: startX,
+      child: child,
+    );
+    if (Theme.of(context).platform != TargetPlatform.android) return transition;
+    return _PredictiveBackRouteObserver(route: route, child: transition);
+  }
+}
+
+class _StackedPageTransition extends StatefulWidget {
+  const _StackedPageTransition({
+    required this.animation,
+    required this.startX,
+    required this.child,
+  });
+
+  final Animation<double> animation;
+  final double startX;
+  final Widget child;
+
+  @override
+  State<_StackedPageTransition> createState() => _StackedPageTransitionState();
+}
+
+class _StackedPageTransitionState extends State<_StackedPageTransition> {
+  late CurvedAnimation _animation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animation = _createAnimation();
+  }
+
+  @override
+  void didUpdateWidget(covariant _StackedPageTransition oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(widget.animation, oldWidget.animation)) {
+      _animation.dispose();
+      _animation = _createAnimation();
+    }
+  }
+
+  CurvedAnimation _createAnimation() => CurvedAnimation(
+    parent: widget.animation,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
+  );
+
+  @override
+  void dispose() {
+    _animation.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SlideTransition(
+    position: Tween<Offset>(
+      begin: Offset(widget.startX, 0),
+      end: Offset.zero,
+    ).animate(_animation),
+    child: widget.child,
+  );
+}
+
+class _PredictiveBackRouteObserver extends StatefulWidget {
+  const _PredictiveBackRouteObserver({
+    required this.route,
+    required this.child,
+  });
+
+  final PageRoute<dynamic> route;
+  final Widget child;
+
+  @override
+  State<_PredictiveBackRouteObserver> createState() =>
+      _PredictiveBackRouteObserverState();
+}
+
+class _PredictiveBackRouteObserverState
+    extends State<_PredictiveBackRouteObserver>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  bool handleStartBackGesture(PredictiveBackEvent backEvent) {
+    final route = widget.route;
+    if (backEvent.isButtonEvent ||
+        !route.isCurrent ||
+        !route.popGestureEnabled) {
+      return false;
+    }
+    route.handleStartBackGesture(progress: 1 - backEvent.progress);
+    return true;
+  }
+
+  @override
+  void handleUpdateBackGestureProgress(PredictiveBackEvent backEvent) {
+    widget.route.handleUpdateBackGestureProgress(
+      progress: 1 - backEvent.progress,
+    );
+  }
+
+  @override
+  void handleCancelBackGesture() => widget.route.handleCancelBackGesture();
+
+  @override
+  void handleCommitBackGesture() => widget.route.handleCommitBackGesture();
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
 
 /// Material Design 3 Palette and OLED Pure Black Definition
 class AppTheme {
@@ -139,6 +297,7 @@ class AppTheme {
 
     return ThemeData(
       useMaterial3: true,
+      pageTransitionsTheme: _reviewPageTransitionsTheme,
       splashFactory: const HapticSplashFactory(),
       colorScheme: scheme,
       textTheme: textTheme,
@@ -306,6 +465,7 @@ class AppTheme {
 
     return ThemeData(
       useMaterial3: true,
+      pageTransitionsTheme: _reviewPageTransitionsTheme,
       splashFactory: const HapticSplashFactory(),
       colorScheme: effectiveScheme,
       textTheme: textTheme,

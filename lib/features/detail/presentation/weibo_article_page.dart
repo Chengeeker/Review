@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:extended_image/extended_image.dart';
 import 'package:flutter/gestures.dart';
@@ -10,6 +11,7 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/constants/api_constants.dart';
+import '../../../core/auth/auth_provider.dart';
 import '../../../core/network/weibo_dio_client.dart';
 import '../../../core/utils/app_toast.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
@@ -70,6 +72,7 @@ class WeiboArticleBlock {
 class WeiboArticleDocument {
   final String title;
   final String author;
+  final String authorId;
   final String authorAvatar;
   final String publishedAt;
   final String readCount;
@@ -79,6 +82,7 @@ class WeiboArticleDocument {
   const WeiboArticleDocument({
     required this.title,
     required this.author,
+    this.authorId = '',
     required this.authorAvatar,
     required this.publishedAt,
     required this.readCount,
@@ -118,6 +122,10 @@ class WeiboArticleParser {
           authorInfo?.querySelector('a[href*="/u/"]')?.text ??
           '',
     );
+    final authorHref =
+        authorInfo?.querySelector('a[href*="/u/"]')?.attributes['href'] ?? '';
+    final authorId =
+        RegExp(r'/u/(\d+)(?:[/?#]|$)').firstMatch(authorHref)?.group(1) ?? '';
     final avatar = _resolveUrl(
       authorInfo?.querySelector('img.W_face_radius')?.attributes['src'],
     );
@@ -140,6 +148,7 @@ class WeiboArticleParser {
     return WeiboArticleDocument(
       title: title.isNotEmpty ? title : (fallbackTitle ?? '微博文章'),
       author: author,
+      authorId: authorId,
       authorAvatar: avatar ?? '',
       publishedAt: publishedAt,
       readCount: readCount,
@@ -391,11 +400,15 @@ class WeiboArticleParser {
 class WeiboArticlePage extends ConsumerStatefulWidget {
   final String articleId;
   final String? title;
+  final String? sourceAuthorId;
+  final String? sourceAuthorAvatar;
 
   const WeiboArticlePage({
     super.key,
     required this.articleId,
     this.title,
+    this.sourceAuthorId,
+    this.sourceAuthorAvatar,
   });
 
   @override
@@ -403,8 +416,13 @@ class WeiboArticlePage extends ConsumerStatefulWidget {
 }
 
 class _WeiboArticlePageState extends ConsumerState<WeiboArticlePage> {
+  static const int _maxCachedDocuments = 8;
+  static final LinkedHashMap<String, WeiboArticleDocument> _documentCache =
+      LinkedHashMap<String, WeiboArticleDocument>();
+
   WeiboArticleDocument? _document;
   bool _loading = true;
+  String? _documentCacheKey;
 
   String get _articleUrl =>
       'https://weibo.com/ttarticle/p/show?id=${Uri.encodeQueryComponent(widget.articleId)}';
@@ -412,11 +430,27 @@ class _WeiboArticlePageState extends ConsumerState<WeiboArticlePage> {
   @override
   void initState() {
     super.initState();
-    unawaited(_loadArticle());
+    final auth = ref.read(authProvider);
+    final uid = auth.uid?.trim();
+    if (!auth.isLoggedIn) {
+      _documentCacheKey = 'public:${widget.articleId}';
+    } else if (uid != null && uid.isNotEmpty) {
+      _documentCacheKey = '$uid:${widget.articleId}';
+    }
+
+    final cacheKey = _documentCacheKey;
+    final cached = cacheKey == null ? null : _documentCache.remove(cacheKey);
+    if (cached != null) {
+      _document = cached;
+      _loading = false;
+      _documentCache[cacheKey!] = cached;
+    } else {
+      unawaited(_loadArticle());
+    }
   }
 
   Future<void> _loadArticle() async {
-    if (mounted) {
+    if (mounted && _document == null) {
       setState(() {
         _loading = true;
       });
@@ -441,6 +475,14 @@ class _WeiboArticlePageState extends ConsumerState<WeiboArticlePage> {
         throw StateError('微博文章正文为空');
       }
       if (!mounted) return;
+      final cacheKey = _documentCacheKey;
+      if (cacheKey != null) {
+        _documentCache.remove(cacheKey);
+        _documentCache[cacheKey] = parsed;
+        if (_documentCache.length > _maxCachedDocuments) {
+          _documentCache.remove(_documentCache.keys.first);
+        }
+      }
       setState(() {
         _document = parsed;
         _loading = false;
@@ -599,12 +641,21 @@ class _WeiboArticlePageState extends ConsumerState<WeiboArticlePage> {
     );
     if (document.author.isNotEmpty || document.publishedAt.isNotEmpty) {
       widgets.add(const SizedBox(height: 14));
+      final sourceAuthorId = widget.sourceAuthorId?.trim();
+      final sourceAuthorAvatar = widget.sourceAuthorAvatar?.trim();
+      final avatarUrl = sourceAuthorId != null &&
+              sourceAuthorId.isNotEmpty &&
+              sourceAuthorId == document.authorId &&
+              sourceAuthorAvatar != null &&
+              sourceAuthorAvatar.isNotEmpty
+          ? sourceAuthorAvatar
+          : document.authorAvatar;
       widgets.add(
         Row(
           children: [
             if (document.author.isNotEmpty)
               AppAvatar(
-                url: document.authorAvatar,
+                url: avatarUrl,
                 size: 36,
                 name: document.author,
               ),

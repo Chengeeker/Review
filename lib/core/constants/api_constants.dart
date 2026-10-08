@@ -2,8 +2,8 @@
 class ApiConstants {
   ApiConstants._();
 
-  static const String appVersion = '3.0.0';
-  static const int appVersionCode = 156;
+  static const String appVersion = '3.1.4';
+  static const int appVersionCode = 164;
 
   static const String baseUrl = 'https://weibo.com';
   static const String passportUrl = 'https://passport.weibo.com';
@@ -70,7 +70,7 @@ class ApiConstants {
   static const String destroyFavorites = '/ajax/statuses/destoryFavorites';
   static const String updateCommentLike = '/ajax/statuses/updateLike';
   static const String followUser = '/ajax/friendships/create';
-  static const String destroyFollow = '/ajax/friendships/destroy';
+  static const String destroyFollow = '/ajax/friendships/destory';
 
   // Category Channels (with '最新关注' as primary chronological follow tab)
   static const List<Map<String, String>> categories = [

@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../constants/api_constants.dart';
 import '../storage/storage_service.dart';
 import 'visitor_token_engine.dart';
@@ -9,7 +10,6 @@ class WeiboDioClient {
   late final Dio dio;
   final StorageService storageService;
   late final VisitorTokenEngine tokenEngine;
-  String? _cachedXsrfToken;
 
   WeiboDioClient(this.storageService) {
     dio = Dio(
@@ -36,7 +36,8 @@ class WeiboDioClient {
         onRequest: (options, handler) async {
           final fullCookie = storageService.getFullCookie();
           final host = options.uri.host.toLowerCase();
-          final isMobileWeiboHost = host == 'm.weibo.cn' ||
+          final isMobileWeiboHost =
+              host == 'm.weibo.cn' ||
               host == 'weibo.cn' ||
               host.endsWith('.weibo.cn');
           final scopedCookie = isMobileWeiboHost
@@ -44,31 +45,46 @@ class WeiboDioClient {
               : storageService.getDesktopCookie();
           var effectiveCookie =
               (scopedCookie != null && scopedCookie.isNotEmpty)
-                  ? scopedCookie
-                  : (fullCookie != null && fullCookie.isNotEmpty)
-                      ? fullCookie
-                      : (() {
-                          final sub = storageService.getSubCookie();
-                          final subp = storageService.getSubpCookie() ?? '';
-                          if (sub != null && sub.isNotEmpty) {
-                            return 'SUB=$sub; ${subp.isNotEmpty ? "SUBP=$subp;" : ""}';
-                          }
-                          return '';
-                        })();
+              ? scopedCookie
+              : (fullCookie != null && fullCookie.isNotEmpty)
+              ? fullCookie
+              : (() {
+                  final sub = storageService.getSubCookie();
+                  final subp = storageService.getSubpCookie() ?? '';
+                  if (sub != null && sub.isNotEmpty) {
+                    return 'SUB=$sub; ${subp.isNotEmpty ? "SUBP=$subp;" : ""}';
+                  }
+                  return '';
+                })();
+
+          if (isMobileWeiboHost &&
+              options.extra['weiboMobileLogin'] == true &&
+              !RegExp(
+                r'(?:^|;\s*)MLOGIN=',
+                caseSensitive: false,
+              ).hasMatch(effectiveCookie)) {
+            effectiveCookie = '$effectiveCookie; MLOGIN=1';
+          }
 
           final isMutating = options.method.toUpperCase() != 'GET';
 
           if (effectiveCookie.isNotEmpty) {
-            var xsrf = _cachedXsrfToken ?? extractXsrfToken(effectiveCookie);
+            var xsrf = options.extra['weiboXsrfToken']?.toString();
+            xsrf ??= extractXsrfToken(effectiveCookie);
             if ((xsrf == null || xsrf.isEmpty || xsrf == 'deleted') &&
                 isMutating) {
-              xsrf = await ensureXsrfToken(customCookie: effectiveCookie);
+              xsrf = await ensureXsrfToken(
+                customCookie: effectiveCookie,
+                mobileSession: isMobileWeiboHost,
+              );
             }
 
             if (xsrf != null && xsrf.isNotEmpty && xsrf != 'deleted') {
               options.headers['X-XSRF-TOKEN'] = xsrf;
-              if (RegExp(r'XSRF-TOKEN=[^;]+', caseSensitive: false)
-                  .hasMatch(effectiveCookie)) {
+              if (RegExp(
+                r'XSRF-TOKEN=[^;]+',
+                caseSensitive: false,
+              ).hasMatch(effectiveCookie)) {
                 effectiveCookie = effectiveCookie.replaceAll(
                   RegExp(r'XSRF-TOKEN=[^;]+', caseSensitive: false),
                   'XSRF-TOKEN=$xsrf',
@@ -94,8 +110,10 @@ class WeiboDioClient {
           if (sub != null && sub.isNotEmpty) {
             cookieStr = 'SUB=$sub; ${subp.isNotEmpty ? "SUBP=$subp;" : ""}';
             if (isMutating) {
-              var xsrf = _cachedXsrfToken ??
-                  await ensureXsrfToken(customCookie: cookieStr);
+              final xsrf = await ensureXsrfToken(
+                customCookie: cookieStr,
+                mobileSession: isMobileWeiboHost,
+              );
               if (xsrf != null && xsrf.isNotEmpty && xsrf != 'deleted') {
                 options.headers['X-XSRF-TOKEN'] = xsrf;
                 cookieStr = '$cookieStr XSRF-TOKEN=$xsrf;';
@@ -107,11 +125,16 @@ class WeiboDioClient {
         },
         onResponse: (response, handler) {
           final setCookies = response.headers['set-cookie'];
+          final host = response.requestOptions.uri.host.toLowerCase();
+          final isMobileWeiboHost =
+              host == 'm.weibo.cn' ||
+              host == 'weibo.cn' ||
+              host.endsWith('.weibo.cn');
           if (setCookies != null) {
             for (final sc in setCookies) {
               final token = extractXsrfToken(sc);
               if (token != null && token.isNotEmpty && token != 'deleted') {
-                _updateXsrfToken(token);
+                _updateXsrfToken(token, mobileSession: isMobileWeiboHost);
                 break;
               }
             }
@@ -130,15 +153,25 @@ class WeiboDioClient {
                   responseData.toLowerCase().contains('csrf') ||
                   responseData.toLowerCase().contains('token'))) {
             error.requestOptions.extra['is_retried'] = true;
-            final freshXsrf = await ensureXsrfToken(forceRefresh: true);
+            final freshXsrf = await ensureXsrfToken(
+              forceRefresh: true,
+              customCookie: error.requestOptions.headers['Cookie']?.toString(),
+              mobileSession:
+                  error.requestOptions.uri.host.toLowerCase().endsWith(
+                    '.weibo.cn',
+                  ) ||
+                  error.requestOptions.uri.host.toLowerCase() == 'weibo.cn',
+            );
             if (freshXsrf != null &&
                 freshXsrf.isNotEmpty &&
                 freshXsrf != 'deleted') {
               error.requestOptions.headers['X-XSRF-TOKEN'] = freshXsrf;
               var currentCookie =
                   error.requestOptions.headers['Cookie']?.toString() ?? '';
-              if (RegExp(r'XSRF-TOKEN=[^;]+', caseSensitive: false)
-                  .hasMatch(currentCookie)) {
+              if (RegExp(
+                r'XSRF-TOKEN=[^;]+',
+                caseSensitive: false,
+              ).hasMatch(currentCookie)) {
                 currentCookie = currentCookie.replaceAll(
                   RegExp(r'XSRF-TOKEN=[^;]+', caseSensitive: false),
                   'XSRF-TOKEN=$freshXsrf',
@@ -168,8 +201,9 @@ class WeiboDioClient {
 
             // Only refresh visitor sub for guest requests
             error.requestOptions.extra['is_retried'] = true;
-            final newSub =
-                await tokenEngine.getOrGenerateVisitorSub(forceRefresh: true);
+            final newSub = await tokenEngine.getOrGenerateVisitorSub(
+              forceRefresh: true,
+            );
             if (newSub != null) {
               final subp = storageService.getSubpCookie() ?? '';
               error.requestOptions.headers['Cookie'] =
@@ -253,9 +287,7 @@ class WeiboDioClient {
             queryParameters: {'id': articleId},
             options: Options(
               responseType: ResponseType.plain,
-              headers: {
-                if (cookie != null) 'Cookie': cookie,
-              },
+              headers: {if (cookie != null) 'Cookie': cookie},
             ),
           );
           final html = response.data?.toString() ?? '';
@@ -286,98 +318,105 @@ class WeiboDioClient {
     return match?.group(1)?.trim();
   }
 
-  Future<String?> ensureXsrfToken(
-      {bool forceRefresh = false, String? customCookie}) async {
+  Future<String?> ensureXsrfToken({
+    bool forceRefresh = false,
+    String? customCookie,
+    bool mobileSession = false,
+  }) async {
+    final scopedCookie = mobileSession
+        ? storageService.getMobileCookie()
+        : storageService.getDesktopCookie();
+    final cookie =
+        customCookie ??
+        ((scopedCookie != null && scopedCookie.isNotEmpty)
+            ? scopedCookie
+            : storageService.getFullCookie());
+    final extracted = extractXsrfToken(cookie);
     if (!forceRefresh &&
-        _cachedXsrfToken != null &&
-        _cachedXsrfToken!.isNotEmpty) {
-      return _cachedXsrfToken;
-    }
-
-    final fullCookie = customCookie ?? storageService.getFullCookie();
-    final extracted = extractXsrfToken(fullCookie);
-    if (!forceRefresh && extracted != null && extracted.isNotEmpty) {
-      _cachedXsrfToken = extracted;
+        extracted != null &&
+        extracted.isNotEmpty &&
+        extracted != 'deleted') {
       return extracted;
     }
 
-    try {
-      final rawDio = Dio(
-        BaseOptions(
-          connectTimeout: const Duration(seconds: 6),
-          receiveTimeout: const Duration(seconds: 6),
-          headers: {
-            'User-Agent': ApiConstants.defaultUserAgent,
-            'Referer': 'https://weibo.com/',
-            'Accept': 'application/json, text/plain, */*',
-            'X-Requested-With': 'XMLHttpRequest',
-            if (fullCookie != null && fullCookie.isNotEmpty)
-              'Cookie': fullCookie,
-          },
-        ),
-      );
+    const mobileUserAgent =
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
+    final rawDio = Dio(
+      BaseOptions(
+        connectTimeout: const Duration(seconds: 6),
+        receiveTimeout: const Duration(seconds: 6),
+        headers: {
+          'User-Agent': mobileSession
+              ? mobileUserAgent
+              : ApiConstants.defaultUserAgent,
+          'Referer': mobileSession
+              ? 'https://m.weibo.cn/'
+              : 'https://weibo.com/',
+          'Accept': 'application/json, text/plain, */*',
+          'X-Requested-With': 'XMLHttpRequest',
+          if (cookie != null && cookie.isNotEmpty) 'Cookie': cookie,
+        },
+      ),
+    );
 
-      // 1. Primary: Fetch from https://weibo.com/ajax/statuses/config
-      try {
-        final res = await rawDio.get('https://weibo.com/ajax/statuses/config');
-        final setCookies = res.headers['set-cookie'];
-        if (setCookies != null) {
-          for (final sc in setCookies) {
-            final token = extractXsrfToken(sc);
-            if (token != null && token.isNotEmpty && token != 'deleted') {
-              _updateXsrfToken(token);
-              return token;
-            }
-          }
-        }
-        if (res.data is Map<String, dynamic>) {
-          final st = res.data['data']?['st']?.toString();
-          if (st != null && st.isNotEmpty) {
-            _updateXsrfToken(st);
-            return st;
-          }
-        }
-      } catch (_) {}
-
-      // 2. Secondary: Fetch from https://weibo.com/ajax/config/getconfig
-      final res2 = await rawDio.get('https://weibo.com/ajax/config/getconfig');
-      final setCookies2 = res2.headers['set-cookie'];
-      if (setCookies2 != null) {
-        for (final sc in setCookies2) {
-          final token = extractXsrfToken(sc);
-          if (token != null && token.isNotEmpty && token != 'deleted') {
-            _updateXsrfToken(token);
-            return token;
-          }
+    String? readToken(Response<dynamic> response) {
+      for (final setCookie in response.headers['set-cookie'] ?? const []) {
+        final token = extractXsrfToken(setCookie);
+        if (token != null && token.isNotEmpty && token != 'deleted') {
+          _updateXsrfToken(token, mobileSession: mobileSession);
+          return token;
         }
       }
+      final data = response.data;
+      final body = data is Map ? data['data'] : null;
+      final token = body is Map ? body['st']?.toString() : null;
+      if (token != null && token.isNotEmpty && token != 'deleted') {
+        _updateXsrfToken(token, mobileSession: mobileSession);
+        return token;
+      }
+      return null;
+    }
 
-      if (res2.data is Map<String, dynamic>) {
-        final st = res2.data['data']?['st']?.toString();
-        if (st != null && st.isNotEmpty) {
-          _updateXsrfToken(st);
-          return st;
-        }
+    try {
+      if (mobileSession) {
+        final response = await rawDio.get('https://m.weibo.cn/api/config');
+        return readToken(response);
+      }
+      for (final path in [
+        'https://weibo.com/ajax/statuses/config',
+        'https://weibo.com/ajax/config/getconfig',
+      ]) {
+        try {
+          final token = readToken(await rawDio.get(path));
+          if (token != null) return token;
+        } catch (_) {}
       }
     } catch (_) {}
-
-    return _cachedXsrfToken;
+    return null;
   }
 
-  void _updateXsrfToken(String token) {
-    _cachedXsrfToken = token;
+  void _updateXsrfToken(String token, {required bool mobileSession}) {
+    if (mobileSession) {
+      final currentMobile = storageService.getMobileCookie();
+      final updatedMobile = _withXsrfToken(currentMobile, token);
+      if (updatedMobile.isNotEmpty) {
+        storageService.setMobileCookie(updatedMobile);
+      }
+      if ((storageService.getDesktopCookie() ?? '').isEmpty) {
+        final currentFull = storageService.getFullCookie();
+        final updatedFull = _withXsrfToken(currentFull, token);
+        if (updatedFull.isNotEmpty) storageService.setFullCookie(updatedFull);
+      }
+      return;
+    }
     String updateCookie(String? cookie) {
-      if (cookie == null || cookie.isEmpty) return '';
-      final tokenPattern = RegExp(r'XSRF-TOKEN=[^;]+', caseSensitive: false);
-      return tokenPattern.hasMatch(cookie)
-          ? cookie.replaceAll(tokenPattern, 'XSRF-TOKEN=$token')
-          : '$cookie; XSRF-TOKEN=$token';
+      return _withXsrfToken(cookie, token);
     }
 
     final currentFull = storageService.getFullCookie();
-    final updatedFull = updateCookie(currentFull);
-    if (updatedFull.isNotEmpty) {
-      storageService.setFullCookie(updatedFull);
+    if ((storageService.getMobileCookie() ?? '').isEmpty) {
+      final updatedFull = updateCookie(currentFull);
+      if (updatedFull.isNotEmpty) storageService.setFullCookie(updatedFull);
     }
 
     final currentDesktop = storageService.getDesktopCookie();
@@ -385,12 +424,14 @@ class WeiboDioClient {
     if (updatedDesktop.isNotEmpty) {
       storageService.setDesktopCookie(updatedDesktop);
     }
+  }
 
-    final currentMobile = storageService.getMobileCookie();
-    final updatedMobile = updateCookie(currentMobile);
-    if (updatedMobile.isNotEmpty) {
-      storageService.setMobileCookie(updatedMobile);
-    }
+  String _withXsrfToken(String? cookie, String token) {
+    if (cookie == null || cookie.isEmpty) return '';
+    final tokenPattern = RegExp(r'XSRF-TOKEN=[^;]+', caseSensitive: false);
+    return tokenPattern.hasMatch(cookie)
+        ? cookie.replaceAll(tokenPattern, 'XSRF-TOKEN=$token')
+        : '$cookie; XSRF-TOKEN=$token';
   }
 }
 

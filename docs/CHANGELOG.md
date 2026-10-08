@@ -2,6 +2,57 @@
 
 这里记录已经完成的版本变更及当次验证结果。当前行为和发布命令以 [DEVELOPMENT.md](../DEVELOPMENT.md) 为准；历史测试数量不代表以后构建的测试结果。更早的旧版综合手册原件保留在仓库 `docs/archive/Review-legacy-2026-09-23.md`，仅供追溯，不作为现行规范，也不再并入当前开发文档。
 
+## 3.1.4+164（2026-10-08）
+
+- 混合图库的视频缩略条按底部播放控制栏的实际高度排列在进度条上方，保留 8dp 间隔，适配字体缩放和底部安全区；拖动缩略条时固定位置，停稳后恢复对应媒体布局。图片视口和原有图片页缩略条位置保持现行实现。
+- 混合媒体回归检查 4/4 通过，覆盖普通/放大字体与底部安全区下缩略条不遮挡进度条、进度点击调整及缩略条拖动时位置稳定；改动文件静态分析无问题，`git diff --check` 通过。ARM64 Release 构建成功（415.1 秒），核验 `com.review`、`3.1.4`、versionCode `164`、target SDK `36`、`arm64-v8a`、APK V2 签名及 16 KB 对齐，证书与前版一致。交付 `Review_v3.1.4.apk`（32,051,457 字节），SHA-256：`CCEBEC8F711981606B0613D5A0F8D82F6D489F382AD5DD58F03EA89A5F208100`；前版归档于 `build/previous-deliveries/Review_v3.1.3-before-v3.1.4.apk`。未连接真机，布局观感需安装后确认。
+
+## 3.1.3+163（2026-10-08）
+
+- 修复图片夹视频时点击底部全屏按钮导致画廊退出：嵌入播放器按钮现在切换同一播放器到横屏沉浸模式，并隐藏图库顶栏与缩略条；返回竖屏时恢复图库控件，视频控制器和播放位置不重建。
+- ARM64 Release 构建成功（367.3 秒）；`aapt2` 核验包名 `com.review`、版本 `3.1.3`、`versionCode` `163`、target SDK `36`、ABI `arm64-v8a`。APK V2 签名有效且证书与前版一致；16 KB `zipalign` 核验通过。交付 `Review_v3.1.3.apk`（32,051,457 字节），SHA-256：`13C3994EC65708906BF62FCCC5118823277FD5138A570D360BBB243DA4090F7F`；`Review_v3.1.2.apk` 可恢复地归档至 `build/previous-deliveries/Review_v3.1.2-before-v3.1.3.apk`。未连接真机，横屏播放和返回手势仍需设备验收。
+
+## 3.1.2+162（2026-10-08）
+
+- 修复从信息流文章卡片进入后同一作者头像短暂“真实头像 → 占位图 → 真实头像”：卡片作者 UID 和头像 URL 随文章路由传递；文章 HTML 解析到相同 UID 时沿用信息流已使用的头像 URL，直接命中相同的图片缓存；UID 不同或缺失时不借用卡片头像。
+- ARM64 Release 构建成功（276.5 秒）；`aapt2` 核验包名 `com.review`、版本 `3.1.2`、`versionCode` `162`、target SDK `36`、ABI `arm64-v8a`。APK V2 签名有效，证书 SHA-256 与前版一致（`3EB0F6708904F8EF916C6A2572E394BA981EE25D64861344CF1921CA7EA17975`）；16 KB `zipalign` 核验通过。交付 `Review_v3.1.2.apk`（32,051,457 字节），SHA-256：`AF672A539717D4BC30BC7E9465F885EF8810DD7A1C064ECD96FEF53918742097`。旧包保留于 `build/previous-deliveries/Review_v3.1.1-before-v3.1.2.apk`。未进行真机文章页/头像闪烁验收。
+
+## 3.1.1+161（2026-10-08）
+
+- 文章页此前每次 route 新建都会清空本地 document 并重新请求微博 HTML，加载期间整页被进度圈替换；头像又在 `ExtendedImage` loading 时显示占位。现在按登录 UID 和文章 ID 缓存最多 8 条已解析文档，二次进入先显示缓存；手动刷新保留旧正文，成功后再替换。缓存仅在进程内，不写入磁盘；未能确认 UID 的登录态不缓存。
+- ARM64 Release 构建成功（236.7 秒）；`aapt2` 核验包名 `com.review`、版本 `3.1.1`、`versionCode` `161`、target SDK `36`、ABI `arm64-v8a`。APK V2 签名有效，证书 SHA-256 与前版一致（`3EB0F6708904F8EF916C6A2572E394BA981EE25D64861344CF1921CA7EA17975`）；16 KB `zipalign` 核验通过。交付 `Review_v3.1.1.apk`（32,051,457 字节），SHA-256：`F94F8FB41C9D6D8BDADE6C6EE83D77962976FCB97391F062EC45D18B8B1FAA0D`。旧包保留于 `build/previous-deliveries/Review_v3.1.0-before-v3.1.1.apk`。未进行真机文章页/头像显示验收。
+
+## 3.1.0+160（2026-10-08）
+
+- Android、桌面和 Fuchsia 的普通 `MaterialPageRoute` 按 Lurk `SpringPageRoute` 的覆盖式动画进入：新页面全宽滑入，旧页面固定且不淡入/淡出；LTR 从右侧进入、RTL 从左侧进入，push 320ms `easeOutCubic`、pop 220ms `easeInCubic`，关闭系统动画时直切。Android 动画开启时，预测式返回进度驱动同一 `PageRoute` 动画。iOS 保留 Cupertino 原生转场与边缘返回手势。主底栏改为 Lurk 式双页叠放，旧页和新页反向各平移一个屏宽，260ms `easeOutCubic`，保留三页状态及原有重选/回顶/刷新行为。图片画廊的显式路由和 Hero 缩放动画保持原实现。
+- Lurk 转场修正后的 ARM64 Release 构建成功（212.5 秒）；`aapt2` 核验包名 `com.review`、版本 `3.1.0`、`versionCode` `160`、target SDK `36`、ABI `arm64-v8a`。APK V2 签名有效，证书 SHA-256 与前版一致（`3EB0F6708904F8EF916C6A2572E394BA981EE25D64861344CF1921CA7EA17975`）；16 KB `zipalign` 核验通过。交付 `Review_v3.1.0.apk`（32,051,457 字节），SHA-256：`6AD97BDF4AE821304977475B27852E3E255F3934C80457552B06EC2C52FA07E1`。修正前的同版本候选包保留在 `build/previous-deliveries/Review_v3.1.0-before-lurk-transition-correction.apk`；`Review_v3.0.3.apk` 仍可回退至 `build/previous-deliveries/Review_v3.0.3-before-v3.1.0.apk`。未进行真机动画验收。
+
+## 3.0.3+159（2026-10-08）
+
+- 全面排查并修复原生验证码登录后全项目网络写操作与关键信息流会话错配问题：
+  1. 点赞/取消点赞（`setLikeState`）：双通道路由，移动会话走 `m.weibo.cn/api/attitudes/create` 与 `destroy`，携带 `id`、`attitude=heart`、`st`、`MLOGIN=1`；桌面会话保留 `/ajax/statuses/setLike` 与 `cancelLike`。
+  2. 收藏/取消收藏（`setFavoriteState`）：双通道路由，移动会话走 `m.weibo.cn/api/favorites/create` 与 `destory`，携带 `id`、`st`、`MLOGIN=1`；桌面会话走 `/ajax/statuses/createFavorites` 与 `destoryFavorites`。
+  3. 删除微博（`deleteTweet`）：双通道路由，移动会话走 `m.weibo.cn/profile/delMyblog`，携带 `mid`、`st`、`MLOGIN=1`；桌面端走 `/ajax/statuses/destroy`。
+  4. 评论发表/回复/删除（`DetailRepository`）：引入移动端 `m.weibo.cn/api/comments/create`、`reply`、`destroy` 路由通道，携带移动 UA 与 `st`；放宽状态码校验至标准 2xx。
+  5. 关注信息流（`FeedRepository.getFriendsTimeline`）：新增方案 3 移动关注流通道 `m.weibo.cn/feed/friends` 自动降级，彻底解决原生登录后桌面接口因未同步 SSO 返回空导致的首页关注流空白问题。
+  6. 收藏大厅与赞列表（`favorites_page.dart` / `likes_favorites_page.dart`）：补齐移动端 `api/favorites/all_fav` 与个人赞容器 `230869{uid}_-_like` 降级回退。
+  7. 微博发布（`compose_tweet_page.dart`）：桌面 `/ajax/statuses/update` 失败或移动会话时回退移动端发布通道。
+- 新增 `test/user_actions_dual_channel_test.dart` 全链路隔离单元测试，结合既有用例 27/27 单元测试全部通过；相关 Dart 文件静态分析 0 Error。
+- ARM64 Release 构建成功（584.0 秒）；`aapt2` 核验包名 `com.review`、版本 `3.0.3`、`versionCode` `159`、target SDK `36`、ABI `arm64-v8a`。APK V2 签名有效，证书与上一包一致；4-byte zipalign 校验通过。交付 `Review_v3.0.3.apk`（32,051,457 字节），SHA-256：`2AC06CDA7A302ED40A939B5922C796BB4334A013DB58CACA2AE4DB8D9158CC26`；上一版可恢复地归档至 `build/previous-deliveries/Review_v3.0.2-before-v3.0.3.apk`。未进行真实账号写操作，未连接真机。
+
+## 3.0.2+158（2026-10-08）
+
+- 修复桌面会话取消关注使用错误路径 `/ajax/friendships/destroy` 导致微博提示“你访问的地址不存在”；改为网页端实际使用的历史拼写 `/ajax/friendships/destory`。移动会话继续使用 `m.weibo.cn/api/friendships/destory`。
+- 桌面/移动取关路由、对应会话 Cookie 与 XSRF 的拦截回归测试 4/4 通过；改动文件 Dart 分析无问题。全量测试 227/233 通过，6 项既有失败仍集中在 `widget_test.dart` 的长文展开控件断言，与本次取关改动无关。
+- ARM64 Release 构建成功（425.8 秒）；`aapt2` 核验包名 `com.review`、版本 `3.0.2`、`versionCode` `158`、target SDK `36`。APK V2 签名有效，证书与上一包一致；16 KB zipalign 检查通过。交付 `Review_v3.0.2.apk`（31,985,921 字节），SHA-256：`8D00E8FEB4D40821A2D900F8749D045B2F0F267D9A04CFC93A209FD355232B30`；上一版可恢复地归档至 `build/previous-deliveries/Review_v3.0.1-before-v3.0.2.apk`。未执行真实账号取消关注，未进行真机验收。
+
+## 3.0.1+157（2026-10-08）
+
+- 修复原生登录后关注/取关失败：按会话范围选择移动端或桌面端微博接口，统一经过 `WeiboDioClient`，请求使用对应域 Cookie 与 XSRF，移动端补齐 `MLOGIN=1` 与 `st`。不再吞掉业务错误或在失败时修改本地关注状态。
+- XSRF 刷新/403 重试按请求域隔离，移动端令牌不会写入桌面会话；新增隔离回归测试，使用伪造 Cookie 和拦截响应，不触碰真实微博账号的关注关系。
+- 新增关注会话路由、服务端拒绝提示和 XSRF 域隔离拦截器测试，3/3 通过；本次修改文件静态分析无问题。全量测试 226/232 通过，6 项失败均为既有微博长文“展开全文”断言，不涉及本次文件；全量分析保留 58 条既有 info 级 lint。
+- ARM64 Release 构建成功（218.8 秒）；`aapt2` 核验包名 `com.review`、版本 `3.0.1`、`versionCode` `157`、target SDK `36`、ABI `arm64-v8a`；APK V2 签名有效且证书与上一包一致，16 KB zipalign 检查通过。交付 `Review_v3.0.1.apk`（31,985,921 字节），SHA-256：`AAA8BBE98788E084A893301FE851CB284BB33B9D45B670B64E82932CE6018811`；上一版可恢复地归档至 `build/previous-deliveries/Review_v3.0.0-before-v3.0.1.apk`。未使用真实账号执行关注/取关，未进行真机验收。
+
 ## 3.0.0+156（2026-10-07）
 
 - 整理统一开发文档：当前说明、完整变更记录、工程复盘和磨砂顶栏规范继续全文汇入 `D:\App\开发文档\Review.md`；将截至 2026-09-23 的旧版综合手册全文从当前汇编移除，仓库归档原件保留且不作为现行规范。

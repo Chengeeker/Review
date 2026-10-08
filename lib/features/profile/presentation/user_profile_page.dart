@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
@@ -493,66 +492,6 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     return false;
   }
 
-  bool _isFollowSuccess(dynamic rawData, {required bool isFollowAction}) {
-    if (rawData == null) return false;
-    dynamic data = rawData;
-    if (data is String) {
-      final trimmed = data.trim();
-      if (trimmed.isEmpty) return false;
-      try {
-        data = jsonDecode(trimmed);
-      } catch (_) {
-        if (trimmed.contains('"ok":1') ||
-            trimmed.contains('"ok": 1') ||
-            trimmed.contains('"code":"100000"') ||
-            trimmed.contains('"code":100000') ||
-            trimmed.contains('已取消关注') ||
-            trimmed.contains('关注成功')) {
-          return true;
-        }
-      }
-    }
-
-    if (data is Map) {
-      if (data['ok'] == 1 || data['ok'] == true) return true;
-      if (data['code'] == '100000' || data['code'] == 100000) return true;
-      if (data['result'] == true || data['result'] == 1) return true;
-      final msg = (data['msg'] ?? data['message'] ?? '').toString();
-      if (msg.contains('成功') || msg.contains('已取消') || msg.contains('已关注')) {
-        return true;
-      }
-      if (data['id'] != null ||
-          data['idstr'] != null ||
-          data['screen_name'] != null) {
-        if (data.containsKey('following')) {
-          return data['following'] == isFollowAction;
-        }
-        return true;
-      }
-      if (data['data'] is Map) {
-        final inner = data['data'] as Map;
-        if (inner['ok'] == 1 || inner['ok'] == true) return true;
-        if (inner['code'] == '100000' || inner['code'] == 100000) return true;
-        if (inner['result'] == true || inner['result'] == 1) return true;
-        final innerMsg = (inner['msg'] ?? inner['message'] ?? '').toString();
-        if (innerMsg.contains('成功') ||
-            innerMsg.contains('已取消') ||
-            innerMsg.contains('已关注')) {
-          return true;
-        }
-        if (inner['id'] != null ||
-            inner['idstr'] != null ||
-            inner['screen_name'] != null) {
-          if (inner.containsKey('following')) {
-            return inner['following'] == isFollowAction;
-          }
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
   // 关注 / 取消关注交互
   Future<void> _toggleFollow() async {
     final auth = ref.read(authProvider);
@@ -564,13 +503,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     if (_isTogglingFollow) return;
     setState(() => _isTogglingFollow = true);
 
-    final client = ref.read(weiboDioClientProvider);
     final isFollowing = _user.following;
-    final fullCookie = client.storageService.getFullCookie() ??
-        ref.read(authProvider).fullCookie ??
-        '';
-
-    // 确保使用纯数字 UID
     var targetUid = _user.id;
     if (targetUid.isEmpty || int.tryParse(targetUid) == null) {
       if (widget.uid != null &&
@@ -580,300 +513,63 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
       }
     }
 
+    if (targetUid.isEmpty || int.tryParse(targetUid) == null) {
+      AppToast.show(context, '用户编号无效，无法执行关注操作');
+      setState(() => _isTogglingFollow = false);
+      return;
+    }
+
     try {
-      bool success = false;
-      String? errorMsg;
+      final result = await ref
+          .read(feedRepositoryProvider)
+          .setFollowState(targetUid, follow: !isFollowing);
+      if (!mounted) return;
+      if (!result.success) {
+        AppToast.show(
+          context,
+          result.message ?? (isFollowing ? '取消关注失败' : '关注失败'),
+        );
+        return;
+      }
 
-      final standaloneDio = Dio(
-        BaseOptions(
-          connectTimeout: const Duration(seconds: 8),
-          receiveTimeout: const Duration(seconds: 8),
-          validateStatus: (status) => status != null && status < 500,
-        ),
+      HapticFeedbackUtil.light();
+      setState(() {
+        _user = WeiboUserModel(
+          id: _user.id,
+          screenName: _user.screenName,
+          avatar: _user.avatar,
+          avatarHd: _user.avatarHd,
+          verified: _user.verified,
+          verifiedType: _user.verifiedType,
+          verifiedReason: _user.verifiedReason,
+          description: _user.description,
+          followersCount: isFollowing
+              ? (_user.followersCount > 0 ? _user.followersCount - 1 : 0)
+              : _user.followersCount + 1,
+          friendsCount: _user.friendsCount,
+          statusesCount: _user.statusesCount,
+          following: !isFollowing,
+          followMe: _user.followMe,
+          gender: _user.gender,
+          ipLocation: _user.ipLocation,
+        );
+        _profileUserCache[_user.id] = _user;
+        _profileUserCache[targetUid] = _user;
+      });
+      AppToast.show(
+        context,
+        isFollowing
+            ? '已取消关注 @${_user.screenName}'
+            : '🎉 已关注 @${_user.screenName}',
       );
-
-      if (isFollowing) {
-        // ========== 取消关注操作 (三路直连) ==========
-        // 方案 1：微博移动端 REST 接口 (POST https://m.weibo.cn/api/friendships/destory)
-        try {
-          final st = await client.ensureXsrfToken(forceRefresh: true) ?? '';
-          final mRes = await standaloneDio.post(
-            'https://m.weibo.cn/api/friendships/destory',
-            data: 'uid=$targetUid&st=$st',
-            options: Options(
-              contentType: Headers.formUrlEncodedContentType,
-              headers: {
-                'Cookie': fullCookie.contains('XSRF-TOKEN')
-                    ? fullCookie
-                    : '$fullCookie; XSRF-TOKEN=$st; MLOGIN=1;',
-                'Referer': 'https://m.weibo.cn/u/$targetUid',
-                'User-Agent':
-                    'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-                'Accept': 'application/json, text/plain, */*',
-                'X-Requested-With': 'XMLHttpRequest',
-                if (st.isNotEmpty) 'X-XSRF-TOKEN': st,
-              },
-            ),
-          );
-          if (_isFollowSuccess(mRes.data, isFollowAction: false)) {
-            success = true;
-          } else if (mRes.data is Map &&
-              mRes.data['msg'] != null &&
-              mRes.data['msg'].toString().isNotEmpty) {
-            errorMsg = mRes.data['msg'].toString();
-          }
-        } catch (_) {}
-
-        // 方案 2：微博桌面端 Ajax 接口 (POST https://weibo.com/ajax/friendships/destroy)
-        if (!success) {
-          try {
-            final xsrf = WeiboDioClient.extractXsrfToken(fullCookie) ?? '';
-            final res = await standaloneDio.post(
-              'https://weibo.com/ajax/friendships/destroy',
-              data: {'uid': targetUid},
-              options: Options(
-                headers: {
-                  'Cookie': fullCookie,
-                  'Referer': 'https://weibo.com/u/$targetUid',
-                  'Origin': 'https://weibo.com',
-                  'User-Agent': ApiConstants.defaultUserAgent,
-                  'Accept': 'application/json, text/plain, */*',
-                  'X-Requested-With': 'XMLHttpRequest',
-                  if (xsrf.isNotEmpty) 'X-XSRF-TOKEN': xsrf,
-                },
-              ),
-            );
-            if (_isFollowSuccess(res.data, isFollowAction: false)) {
-              success = true;
-            } else if (res.data is Map &&
-                res.data['msg'] != null &&
-                res.data['msg'].toString().isNotEmpty) {
-              errorMsg = res.data['msg'].toString();
-            }
-          } catch (_) {}
-        }
-
-        // 方案 3：微博经典直连通道 (POST https://weibo.com/aj/f/unfollow?ajkey=wb_unfollow)
-        if (!success) {
-          try {
-            final xsrf = WeiboDioClient.extractXsrfToken(fullCookie) ?? '';
-            final legacyRes = await standaloneDio.post(
-              'https://weibo.com/aj/f/unfollow?ajkey=wb_unfollow',
-              data: 'uid=$targetUid',
-              options: Options(
-                contentType: Headers.formUrlEncodedContentType,
-                headers: {
-                  'Cookie': fullCookie,
-                  'Referer': 'https://weibo.com/u/$targetUid',
-                  'Origin': 'https://weibo.com',
-                  'User-Agent': ApiConstants.defaultUserAgent,
-                  'Accept': 'application/json, text/plain, */*',
-                  'X-Requested-With': 'XMLHttpRequest',
-                  if (xsrf.isNotEmpty) 'X-XSRF-TOKEN': xsrf,
-                },
-              ),
-            );
-            if (_isFollowSuccess(legacyRes.data, isFollowAction: false)) {
-              success = true;
-            } else if (legacyRes.data is Map && legacyRes.data['msg'] != null) {
-              errorMsg = legacyRes.data['msg'].toString();
-            }
-          } catch (_) {}
-        }
-
-        if (errorMsg != null &&
-            (errorMsg.contains('成功') ||
-                errorMsg.contains('已取消') ||
-                errorMsg.contains('已关注'))) {
-          success = true;
-        }
-
-        if (success) {
-          HapticFeedbackUtil.light();
-          setState(() {
-            _user = WeiboUserModel(
-              id: _user.id,
-              screenName: _user.screenName,
-              avatar: _user.avatar,
-              avatarHd: _user.avatarHd,
-              verified: _user.verified,
-              verifiedType: _user.verifiedType,
-              verifiedReason: _user.verifiedReason,
-              description: _user.description,
-              followersCount:
-                  _user.followersCount > 0 ? _user.followersCount - 1 : 0,
-              friendsCount: _user.friendsCount,
-              statusesCount: _user.statusesCount,
-              following: false,
-              followMe: _user.followMe,
-              gender: _user.gender,
-              ipLocation: _user.ipLocation,
-            );
-            _profileUserCache[_user.id] = _user;
-            if (targetUid.isNotEmpty) {
-              _profileUserCache[targetUid] = _user;
-            }
-          });
-          if (mounted) {
-            AppToast.show(context, '已取消关注 @${_user.screenName}');
-          }
-        } else {
-          if (mounted) {
-            AppToast.show(context, errorMsg ?? '取消关注失败，请检查网络或稍后重试');
-          }
-        }
-      } else {
-        // ========== 添加关注操作 (三路直连) ==========
-        // 方案 1：微博移动端 REST 接口 (POST https://m.weibo.cn/api/friendships/create)
-        try {
-          final st = await client.ensureXsrfToken(forceRefresh: true) ?? '';
-          final mRes = await standaloneDio.post(
-            'https://m.weibo.cn/api/friendships/create',
-            data: 'uid=$targetUid&st=$st',
-            options: Options(
-              contentType: Headers.formUrlEncodedContentType,
-              headers: {
-                'Cookie': fullCookie.contains('XSRF-TOKEN')
-                    ? fullCookie
-                    : '$fullCookie; XSRF-TOKEN=$st; MLOGIN=1;',
-                'Referer': 'https://m.weibo.cn/u/$targetUid',
-                'User-Agent':
-                    'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
-                'Accept': 'application/json, text/plain, */*',
-                'X-Requested-With': 'XMLHttpRequest',
-                if (st.isNotEmpty) 'X-XSRF-TOKEN': st,
-              },
-            ),
-          );
-          if (_isFollowSuccess(mRes.data, isFollowAction: true)) {
-            success = true;
-          } else if (mRes.data is Map &&
-              mRes.data['msg'] != null &&
-              mRes.data['msg'].toString().isNotEmpty) {
-            errorMsg = mRes.data['msg'].toString();
-          }
-        } catch (_) {}
-
-        // 方案 2：微博桌面端 Ajax 接口 (POST https://weibo.com/ajax/friendships/create)
-        if (!success) {
-          try {
-            final xsrf = WeiboDioClient.extractXsrfToken(fullCookie) ?? '';
-            final res = await standaloneDio.post(
-              'https://weibo.com/ajax/friendships/create',
-              data: {'uid': targetUid},
-              options: Options(
-                headers: {
-                  'Cookie': fullCookie,
-                  'Referer': 'https://weibo.com/u/$targetUid',
-                  'Origin': 'https://weibo.com',
-                  'User-Agent': ApiConstants.defaultUserAgent,
-                  'Accept': 'application/json, text/plain, */*',
-                  'X-Requested-With': 'XMLHttpRequest',
-                  if (xsrf.isNotEmpty) 'X-XSRF-TOKEN': xsrf,
-                },
-              ),
-            );
-            if (_isFollowSuccess(res.data, isFollowAction: true)) {
-              success = true;
-            } else if (res.data is Map &&
-                res.data['msg'] != null &&
-                res.data['msg'].toString().isNotEmpty) {
-              errorMsg = res.data['msg'].toString();
-            }
-          } catch (_) {}
-        }
-
-        // 方案 3：微博经典直连通道 (POST https://weibo.com/aj/f/followed?ajkey=wb_follow)
-        if (!success) {
-          try {
-            final xsrf = WeiboDioClient.extractXsrfToken(fullCookie) ?? '';
-            final legacyRes = await standaloneDio.post(
-              'https://weibo.com/aj/f/followed?ajkey=wb_follow',
-              data:
-                  'uid=$targetUid&objectid=&f=1&extra=&refer_sort=&refer_flag=1005050001_',
-              options: Options(
-                contentType: Headers.formUrlEncodedContentType,
-                headers: {
-                  'Cookie': fullCookie,
-                  'Referer': 'https://weibo.com/u/$targetUid',
-                  'Origin': 'https://weibo.com',
-                  'User-Agent': ApiConstants.defaultUserAgent,
-                  'Accept': 'application/json, text/plain, */*',
-                  'X-Requested-With': 'XMLHttpRequest',
-                  if (xsrf.isNotEmpty) 'X-XSRF-TOKEN': xsrf,
-                },
-              ),
-            );
-            if (_isFollowSuccess(legacyRes.data, isFollowAction: true)) {
-              success = true;
-            } else if (legacyRes.data is Map && legacyRes.data['msg'] != null) {
-              errorMsg = legacyRes.data['msg'].toString();
-            }
-          } catch (_) {}
-        }
-
-        if (errorMsg != null &&
-            (errorMsg.contains('成功') || errorMsg.contains('已关注'))) {
-          success = true;
-        }
-
-        if (success) {
-          HapticFeedbackUtil.medium();
-          setState(() {
-            _user = WeiboUserModel(
-              id: _user.id,
-              screenName: _user.screenName,
-              avatar: _user.avatar,
-              avatarHd: _user.avatarHd,
-              verified: _user.verified,
-              verifiedType: _user.verifiedType,
-              verifiedReason: _user.verifiedReason,
-              description: _user.description,
-              followersCount: _user.followersCount + 1,
-              friendsCount: _user.friendsCount,
-              statusesCount: _user.statusesCount,
-              following: true,
-              followMe: _user.followMe,
-              gender: _user.gender,
-              ipLocation: _user.ipLocation,
-            );
-            _profileUserCache[_user.id] = _user;
-            if (targetUid.isNotEmpty) {
-              _profileUserCache[targetUid] = _user;
-            }
-          });
-          if (mounted) {
-            AppToast.show(context, '🎉 已关注 @${_user.screenName}');
-          }
-        } else {
-          if (mounted) {
-            AppToast.show(context, errorMsg ?? '关注失败，请检查网络或稍后重试');
-          }
-        }
-      }
-    } on DioException catch (dioErr) {
-      String msg = '操作失败，请稍后重试';
-      final status = dioErr.response?.statusCode;
-      if (status == 401 || status == 403) {
-        msg = '操作失败：网络权限受限，请稍后重试';
-      } else if (dioErr.type == DioExceptionType.connectionTimeout ||
-          dioErr.type == DioExceptionType.receiveTimeout) {
-        msg = '网络连接超时，请检查网络设置并重试';
-      }
-      if (mounted) {
-        AppToast.show(context, msg);
-      }
-    } catch (e) {
-      if (mounted) {
-        AppToast.show(context, '操作失败: $e');
-      }
+    } catch (_) {
+      if (mounted) AppToast.show(context, '微博关注操作失败，请稍后重试');
     } finally {
       if (mounted) setState(() => _isTogglingFollow = false);
     }
   }
 
-  // 弹出年份与月份筛选框
-  void _showDateFilterDialog() {
+_showDateFilterDialog() {
     HapticFeedbackUtil.light();
     final years = [2026, 2025, 2024, 2023, 2022, 2021, 2020];
 
@@ -1019,8 +715,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
                   HapticFeedbackUtil.light();
                   Navigator.push(
                     context,
-                    PhysicsSpringPageRoute(
-                      child: UserTimelineSearchPage(user: _user),
+                    MaterialPageRoute(
+                      builder: (_) => UserTimelineSearchPage(user: _user),
                     ),
                   );
                 },

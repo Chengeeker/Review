@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
@@ -31,49 +32,80 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage> {
     _fetchFavorites();
   }
 
-  Future<void> _fetchFavorites() async {
-    setState(() => _isLoading = true);
-    final client = ref.read(weiboDioClientProvider);
+  List<WeiboStatusModel> _extractFavoriteStatuses(dynamic rawData) {
+    if (rawData is! Map) return const [];
+    final data = rawData;
+    final innerData = data['data'];
+    final rawList = (innerData is List)
+        ? innerData
+        : ((innerData is Map && innerData['statuses'] is List)
+            ? innerData['statuses'] as List
+            : (data['statuses'] as List? ?? []));
+    final statuses = <WeiboStatusModel>[];
+    for (final item in rawList) {
+      if (item is Map) {
+        final itemMap = Map<String, dynamic>.from(item);
+        if (itemMap['status'] is Map) {
+          statuses.add(
+            WeiboStatusModel.fromJson(
+              Map<String, dynamic>.from(itemMap['status'] as Map),
+            ).copyWith(favorited: true),
+          );
+        } else if (itemMap['id'] != null || itemMap['text_raw'] != null) {
+          statuses.add(
+            WeiboStatusModel.fromJson(itemMap).copyWith(favorited: true),
+          );
+        }
+      }
+    }
+    return statuses;
+  }
+
+  Future<List<WeiboStatusModel>> _requestFavorites(
+      WeiboDioClient client, int page) async {
+    // 1. Try desktop endpoint
     try {
       final res = await client.dio.get(
         '/ajax/favorites/all_fav',
-        queryParameters: {'page': 1},
+        queryParameters: {'page': page},
       );
-      if (res.data is Map<String, dynamic>) {
-        final data = res.data as Map<String, dynamic>;
-        final rawList =
-            data['data'] as List? ?? data['statuses'] as List? ?? [];
-        final statuses = <WeiboStatusModel>[];
-        for (final item in rawList) {
-          if (item is Map<String, dynamic>) {
-            if (item['status'] is Map<String, dynamic>) {
-              statuses.add(
-                WeiboStatusModel.fromJson(
-                  item['status'] as Map<String, dynamic>,
-                ).copyWith(favorited: true),
-              );
-            } else if (item['id'] != null || item['text_raw'] != null) {
-              statuses.add(
-                WeiboStatusModel.fromJson(item).copyWith(favorited: true),
-              );
-            }
-          }
-        }
-        if (mounted) {
-          setState(() {
-            _statuses.clear();
-            _statuses.addAll(statuses);
-            _page = 1;
-            _hasMore = statuses.isNotEmpty;
-            _isLoading = false;
-          });
-          return;
-        }
-      }
+      final statuses = _extractFavoriteStatuses(res.data);
+      if (statuses.isNotEmpty) return statuses;
     } catch (_) {}
 
+    // 2. Fallback to mobile endpoint if desktop returned empty or failed
+    try {
+      final mRes = await client.dio.get(
+        'https://m.weibo.cn/api/favorites/all_fav',
+        queryParameters: {'page': page},
+        options: Options(
+          headers: {
+            'Referer': 'https://m.weibo.cn/',
+            'User-Agent':
+                'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+          },
+          extra: {'weiboMobileLogin': true},
+        ),
+      );
+      final mStatuses = _extractFavoriteStatuses(mRes.data);
+      if (mStatuses.isNotEmpty) return mStatuses;
+    } catch (_) {}
+
+    return const [];
+  }
+
+  Future<void> _fetchFavorites() async {
+    setState(() => _isLoading = true);
+    final client = ref.read(weiboDioClientProvider);
+    final statuses = await _requestFavorites(client, 1);
     if (mounted) {
-      setState(() => _isLoading = false);
+      setState(() {
+        _statuses.clear();
+        _statuses.addAll(statuses);
+        _page = 1;
+        _hasMore = statuses.isNotEmpty;
+        _isLoading = false;
+      });
     }
   }
 
@@ -81,42 +113,15 @@ class _FavoritesPageState extends ConsumerState<FavoritesPage> {
     if (!_hasMore) return false;
     final client = ref.read(weiboDioClientProvider);
     final nextPage = _page + 1;
-    try {
-      final res = await client.dio.get(
-        '/ajax/favorites/all_fav',
-        queryParameters: {'page': nextPage},
-      );
-      if (res.data is Map<String, dynamic>) {
-        final data = res.data as Map<String, dynamic>;
-        final rawList =
-            data['data'] as List? ?? data['statuses'] as List? ?? [];
-        final statuses = <WeiboStatusModel>[];
-        for (final item in rawList) {
-          if (item is Map<String, dynamic>) {
-            if (item['status'] is Map<String, dynamic>) {
-              statuses.add(
-                WeiboStatusModel.fromJson(
-                  item['status'] as Map<String, dynamic>,
-                ).copyWith(favorited: true),
-              );
-            } else if (item['id'] != null || item['text_raw'] != null) {
-              statuses.add(
-                WeiboStatusModel.fromJson(item).copyWith(favorited: true),
-              );
-            }
-          }
-        }
-        if (mounted) {
-          setState(() {
-            _statuses.addAll(statuses);
-            _page = nextPage;
-            _hasMore = statuses.isNotEmpty;
-          });
-        }
-        return statuses.isNotEmpty;
-      }
-    } catch (_) {}
-    return false;
+    final statuses = await _requestFavorites(client, nextPage);
+    if (mounted) {
+      setState(() {
+        _statuses.addAll(statuses);
+        _page = nextPage;
+        _hasMore = statuses.isNotEmpty;
+      });
+    }
+    return statuses.isNotEmpty;
   }
 
   @override

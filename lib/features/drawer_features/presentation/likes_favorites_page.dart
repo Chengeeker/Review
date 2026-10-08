@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
@@ -178,7 +179,7 @@ class _LikesListViewState extends ConsumerState<_LikesListView>
       }
     } catch (_) {}
 
-    // Fallback: /ajax/profile/likelist
+    // Fallback 1: /ajax/profile/likelist
     if (extracted.isEmpty && _page == 1) {
       try {
         final res2 = await client.dio.get(
@@ -207,6 +208,48 @@ class _LikesListViewState extends ConsumerState<_LikesListView>
                   : item;
               final status = WeiboStatusModel.fromJson(statusData);
               extracted.add(status.copyWith(liked: true));
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Fallback 2: Mobile container (m.weibo.cn/api/container/getIndex?containerid=230869{uid}_-_like)
+    if (extracted.isEmpty && uid.isNotEmpty) {
+      try {
+        final mRes = await client.dio.get(
+          'https://m.weibo.cn/api/container/getIndex',
+          queryParameters: {
+            'containerid': '230869${uid}_-_like',
+            'page': _page,
+          },
+          options: Options(
+            headers: {
+              'Referer': 'https://m.weibo.cn/',
+              'User-Agent':
+                  'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+            },
+            extra: {'weiboMobileLogin': true},
+          ),
+        );
+        if (mRes.data is Map<String, dynamic>) {
+          final data = mRes.data as Map<String, dynamic>;
+          final cards = data['data']?['cards'] as List? ?? [];
+          for (final card in cards) {
+            if (card is Map<String, dynamic>) {
+              final mblog = card['mblog'] as Map<String, dynamic>?;
+              if (mblog != null) {
+                extracted.add(WeiboStatusModel.fromJson(mblog).copyWith(liked: true));
+              } else if (card['card_group'] is List) {
+                for (final subCard in card['card_group']) {
+                  if (subCard is Map<String, dynamic> &&
+                      subCard['mblog'] is Map<String, dynamic>) {
+                    extracted.add(WeiboStatusModel.fromJson(
+                            subCard['mblog'] as Map<String, dynamic>)
+                        .copyWith(liked: true));
+                  }
+                }
+              }
             }
           }
         }
@@ -341,6 +384,49 @@ class _FavoritesListViewState extends ConsumerState<_FavoritesListView>
         }
       }
     } catch (_) {}
+
+    // Fallback: Mobile endpoint m.weibo.cn/api/favorites/all_fav
+    if (extracted.isEmpty) {
+      try {
+        final mRes = await client.dio.get(
+          'https://m.weibo.cn/api/favorites/all_fav',
+          queryParameters: {'page': _page},
+          options: Options(
+            headers: {
+              'Referer': 'https://m.weibo.cn/',
+              'User-Agent':
+                  'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+            },
+            extra: {'weiboMobileLogin': true},
+          ),
+        );
+        if (mRes.data is Map<String, dynamic>) {
+          final data = mRes.data as Map<String, dynamic>;
+          final dynamic rawData = data['data'];
+          final List rawList;
+          if (rawData is List) {
+            rawList = rawData;
+          } else if (rawData is Map) {
+            rawList =
+                (rawData['list'] as List?) ??
+                (rawData['statuses'] as List?) ??
+                [];
+          } else {
+            rawList =
+                (data['list'] as List?) ?? (data['statuses'] as List?) ?? [];
+          }
+          for (final item in rawList) {
+            if (item is Map<String, dynamic>) {
+              final statusData = item['status'] is Map
+                  ? item['status'] as Map<String, dynamic>
+                  : item;
+              final status = WeiboStatusModel.fromJson(statusData);
+              extracted.add(status.copyWith(favorited: true));
+            }
+          }
+        }
+      } catch (_) {}
+    }
 
     if (mounted) {
       setState(() {

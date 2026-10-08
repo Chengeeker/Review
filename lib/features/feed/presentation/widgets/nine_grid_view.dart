@@ -17,6 +17,8 @@ class NineGridView extends ConsumerStatefulWidget {
   final String statusId;
   final bool isDetail;
   final String? authorName;
+  final String? authorId;
+  final String? authorAvatar;
   final String? webpageCardCaption;
 
   const NineGridView({
@@ -25,6 +27,8 @@ class NineGridView extends ConsumerStatefulWidget {
     required this.statusId,
     this.isDetail = false,
     this.authorName,
+    this.authorId,
+    this.authorAvatar,
     this.webpageCardCaption,
   });
 
@@ -367,7 +371,9 @@ class _NineGridViewState extends ConsumerState<NineGridView> {
     final pic = pics[index];
     if (pic.articleUrl != null) {
       LinkRoutingService.openUrl(context, pic.articleUrl!,
-          title: pic.articleTitle);
+          title: pic.articleTitle,
+          sourceAuthorId: widget.authorId,
+          sourceAuthorAvatar: widget.authorAvatar);
       return;
     }
     if (pic.isVideo && pic.videoUrl != null && pic.videoUrl!.isNotEmpty) {

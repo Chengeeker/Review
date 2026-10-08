@@ -1053,29 +1053,100 @@ class DetailRepository {
     return value.isEmpty || value == '0' || value == '-1';
   }
 
+  bool _useMobileSession() {
+    final storage = _client.storageService;
+    final desktopCookie = storage.getDesktopCookie()?.trim() ?? '';
+    final mobileCookie = storage.getMobileCookie()?.trim() ?? '';
+    return desktopCookie.isEmpty && mobileCookie.isNotEmpty;
+  }
+
+  String _resolveSessionCookie({required bool useMobileSession}) {
+    final storage = _client.storageService;
+    final desktopCookie = storage.getDesktopCookie()?.trim() ?? '';
+    final mobileCookie = storage.getMobileCookie()?.trim() ?? '';
+    final fullCookie = storage.getFullCookie()?.trim() ?? '';
+    return useMobileSession
+        ? mobileCookie
+        : desktopCookie.isNotEmpty
+        ? desktopCookie
+        : fullCookie;
+  }
+
+  Future<String?> _resolveXsrfToken(String sessionCookie, {required bool useMobileSession}) async {
+    var xsrf = WeiboDioClient.extractXsrfToken(sessionCookie);
+    if (xsrf == null || xsrf.isEmpty || xsrf == 'deleted') {
+      xsrf = await _client.ensureXsrfToken(
+        forceRefresh: true,
+        customCookie: sessionCookie,
+        mobileSession: useMobileSession,
+      );
+    }
+    return xsrf;
+  }
+
   /// Send a comment on a Weibo Status (发评论)
   Future<CommentActionResult> sendComment({
     required String id,
     required String content,
   }) async {
+    final numericId = WeiboStatusModel.mblogidToMid(id.trim());
+    if (numericId.isEmpty || content.trim().isEmpty) {
+      return const CommentActionResult(success: false, message: '评论内容不能为空');
+    }
+
+    final useMobile = _useMobileSession();
+    final sessionCookie = _resolveSessionCookie(useMobileSession: useMobile);
+    if (sessionCookie.isEmpty) {
+      return const CommentActionResult(success: false, message: '请登录后发表评论');
+    }
+
+    final xsrf = await _resolveXsrfToken(sessionCookie, useMobileSession: useMobile);
+    const mobileUserAgent =
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
+
     try {
-      final numericId = WeiboStatusModel.mblogidToMid(id);
-      final response = await _client.dio.post(
-        ApiConstants.createComment,
-        data: {
-          'id': numericId,
-          'comment': content,
-        },
-        options: Options(
-          headers: {
-            'Referer': 'https://weibo.com/',
-          },
-        ),
-      );
-      if (response.statusCode == 200 && response.data != null) {
+      final response = useMobile
+          ? await _client.dio.post(
+              'https://m.weibo.cn/api/comments/create',
+              data:
+                  'id=${Uri.encodeQueryComponent(numericId)}&content=${Uri.encodeQueryComponent(content)}&st=${Uri.encodeQueryComponent(xsrf ?? '')}',
+              options: Options(
+                contentType: Headers.formUrlEncodedContentType,
+                headers: {
+                  'Referer': 'https://m.weibo.cn/detail/$numericId',
+                  'User-Agent': mobileUserAgent,
+                },
+                extra: {
+                  'weiboMobileLogin': true,
+                  if (xsrf != null) 'weiboXsrfToken': xsrf,
+                },
+              ),
+            )
+          : await _client.dio.post(
+              ApiConstants.createComment,
+              data: {
+                'id': numericId,
+                'comment': content,
+              },
+              options: Options(
+                headers: {
+                  'Referer': 'https://weibo.com/',
+                  'Origin': 'https://weibo.com',
+                },
+                extra: {
+                  if (xsrf != null) 'weiboXsrfToken': xsrf,
+                },
+              ),
+            );
+      if ((response.statusCode == null ||
+              (response.statusCode! >= 200 && response.statusCode! < 300)) &&
+          response.data != null) {
         if (response.data is Map) {
           final map = response.data as Map;
-          if (map['ok'] == 1 || map['id'] != null || map['mid'] != null) {
+          if (map['ok'] == 1 ||
+              map['ok'] == true ||
+              map['id'] != null ||
+              map['mid'] != null) {
             return const CommentActionResult(success: true);
           }
           final msg = map['msg']?.toString() ?? map['message']?.toString();
@@ -1095,7 +1166,7 @@ class DetailRepository {
     } catch (e) {
       print('[DetailRepository] sendComment error: $e');
     }
-    return const CommentActionResult(success: false);
+    return const CommentActionResult(success: false, message: '发表评论失败，请稍后重试');
   }
 
   /// Reply to a specific comment (回复评论)
@@ -1104,26 +1175,68 @@ class DetailRepository {
     required String commentId,
     required String content,
   }) async {
+    final numericStatusId = WeiboStatusModel.mblogidToMid(statusId.trim());
+    final numericCommentId = WeiboStatusModel.mblogidToMid(commentId.trim());
+    if (numericStatusId.isEmpty ||
+        numericCommentId.isEmpty ||
+        content.trim().isEmpty) {
+      return const CommentActionResult(success: false, message: '回复内容不能为空');
+    }
+
+    final useMobile = _useMobileSession();
+    final sessionCookie = _resolveSessionCookie(useMobileSession: useMobile);
+    if (sessionCookie.isEmpty) {
+      return const CommentActionResult(success: false, message: '请登录后回复评论');
+    }
+
+    final xsrf = await _resolveXsrfToken(sessionCookie, useMobileSession: useMobile);
+    const mobileUserAgent =
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
+
     try {
-      final numericStatusId = WeiboStatusModel.mblogidToMid(statusId);
-      final numericCommentId = WeiboStatusModel.mblogidToMid(commentId);
-      final response = await _client.dio.post(
-        ApiConstants.replyComment,
-        data: {
-          'id': numericStatusId,
-          'cid': numericCommentId,
-          'comment': content,
-        },
-        options: Options(
-          headers: {
-            'Referer': 'https://weibo.com/',
-          },
-        ),
-      );
-      if (response.statusCode == 200 && response.data != null) {
+      final response = useMobile
+          ? await _client.dio.post(
+              'https://m.weibo.cn/api/comments/reply',
+              data:
+                  'id=${Uri.encodeQueryComponent(numericStatusId)}&cid=${Uri.encodeQueryComponent(numericCommentId)}&content=${Uri.encodeQueryComponent(content)}&st=${Uri.encodeQueryComponent(xsrf ?? '')}',
+              options: Options(
+                contentType: Headers.formUrlEncodedContentType,
+                headers: {
+                  'Referer': 'https://m.weibo.cn/detail/$numericStatusId',
+                  'User-Agent': mobileUserAgent,
+                },
+                extra: {
+                  'weiboMobileLogin': true,
+                  if (xsrf != null) 'weiboXsrfToken': xsrf,
+                },
+              ),
+            )
+          : await _client.dio.post(
+              ApiConstants.replyComment,
+              data: {
+                'id': numericStatusId,
+                'cid': numericCommentId,
+                'comment': content,
+              },
+              options: Options(
+                headers: {
+                  'Referer': 'https://weibo.com/',
+                  'Origin': 'https://weibo.com',
+                },
+                extra: {
+                  if (xsrf != null) 'weiboXsrfToken': xsrf,
+                },
+              ),
+            );
+      if ((response.statusCode == null ||
+              (response.statusCode! >= 200 && response.statusCode! < 300)) &&
+          response.data != null) {
         if (response.data is Map) {
           final map = response.data as Map;
-          if (map['ok'] == 1 || map['id'] != null || map['mid'] != null) {
+          if (map['ok'] == 1 ||
+              map['ok'] == true ||
+              map['id'] != null ||
+              map['mid'] != null) {
             return const CommentActionResult(success: true);
           }
           final msg = map['msg']?.toString() ?? map['message']?.toString();
@@ -1143,30 +1256,68 @@ class DetailRepository {
     } catch (e) {
       print('[DetailRepository] replyComment error: $e');
     }
-    return const CommentActionResult(success: false);
+    return const CommentActionResult(success: false, message: '回复评论失败，请稍后重试');
   }
 
   /// Delete a comment (删除评论：自己发表的评论，或博主在自己微博下删除他人评论)
   Future<CommentActionResult> destroyComment({
     required String cid,
   }) async {
+    final numericCid = WeiboStatusModel.mblogidToMid(cid.trim());
+    if (numericCid.isEmpty) {
+      return const CommentActionResult(success: false, message: '评论编号无效');
+    }
+
+    final useMobile = _useMobileSession();
+    final sessionCookie = _resolveSessionCookie(useMobileSession: useMobile);
+    if (sessionCookie.isEmpty) {
+      return const CommentActionResult(success: false, message: '请登录后删除评论');
+    }
+
+    final xsrf = await _resolveXsrfToken(sessionCookie, useMobileSession: useMobile);
+    const mobileUserAgent =
+        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1';
+
     try {
-      final numericCid = WeiboStatusModel.mblogidToMid(cid);
-      final response = await _client.dio.post(
-        ApiConstants.destroyComment,
-        data: {
-          'cid': numericCid,
-        },
-        options: Options(
-          headers: {
-            'Referer': 'https://weibo.com/',
-          },
-        ),
-      );
-      if (response.statusCode == 200 && response.data != null) {
+      final response = useMobile
+          ? await _client.dio.post(
+              'https://m.weibo.cn/api/comments/destroy',
+              data:
+                  'cid=${Uri.encodeQueryComponent(numericCid)}&st=${Uri.encodeQueryComponent(xsrf ?? '')}',
+              options: Options(
+                contentType: Headers.formUrlEncodedContentType,
+                headers: {
+                  'Referer': 'https://m.weibo.cn/',
+                  'User-Agent': mobileUserAgent,
+                },
+                extra: {
+                  'weiboMobileLogin': true,
+                  if (xsrf != null) 'weiboXsrfToken': xsrf,
+                },
+              ),
+            )
+          : await _client.dio.post(
+              ApiConstants.destroyComment,
+              data: {
+                'cid': numericCid,
+              },
+              options: Options(
+                headers: {
+                  'Referer': 'https://weibo.com/',
+                  'Origin': 'https://weibo.com',
+                },
+                extra: {
+                  if (xsrf != null) 'weiboXsrfToken': xsrf,
+                },
+              ),
+            );
+      if ((response.statusCode == null ||
+              (response.statusCode! >= 200 && response.statusCode! < 300)) &&
+          response.data != null) {
         if (response.data is Map) {
           final map = response.data as Map;
           if (map['ok'] == 1 ||
+              map['ok'] == true ||
               (map['data'] != null && map['data']['id'] != null)) {
             return const CommentActionResult(success: true);
           }
@@ -1187,7 +1338,7 @@ class DetailRepository {
     } catch (e) {
       print('[DetailRepository] destroyComment error: $e');
     }
-    return const CommentActionResult(success: false);
+    return const CommentActionResult(success: false, message: '删除评论失败，请稍后重试');
   }
 
   /// Fetch Weibo Edit History revisions (获取微博历史编辑版本列表)

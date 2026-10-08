@@ -1,6 +1,6 @@
 # Review 开发与技术架构文档
 
-> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-10-07；当前应用版本：`3.0.0+156`。
+> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-10-08；当前应用版本：`3.1.4+164`。
 >
 > `README.md` 用于项目介绍；本文档维护当前实现，不记录登录 Cookie、Token、密码或其他凭据。
 
@@ -46,6 +46,8 @@ Review 是 Flutter 编写的微博网页端风格客户端。凡是涉及微博�
 
 时间线顶部可以打开侧边栏、切换微博分组、进入搜索和快捷发布。标准页面统一使用 `ReviewFrostedAppBar`；设置首页不显示仅有标题、没有操作的独立顶栏，设置子页面仍保留标准返回顶栏。所有标准顶栏以及时间线、热搜自定义栏、超话详情 SliverAppBar 共用同一材质参数与 `ReviewFrostedBackdrop`：主题 AppBar 色（缺省时回退 Scaffold 背景色）以 alpha 0.45 直接设置在 AppBar Material；上方叠加同色纵向渐变，顶部 alpha 0.95、边界 alpha 0，顶端合成约 0.9725，状态栏一侧更接近不透明、越靠底部分界越透明；`forceMaterialTransparency` 关闭。模糊层按 `ClipRect → BackdropFilter(sigma 20) → 渐变 DecoratedBox` 的顺序直接绘制，不使用 `ShaderMask` 或独立 blur alpha 遮罩；顶部高不透明度色层遮住大部分模糊，向边界透明度渐增，因此模糊观感自然显现。不能仅凭 widget 中存在滤镜判断有效：在适用的页面上还需确认滚动内容确实延伸到顶栏后方。`ClipRect` 限定滤镜范围，不启用全屏 shader 或全局液态玻璃。不能只在 `flexibleSpace` 绘制底色，否则 AppBar Material 透明时部分页面会实际呈现透明。滚动结构安全的页面让内容延伸至顶栏下方，并为列表/滚动内容补回安全区与工具栏高度，使滚动内容经过顶栏时可见磨砂；分组管理、赞和收藏、关注/粉丝列表等使用此布局。超话中心的搜索框和固定分类栏属于顶栏组成，磨砂背景覆盖至分类栏下沿，滚动结果从该边界以下开始；底部边界由顶栏整体材质与下方内容的交界表达，该页关闭标签行下方额外的浅色细线，避免出现双重边界。除上述超话中心外，登录表单、聊天输入区、内嵌网页/视频、其他固定搜索栏或复杂 pinned sliver 页面保持原内容几何，仅复用顶栏材质，避免键盘遮挡、控件重叠和滚动位置变化。时间线分组下拉面板仍是独立的局部面板，不属于顶栏渐变；它使用同主题底色、82% 不透明度和 sigma 20 模糊，区域由 `ClipRRect` 限定。热搜列表首项仍预留状态栏、标题栏和分类 Tab 高度，空/加载状态居中布局不变。覆盖式顶栏下 EasyRefresh 的安全 inset 不得重复加到触发距离：`reviewFrostedAppBarRefreshHeader` 保持 70dp 阈值并只将 ClassicHeader 指示器下移至完整顶栏以下；全局默认 header 与非覆盖式页面行为不变。应用使用 Material 3，底部导航支持贴底栏和标准材质悬浮栏，可在个性化设置中开关悬浮底栏。可迁移至其他应用的顶栏设计、Flutter 实现步骤和防错验收清单见[磨砂顶栏设计规范](docs/FROSTED_TOP_BAR_DESIGN_SPEC.md)。
 
+主底栏的时间线、热搜、设置页面复用 Lurk 的双页叠放方式：切换时当前页与目标页反向同步平移一个屏宽，按入口顺序决定方向，RTL 反转；使用 260ms `easeOutCubic`，三个页面保持挂载以保留状态。系统关闭动画时直接切换。普通 `MaterialPageRoute` 在 Android、桌面和 Fuchsia 上复用 Lurk `SpringPageRoute` 的覆盖式语义：新页面全宽滑入覆盖旧页面，旧页面不移动、不淡入/淡出；LTR 从右侧进入，RTL 从左侧进入，push 320ms `easeOutCubic`、pop 220ms `easeInCubic`。Android 动画开启时由 `WidgetsBindingObserver` 把预测式返回进度转交当前 `PageRoute`；关闭系统动画时直接显示页面。iOS 保留 Cupertino 原生转场与边缘返回手势。图片画廊的显式 `PageRouteBuilder` 与 Hero 缩放动画继续走各自实现，不受全局路由主题影响。
+
 顶栏模糊只使用一个 sigma 20 的 `BackdropFilter`，由外层 `ClipRect` 限定范围；其 child 绘制固定 flexibleSpace 内容和纵向主题色渐变。不套 `ShaderMask`，也不指定 `BlendMode.src`。颜色层从状态栏侧 alpha 0.95 过渡至分界线侧 alpha 0；叠加 AppBar Material alpha 0.45 后，顶部底色合成约 0.9725 不透明，边界处保留 0.45。因为渐变色层覆盖在模糊结果上，状态栏侧只透出极少背景，边界侧磨砂更明显；这是颜色叠层带来的视觉变化，不是第二个模糊遮罩。
 
 ### 2.2 时间线和微博卡片
@@ -59,7 +61,7 @@ Review 是 Flutter 编写的微博网页端风格客户端。凡是涉及微博�
 - 微博头像、图片网格、视频封面、搜索/超话图片等网络图片统一复用 `extended_image` 的磁盘缓存；同一完整 URL 命中缓存时，应用重启后可从临时缓存读取，不保证不同尺寸、域名或查询参数的 URL 共享缓存。启动后异步整理 `getTemporaryDirectory()/cacheimage`，仅处理该目录下 MD5 命名的缓存文件：超过 60 天或总量超过 512 MiB 时按文件修改时间从旧到新清理，跳过最近 1 分钟写入的文件。不会清理已保存到相册的媒体、账号资料或其他临时目录。系统仍可自行清除临时缓存；图片显示加载占位不等于实际重新下载。
 - 微博自动生成的荣誉/会员/活动网页卡片，会识别官方 `url_objects[].object.object` 的 `pic_url`/`image.url`，以及桌面时间线/详情中的 `url_struct`（`url_type=39`）经移动端状态接口补充的 `page_info.page_pic`。这类卡片可能由透明前景图和 `media_pic_url`/嵌套 `pic_info.pic_big` 背景图组成；分层卡片的列表比例优先采用背景画布的宽高，缺少尺寸时按常见横向卡片比例回退，避免拿透明前景的窄长尺寸裁切整张卡片。列表图层使用等比完整显示，透明卡片使用白色画布，详情画廊也等比完整显示。对应短链接从正文中移除，点击卡片只打开渲染后的图片，不再跳回个人主页。主页解析使用最多 6 路并发和按微博 ID 的内存缓存，避免这些卡片逐条串行请求。带真实视频播放地址的卡片仍走视频播放器，超话等普通主题卡片不转成图片。
 - 投票微博保留现有原生选项卡和投票交互，不将投票链接的占位封面/投票图表加入图片网格。按同条微博解析出的 `WeiboPollModel` 与该网页卡片自身的 `type/object_type/title/投票 URL` 关联判定；只过滤相匹配的投票网页缩略图，不因微博中存在投票就清除 `pic_infos` 里的真实配图，也不影响文章封面、生日/荣誉卡片及非投票链接。
-- 微博文章封面与自动动态图片区分：从官方文章链接或明确的 article 对象提取文章 ID，封面模型保留 `articleUrl/articleTitle`，点击复用已有 `WeiboArticlePage` 原生阅读页；兼容桌面 `/ttarticle/p/show` 与移动 `/article/m/show/id/`，不将外站或普通网页对象猜成文章。链接图片、`url_objects`、`page_info` 及浏览记录快照使用同一规则；旧快照同地址封面补上目标而不重复图片。只有点击封面才请求文章内容，生日/夺金卡片继续打开图片画廊。
+- 微博文章封面与自动动态图片区分：从官方文章链接或明确的 article 对象提取文章 ID，封面模型保留 `articleUrl/articleTitle`，点击复用已有 `WeiboArticlePage` 原生阅读页；兼容桌面 `/ttarticle/p/show` 与移动 `/article/m/show/id/`，不将外站或普通网页对象猜成文章。链接图片、`url_objects`、`page_info` 及浏览记录快照使用同一规则；旧快照同地址封面补上目标而不重复图片。只有点击封面才请求文章内容，生日/夺金卡片继续打开图片画廊。文章页解析结果按账号 UID 和文章 ID 保留最多 8 条进程内 LRU 缓存；再次打开直接显示缓存正文，手动下拉刷新时旧正文留在屏幕上，成功后替换。此缓存不落盘，登录态 UID 缺失时不缓存。从信息流卡片进入文章时传入卡片作者 UID 和头像 URL；只有解析到的文章作者 UID 相同才复用该头像 URL，避免同一用户头像因图片 URL 不同而在占位图和正文头像间闪换，不会把不同作者头像误用到文章页。
 - 抽奖链接的导航缩略图不属于微博配图：按链接自身的抽奖标题、lottery 对象类型或微博抽奖域名识别，不将其 `card_image_url`、链接内 `pic_info/pic_infos` 或移动端 `page_info` 缩略图加入图片网格；仍保留“抽奖详情”正文链接及顶层真实配图。此判断不依据整篇正文是否出现“抽奖”，也不按图片大小删除图片；生日/夺金等自动卡片继续按原逻辑合成。列表、详情和浏览记录共用模型解析规则，不新增网络请求。
 - 详情页补全自动卡片时，将移动端图层与桌面详情已有卡片合并；移动端只返回透明前景图时保留已有完整背景与画布尺寸，避免生日/荣誉卡片从完整卡片退化成只有头像。官方自动卡片短链接移除后，不显示重复链接正文；生日网页卡片从 `url_struct.url_title` 读取祝福标题，并将标题覆盖渲染在卡片白底图片的下方留白处，列表卡片和详情页保持一致，点击图片仍打开渲染后的图片。是否包含日期由微博返回标题决定，客户端不根据当前设备日期猜造文案。
 - 浏览记录复用同一 `TweetCard`，历史快照通过 `WeiboStatusModel.toJson/fromJson` 往返时保留 `pics`（包括自动卡片前景、背景和卡片标记），不能只解析微博 API 的 `pic_infos`。旧快照带有 `url_type=39` 自动卡片链接但缺少卡片图片时，浏览记录后台复用主页的 `FeedRepository.parseStatuses` 有界补全；成功后在原历史位置更新快照，不改浏览顺序。普通状态不发起这类补全，失败也不阻塞列表打开。
@@ -187,7 +189,7 @@ lib/
 微博移动端:   https://m.weibo.cn
 ```
 
-`WeiboDioClient` 负责 Cookie、XSRF、请求头和响应错误处理；`VisitorTokenEngine` 负责未登录公开内容所需的访客 Sub Token。网页登录产生的 Cookie 只保存在本地会话存储，不写入开发文档、不进入个性化备份。
+`WeiboDioClient` 负责 Cookie、XSRF、请求头和响应错误处理；`VisitorTokenEngine` 负责未登录公开内容所需的访客 Sub Token。桌面和移动端请求分别优先使用对应域的 Cookie 与 XSRF；缺少令牌时从同域配置接口获取，并只更新对应会话，403 重试也沿用原请求 Cookie/域，禁止把移动令牌写进桌面会话或反向污染。网页登录产生的 Cookie 只保存在本地会话存储，不写入开发文档、不进入个性化备份。
 
 认证失败处理包括 XSRF 刷新和有限重试。401/432 等鉴权响应最多进行受控重试，不允许拦截器递归重试；凭据检测的模糊失败显示“暂时无法验证”，只有服务端明确失效时才显示失效状态，避免“检测失效—自动登录—再次检测失效”的循环。
 
@@ -195,15 +197,14 @@ lib/
 
 以下是当前代码实际使用的接口类别；接口字段可能随微博网页端变化，新增调用必须先核对网页端响应，不得只根据本地模型名称推断成功。
 
-| 功能 | 当前接口 |
+| 功能 | 当前接口与双通道分发规则 |
 | --- | --- |
-| 关注流/热门流/分组流 | `/ajax/feed/friendstimeline`；首屏失败或为空时尝试 `/ajax/feed/unreadfriendstimeline`；访客可回退 `/ajax/feed/hottimeline`；分组使用 `/ajax/feed/groupstimeline`、`/ajax/feed/allGroups` |
-| 用户微博/状态详情/长文/编辑历史 | `/ajax/statuses/mymblog`、`/ajax/statuses/show`、`/ajax/statuses/longtext`、`/ajax/statuses/editHistory` |
-| 发布/编辑/删除 | `/ajax/statuses/update`、`/ajax/statuses/modify`、`/ajax/statuses/destroy` |
-| 评论/回复/二级评论 | `/ajax/statuses/buildComments`（一级评论使用 `fetch_level=0`，楼中楼使用 `fetch_level=1`，均使用响应外层 `max_id` 分页）、`/ajax/comments/create`、`/ajax/comments/reply`、`/ajax/statuses/destroyComment` |
-| 点赞/收藏 | `/ajax/statuses/setLike`、`/ajax/statuses/cancelLike`、`/ajax/statuses/createFavorites`、`/ajax/statuses/destoryFavorites` |
+| 关注流/热门流/分组流 | 登录后先尝试 `/ajax/feed/friendstimeline`；首屏失败或为空时尝试 `/ajax/feed/unreadfriendstimeline`。**在移动会话下或桌面关注流无内容时，自动无缝回退移动端关注流 `GET https://m.weibo.cn/feed/friends`**；访客可回退 `/ajax/feed/hottimeline`；分组使用 `/ajax/feed/groupstimeline`、`/ajax/feed/allGroups` |
+| 发布/编辑/删除 | 发布优先 `/ajax/statuses/update`（桌面失败或移动会话时回退移动端 `m.weibo.cn/api/statuses/update`）；编辑使用 `/ajax/statuses/modify`；**删除微博按会话分发：移动端使用 `m.weibo.cn/profile/delMyblog`（携带 `mid`、`st`、`MLOGIN=1`），桌面端使用 `/ajax/statuses/destroy`** |
+| 评论/回复/二级评论 | 评论流与二级评论读取使用 `/ajax/statuses/buildComments`（一级评论使用 `fetch_level=0`，楼中楼使用 `fetch_level=1`，均使用响应外层 `max_id` 分页）。**评论写操作按会话分发：移动端使用 `m.weibo.cn/api/comments/create`、`reply`、`destroy`（携带 `st` 与 `MLOGIN=1`）；桌面端使用 `/ajax/statuses/buildComments`、`/ajax/comments/reply`、`/ajax/statuses/destroyComment`** |
+| 点赞/收藏 | **全操作支持双通道路由与乐观状态自动回滚**：点赞/取消点赞在移动端走 `m.weibo.cn/api/attitudes/create` 与 `destroy`（携带 `id`、`attitude=heart`、`st`、`MLOGIN=1`），桌面端走 `/ajax/statuses/setLike` 与 `cancelLike`；收藏/取消收藏在移动端走 `m.weibo.cn/api/favorites/create` 与 `destory`（携带 `id`、`st`、`MLOGIN=1`），桌面端走 `/ajax/statuses/createFavorites` 与 `destoryFavorites`。我的收藏与我的赞列表在桌面 `/ajax/favorites/all_fav` 与 `/ajax/statuses/likelist` 无返回时，自动降级回退移动端接口及容器流 |
 | 投票/投票结果 | `/ajax/statuses/setVote`、`m.weibo.cn/api/statuses/show`，网页结果读取回退 `/ajax/statuses/show` |
-| 关注关系/关系列表 | 桌面端 `/ajax/friendships/create`、`/ajax/friendships/destroy`；移动端取消关注兼容路径拼作 `/api/friendships/destory`。关系列表使用 `/ajax/friendships/friends?uid=<uid>&page=<page>`；粉丝列表额外使用 `relate=fans` 和 `type=fans`，不附加 `fansSortType` 或本地数量参数，禁止把默认关注响应当成粉丝响应 |
+| 关注关系/关系列表 | 按已验证会话选择接口：桌面会话使用 `/ajax/friendships/create`、`/ajax/friendships/destory`；只有移动会话时使用 `m.weibo.cn/api/friendships/create`、`/api/friendships/destory`，并带移动端 `st`。微博取关路径沿用上游历史拼写 `destory`，不可改成标准拼法 `destroy`（会返回地址不存在；[公开网页端接口记录，非官方](https://github.com/imoonkey/openweb/blob/main/src/sites/weibo/DOC.md)也记录了该上游拼写）。失败保留微博业务提示，不乐观改资料状态。关系列表使用 `/ajax/friendships/friends?uid=<uid>&page=<page>`；粉丝列表额外使用 `relate=fans` 和 `type=fans`，不附加 `fansSortType` 或本地数量参数，禁止把默认关注响应当成粉丝响应 |
 | 关注的超话 | `/ajax/profile/topicContent?tabid=231093_-_chaohua&page=<page>`；请求通过关注页 Referer 指定目标 UID，列表必须来自 `data.list` 等真实列表字段 |
 | 私信/群聊 | `/webim/2/direct_messages/conversation.json`、`/webim/groupchat/query_messages.json`；群聊首屏使用 `max_mid=0`，顶部历史使用当前最早消息的 `max_mid`，本地按消息时间统一升序渲染 |
 | 热搜/建议/搜索 | `/ajax/side/hotSearch`、`/ajax/statuses/hot_band`、`/ajax/side/search`、`/ajax/statuses/search` |
@@ -231,15 +232,17 @@ lib/
 
 ### 7.2 图片画廊
 
+混合图库当前项为普通视频时，缩略条按播放器底部控制栏的实际布局高度排列在其上方，间隔 8dp；该高度包含进度条、按钮、字体缩放和底部安全区。控制栏仅在初次布局或尺寸变化时通知图库，不在每次播放进度更新时测量。缩略条保留在图库层：拖动期间锁定底部位置，停稳后按最终媒体类型恢复位置，避免播放器卸载打断滚轮手势。图片页仍使用原有底部位置，主图全屏视口不变。
+
 顶部返回、页码/Live Photo 和下载控件与底部缩略条共用所在路由的动画状态：push 期间透明且不可交互，路由进入 completed 后以 140ms 淡入；pop 一开始立即禁用点击并淡出。顶部按钮含 `BackdropFilter` 和 fragment shader，禁止把整组按钮包进 `Opacity`/`AnimatedOpacity` 透明合成层，以免磨砂滤镜采样到黑色中间层；应分别渐变按钮图标透明度、玻璃底色和模糊强度。该处理只作用于叠层控件，不改变 Hero 尺寸、主图 PageView 视口/约束、定位几何或图片手势。
 
 `ImageGalleryPage` 支持双击放大、捏合缩放、横向分页、Live Photo 播放切换、下载原图/Live 视频和合并保存到系统相册。Live Photo、普通视频和 GIF 必须互斥分类：实际非 GIF 的 `video_url`、`videoUrl` 或 `video` 字符串/URL 字段才进入视频播放器；视频类型标记本身不能启动一个缺少播放地址的空播放器。GIF 按媒体类型或图片 URL 扩展名识别；当没有真实视频直链时，GIF URL 优先于冲突的旧 `fid`/Live Photo 元数据，继续作为图片画廊资源显示。只有明确 Live Photo 元数据、`livephoto_video` 或 `/livephoto/` 媒体地址且资源不是 GIF 时才走手动播放控制器。进入 Live Photo 默认暂停，顶部按钮负责播放/暂停。
 
 - 从微博图片网格点击普通图片时，通过 Flutter `Hero` 将对应缩略图连续放大到全屏画廊；返回时反向缩回来源位置。配对标识按来源网格实例、媒体下标和图片身份生成，只有当前画廊页挂载 Hero，避免缓存邻页一起飞回。普通图片回程读取两端实际 `ExtendedRenderImage` 或 `RenderImage` 的解码像素、fit、alignment、布局变换及圆角；手势图使用已绘制的 destinationRect/layoutRect 保存当前缩放和平移，先去除绘制偏移再映射到 Hero 坐标。冻结完整图片平面后，逐帧插值图片四边与裁切圆角，让图片在途中逐渐收敛到来源的实际 cover 区域；不再重新布局手势子树并叠加统一缩放。临时 image.clone() 只共享既有像素句柄，飞行卸载即 dispose，不新增请求或缓存。未解码时保持原子树回退；自动网页卡片保留完整显示分支，视频不参与该 Hero。现有路由、分页、滚轮和媒体生命周期不变，无新增动画依赖。回归使用正式画廊路由及 ExtendedRawImage，对横图/竖图和放大平移状态逐像素比较回程起点与圆角目标；设备观感仍须真机复测。
-- 所有多图/混合媒体画廊（2 项及以上，不限于超过 9 张）显示横向缩略图滚轮：当前项正常显示并有白边，其他项覆盖半透明白色蒙层，视频叠加播放图标。缩略图仅限制解码宽度 160px、高度按原图比例计算，再以 `BoxFit.cover` 裁切。滚轮使用 `ClampingScrollPhysics` 和关闭逐页吸附；手指拖动及松手后的惯性期间，主图直接镜像滚轮的连续页位置，不把多页变化放入逐页动画队列，因此快滑到末尾时主图不会在后面慢慢追赶。主图每次跨过一张图时触发 `HapticFeedbackUtil.selectionTick()`；该滚动专用触感使用 12ms 节流，不改变全局普通操作 40ms 节流。停稳时主图和滚轮同步用 `easeOutCubic` 在 120ms 内吸附到最近项；滚动期间暂停视频/Live Photo 的激活，最终选中后才恢复，避免快滑时逐个初始化媒体。主图手动翻页会接管同步并打断旧滚轮惯性。缩略条位于底部安全区上方 32dp，高 64dp；`ExtendedImageGesturePageView` 始终使用全屏视口，顶栏和缩略条只叠加在图片上层。控件显隐不再改变视口尺寸，因此不会重置图片缩放、平移或中心位置。缩略条监听所在路由动画：push 期间透明且不可交互，路由动画完成后以 140ms 淡入；pop 状态一开始即透明并禁用命中，再于退场过程中淡出。这个动画只包围缩略条，不改变 Hero 尺寸、主图 PageView 视口/约束、定位几何或图片手势。手势缩放最低为 fit 尺寸 1.0，避免缩到适配尺寸以下后重置居中造成多余空白；统一居中初始对齐以保留手指焦点缩放。单项不显示缩略条；单张静态图片按整个屏幕居中。收起控件时只隐藏叠层，继续惰性构建、复用缓存，不预加载全部原图/视频。
-- 图片夹视频复用现有 `WeiboVideoPlayerPage` 的嵌入模式，不另写播放器：从网格点击图片或视频进入同一完整媒体顺序；当前项为视频时使用真实视频地址播放，非当前视频只展示封面。显式当前下标通知确保分页保留的屏外子项也卸载播放器，初始化回调检查 mounted 和控制器身份，避免切走后后台自动播放。嵌入模式不重复显示返回栏、不修改画廊屏幕方向；单视频仍可独立打开。播放器横滑进度手势移除，横滑交给画廊切换内容；进度条、双击快进/快退及纵滑亮度/音量继续保留。离开视频后释放播放资源，视频保存使用视频地址而不是封面。
+- 所有多图/混合媒体画廊（2 项及以上，不限于超过 9 张）显示横向缩略图滚轮：当前项正常显示并有白边，其他项覆盖半透明白色蒙层，视频叠加播放图标。缩略图仅限制解码宽度 160px、高度按原图比例计算，再以 `BoxFit.cover` 裁切。滚轮使用 `ClampingScrollPhysics` 和关闭逐页吸附；手指拖动及松手后的惯性期间，主图直接镜像滚轮的连续页位置，不把多页变化放入逐页动画队列，因此快滑到末尾时主图不会在后面慢慢追赶。主图每次跨过一张图时触发 `HapticFeedbackUtil.selectionTick()`；该滚动专用触感使用 12ms 节流，不改变全局普通操作 40ms 节流。停稳时主图和滚轮同步用 `easeOutCubic` 在 120ms 内吸附到最近项；滚动期间暂停视频/Live Photo 的激活，最终选中后才恢复，避免快滑时逐个初始化媒体。主图手动翻页会接管同步并打断旧滚轮惯性。图片页缩略条位于底部安全区上方 32dp，高 64dp；`ExtendedImageGesturePageView` 始终使用全屏视口，顶栏和缩略条只叠加在图片上层。控件显隐不再改变视口尺寸，因此不会重置图片缩放、平移或中心位置。缩略条监听所在路由动画：push 期间透明且不可交互，路由动画完成后以 140ms 淡入；pop 状态一开始即透明并禁用命中，再于退场过程中淡出。这个动画只包围缩略条，不改变 Hero 尺寸、主图 PageView 视口/约束、定位几何或图片手势。手势缩放最低为 fit 尺寸 1.0，避免缩到适配尺寸以下后重置居中造成多余空白；统一居中初始对齐以保留手指焦点缩放。单项不显示缩略条；单张静态图片按整个屏幕居中。收起控件时只隐藏叠层，继续惰性构建、复用缓存，不预加载全部原图/视频。
+- 图片夹视频复用现有 `WeiboVideoPlayerPage` 的嵌入模式，不另写播放器：从网格点击图片或视频进入同一完整媒体顺序；当前项为视频时使用真实视频地址播放，非当前视频只展示封面。显式当前下标通知确保分页保留的屏外子项也卸载播放器，初始化回调检查 mounted 和控制器身份，避免切走后后台自动播放。嵌入模式不重复显示返回栏；底部全屏按钮在同一播放器内切换横屏沉浸播放，并隐藏图库顶栏和缩略条；点击按钮、系统返回或退出全屏时恢复竖屏及图库控件，保留视频控制器与播放位置。单视频仍可独立打开。播放器横滑进度手势移除，横滑交给画廊切换内容；进度条、双击快进/快退及纵滑亮度/音量继续保留。离开视频后释放播放资源，视频保存使用视频地址而不是封面。
 - 图片自身不再因斜向滑动误触发“滑出销毁”；单指横向分页由页面处理。
-- 画廊主图视口始终覆盖整个屏幕；顶栏按钮在状态栏安全区内叠加，缩略条在底部安全区上方 32dp 叠加。显示或隐藏这些控件不会重新约束主图，因此图片保持当前屏幕位置、缩放和平移；单张静态图片也按整个屏幕居中。
+- 画廊主图视口始终覆盖整个屏幕；顶栏按钮在状态栏安全区内叠加，图片页缩略条在底部安全区上方 32dp 叠加。显示或隐藏这些控件不会重新约束主图，因此图片保持当前屏幕位置、缩放和平移；单张静态图片也按整个屏幕居中。
 - 返回和下载按钮各为 44dp 圆形半透明灰色玻璃控件，保留 48dp 点击区域，带柔和的浅色高光描边。Impeller 上仅在圆形裁切内以 `BackdropFilter` 轻微模糊并用局部 fragment shader 作凸面折射；shader 用空气/玻璃折射率与球冠法线的 Snell 角计算位移，并限制在 0.45 个 shader 单位内。不会逐帧截屏或处理全屏纹理；shader 不支持或加载失败时回退到原生模糊和描边。
 - 预览屏幕按宽度分为左、中、右三等份：点击中间区域切换清屏，点击左右区域退出预览。
 - 清屏时隐藏返回键、页码/Live 状态、下载按钮和 Android 顶部状态栏；再次点击中间区域恢复。系统底部导航栏保持可用。

@@ -859,6 +859,8 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                       statusId: status.id,
                       isDetail: isDetail,
                       authorName: status.user.screenName,
+                      authorId: status.user.id,
+                      authorAvatar: status.user.avatar,
                       webpageCardCaption: _birthdayWebpageCardCaption(status),
                     ),
                   ] else if (status.hasVideo) ...[
@@ -1389,6 +1391,8 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                         statusId: retweet.id,
                         isDetail: widget.isDetail,
                         authorName: retweet.user.screenName,
+                        authorId: retweet.user.id,
+                        authorAvatar: retweet.user.avatar,
                         webpageCardCaption: _birthdayWebpageCardCaption(
                           retweet,
                         ),

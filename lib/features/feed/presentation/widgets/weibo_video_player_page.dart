@@ -33,6 +33,8 @@ class WeiboVideoPlayerPage extends ConsumerStatefulWidget {
   final int? liveStatus;
   final bool embedded;
   final VoidCallback? onToggleChrome;
+  final ValueChanged<bool>? onFullscreenChanged;
+  final ValueChanged<double>? onBottomControlsHeightChanged;
 
   const WeiboVideoPlayerPage({
     super.key,
@@ -47,6 +49,8 @@ class WeiboVideoPlayerPage extends ConsumerStatefulWidget {
     this.liveStatus,
     this.embedded = false,
     this.onToggleChrome,
+    this.onFullscreenChanged,
+    this.onBottomControlsHeightChanged,
   });
 
   @override
@@ -63,6 +67,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
   bool _hasError = false;
   bool _showControls = true;
   Timer? _hideControlsTimer;
+  final GlobalKey _bottomControlsKey = GlobalKey();
 
   // 横竖屏状态
   bool _isLandscape = false;
@@ -318,7 +323,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
   void dispose() {
     _hideControlsTimer?.cancel();
     _hudDismissTimer?.cancel();
-    if (!widget.embedded) _restorePortraitAndSystemUI();
+    if (!widget.embedded || _isLandscape) _restorePortraitAndSystemUI();
     _controller?.dispose();
     super.dispose();
   }
@@ -347,6 +352,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
     } else {
       _restorePortraitAndSystemUI();
     }
+    widget.onFullscreenChanged?.call(nextLandscape);
     _resetControlsTimer();
   }
 
@@ -361,6 +367,33 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
         }
       });
     }
+  }
+
+  void _reportBottomControlsHeight() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final box = _bottomControlsKey.currentContext?.findRenderObject();
+      if (box is RenderBox && box.hasSize) {
+        widget.onBottomControlsHeightChanged?.call(box.size.height);
+      }
+    });
+  }
+
+  Widget _measureBottomControls(Widget controls) {
+    if (widget.onBottomControlsHeightChanged == null) return controls;
+    if (_bottomControlsKey.currentContext == null) {
+      _reportBottomControlsHeight();
+    }
+    return NotificationListener<SizeChangedLayoutNotification>(
+      onNotification: (_) {
+        _reportBottomControlsHeight();
+        return false;
+      },
+      child: SizeChangedLayoutNotifier(
+        key: _bottomControlsKey,
+        child: controls,
+      ),
+    );
   }
 
   String _formatDuration(Duration duration) {
@@ -805,7 +838,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                         _showControls = !_showControls;
                       });
                       _resetControlsTimer();
-                      widget.onToggleChrome?.call();
+                      if (!_isLandscape) widget.onToggleChrome?.call();
                     },
                     onDoubleTap: () {
                       final x = _lastTapDownPosition.dx;
@@ -1072,7 +1105,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                     bottom: 0,
                     left: 0,
                     right: 0,
-                    child: Container(
+                    child: _measureBottomControls(Container(
                       padding: EdgeInsets.fromLTRB(
                         _isLandscape ? 28 : 16,
                         12,
@@ -1172,8 +1205,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                               // 画质右侧最右边：横屏显示开关 (全屏切换)
                               InkWell(
                                 borderRadius: BorderRadius.circular(12),
-                                onTap:
-                                    widget.embedded ? null : _toggleOrientation,
+                                onTap: _toggleOrientation,
                                 child: Container(
                                   padding: const EdgeInsets.all(4),
                                   decoration: BoxDecoration(
@@ -1195,7 +1227,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                           ),
                         ],
                       ),
-                    ),
+                    )),
                   ),
               ],
             );

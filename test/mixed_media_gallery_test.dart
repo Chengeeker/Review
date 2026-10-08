@@ -6,6 +6,7 @@ import 'package:extended_image/extended_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:video_player/video_player.dart';
 import 'package:review/features/detail/presentation/widgets/image_gallery_page.dart';
 import 'package:review/features/feed/presentation/widgets/weibo_video_player_page.dart';
 import 'package:review/features/feed/data/models/weibo_status_model.dart';
@@ -161,6 +162,56 @@ void main() {
       VideoPlayerPlatform.instance = original;
       unawaited(backend.pendingEvents.close());
     });
+  });
+
+  testWidgets('video reel clears the progress bar and stays fixed during drag',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(420, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    for (final scale in [1.0, 1.4]) {
+      await tester.pumpWidget(ProviderScope(
+        child: MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              padding: const EdgeInsets.only(bottom: 28),
+              textScaler: TextScaler.linear(scale),
+            ),
+            child: child!,
+          ),
+          home: const ImageGalleryPage(
+            pics: [_photo, _video, _photo],
+            initialIndex: 1,
+            statusId: 'layout',
+          ),
+        ),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump();
+      final reel = tester.getRect(
+          find.byKey(const ValueKey('gallery-thumbnail-strip')));
+      final progress = tester.getRect(find.byType(VideoProgressIndicator));
+      expect(reel.bottom, lessThan(progress.top));
+      expect(tester.takeException(), isNull);
+    }
+    final progress = tester.getRect(find.byType(VideoProgressIndicator));
+    await tester.tapAt(progress.center);
+    await tester.pump();
+    expect(backend.seeks, isNotEmpty);
+    final reelFinder = find.byKey(const ValueKey('gallery-thumbnail-strip'));
+    final reel = tester.getRect(reelFinder);
+    final gesture = await tester.startGesture(reel.center);
+    await gesture.moveBy(const Offset(-45, 0));
+    await tester.pump();
+    expect(tester.getRect(reelFinder).top, reel.top);
+    await gesture.up();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    await _flushPlayerDisposal(tester);
+    await tester.pump(const Duration(seconds: 1));
+    debugNetworkImageHttpClientProvider = null;
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(
