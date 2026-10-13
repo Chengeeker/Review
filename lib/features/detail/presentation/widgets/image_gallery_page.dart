@@ -4,6 +4,15 @@ import 'dart:ui' as ui;
 
 import 'package:dio/dio.dart';
 import 'package:extended_image/extended_image.dart';
+import 'package:flutter/gestures.dart'
+    show
+        PointerCancelEvent,
+        PointerDownEvent,
+        PointerMoveEvent,
+        PointerUpEvent,
+        kDoubleTapSlop,
+        kDoubleTapTimeout,
+        kTouchSlop;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderImage, RenderClipRRect;
 import 'package:flutter/services.dart';
@@ -317,6 +326,12 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
   bool _thumbnailUserScrolling = false;
   bool _thumbnailSettling = false;
   int _thumbnailSyncEpoch = 0;
+  final Set<int> _galleryPointers = {};
+  int? _galleryTapPointer;
+  Offset? _galleryTapDownPosition;
+  bool _galleryTapMoved = false;
+  Timer? _galleryTapTimer;
+  Offset? _pendingGalleryTapPosition;
   double _videoBottomControlsHeight = 0;
   double? _thumbnailScrollBottom;
 
@@ -391,6 +406,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
   void dispose() {
     _routeAnimation?.removeStatusListener(_handleRouteAnimationStatus);
     _restoreSystemUi();
+    _galleryTapTimer?.cancel();
     _chromeOpacityController.dispose();
     _doubleTapAnimationController.dispose();
     _pageController.dispose();
@@ -652,9 +668,9 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
     setState(() => _videoBottomControlsHeight = height);
   }
 
-  void _handleGalleryTap(TapUpDetails details) {
+  void _handleGalleryTap(Offset position) {
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final x = details.globalPosition.dx;
+    final x = position.dx;
     final isMiddleThird = x >= screenWidth / 3 && x < screenWidth * 2 / 3;
 
     if (isMiddleThird) {
@@ -662,6 +678,73 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
     } else {
       Navigator.of(context).pop();
     }
+  }
+
+  void _handleGalleryPointerDown(PointerDownEvent event) {
+    if (_galleryPointers.isEmpty) {
+      _galleryTapPointer = event.pointer;
+      _galleryTapDownPosition = event.position;
+      _galleryTapMoved = false;
+    } else {
+      _galleryTapMoved = true;
+    }
+    _galleryPointers.add(event.pointer);
+  }
+
+  void _handleGalleryPointerMove(PointerMoveEvent event) {
+    final downPosition = _galleryTapDownPosition;
+    if (_galleryTapPointer == event.pointer &&
+        downPosition != null &&
+        (event.position - downPosition).distance > kTouchSlop) {
+      _galleryTapMoved = true;
+    }
+  }
+
+  void _handleGalleryPointerUp(PointerUpEvent event) {
+    if (!_galleryPointers.remove(event.pointer)) return;
+    if (_galleryTapPointer != event.pointer) {
+      if (_galleryPointers.isEmpty) _resetGalleryTapPointer();
+      return;
+    }
+
+    final isTap = _galleryPointers.isEmpty && !_galleryTapMoved;
+    _resetGalleryTapPointer();
+    if (isTap) _registerGalleryTap(event.position);
+  }
+
+  void _handleGalleryPointerCancel(PointerCancelEvent event) {
+    if (!_galleryPointers.remove(event.pointer)) return;
+    if (_galleryTapPointer == event.pointer || _galleryPointers.isEmpty) {
+      _resetGalleryTapPointer();
+    }
+  }
+
+  void _resetGalleryTapPointer() {
+    _galleryTapPointer = null;
+    _galleryTapDownPosition = null;
+    _galleryTapMoved = false;
+  }
+
+  void _registerGalleryTap(Offset position) {
+    final pendingPosition = _pendingGalleryTapPosition;
+    if (_galleryTapTimer?.isActive == true &&
+        pendingPosition != null &&
+        (position - pendingPosition).distance <= kDoubleTapSlop) {
+      _galleryTapTimer!.cancel();
+      _galleryTapTimer = null;
+      _pendingGalleryTapPosition = null;
+      return;
+    }
+
+    _galleryTapTimer?.cancel();
+    if (pendingPosition != null) _handleGalleryTap(pendingPosition);
+    _pendingGalleryTapPosition = position;
+    _galleryTapTimer = Timer(kDoubleTapTimeout, () {
+      final pending = _pendingGalleryTapPosition;
+      _galleryTapTimer = null;
+      _pendingGalleryTapPosition = null;
+      if (pending != null) _handleGalleryTap(pending);
+    });
   }
 
   void _selectThumbnail(int index) {
@@ -872,8 +955,12 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
         body: Stack(
           children: [
             // Gesture PageView with Physics-based Spring Morphing
-            GestureDetector(
-              onTapUp: _handleGalleryTap,
+            // Raw pointer tracking avoids competing with ExtendedImage double taps.
+            Listener(
+              onPointerDown: _handleGalleryPointerDown,
+              onPointerMove: _handleGalleryPointerMove,
+              onPointerUp: _handleGalleryPointerUp,
+              onPointerCancel: _handleGalleryPointerCancel,
               child: NotificationListener<ScrollStartNotification>(
                 onNotification: (notification) {
                   if (notification.depth == 0 &&
@@ -976,6 +1063,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                       // 斜向拖动可能被识别为滑出并直接销毁画廊页面。
                       enableSlideOutPage: false,
                       onDoubleTap: (ExtendedImageGestureState state) {
+                        HapticFeedbackUtil.light();
                         final pointerDownPosition = state.pointerDownPosition;
                         final begin = state.gestureDetails!.totalScale ?? 1.0;
                         double end = 1.0;

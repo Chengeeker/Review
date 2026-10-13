@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:review/core/utils/spring_page_route.dart';
@@ -670,10 +671,10 @@ void main() {
         expect(find.text('1 / $count'), findsNothing);
         expect(find.byType(ImageGalleryPage), findsOneWidget);
         await tester.tapAt(const Offset(400, 200));
-        await tester.pump();
+        await tester.pump(kDoubleTapTimeout);
         expect(strip, findsNothing);
         await tester.tapAt(const Offset(400, 200));
-        await tester.pump();
+        await tester.pump(kDoubleTapTimeout);
         expect(strip, findsOneWidget);
         expect(find.text('1 / $count'), findsNothing);
         expect(tester.takeException(), isNull);
@@ -698,16 +699,42 @@ void main() {
     expect(find.byKey(const ValueKey('gallery-thumbnail-strip')), findsNothing);
 
     await tester.tapAt(const Offset(400, 300));
-    await tester.pump();
+    await tester.pump(kDoubleTapTimeout);
 
     expect(find.byIcon(Icons.arrow_back_rounded), findsNothing);
     expect(find.byIcon(Icons.download_rounded), findsNothing);
 
     await tester.tapAt(const Offset(400, 300));
-    await tester.pump();
+    await tester.pump(kDoubleTapTimeout);
 
     expect(find.byIcon(Icons.arrow_back_rounded), findsOneWidget);
     expect(find.byIcon(Icons.download_rounded), findsOneWidget);
+  });
+
+  testWidgets('double tap does not toggle image gallery chrome', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: ImageGalleryPage(
+          pics: [galleryTestPic],
+          initialIndex: 0,
+          statusId: 'gallery-double-tap-test',
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.byType(ExtendedImage), findsOneWidget);
+    final imageCenter = tester.getCenter(
+      find.byType(ExtendedImageGesturePageView),
+    );
+    await tester.tapAt(imageCenter);
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.byIcon(Icons.arrow_back_rounded), findsOneWidget);
+
+    await tester.tapAt(imageCenter);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byIcon(Icons.arrow_back_rounded), findsOneWidget);
   });
 
   testWidgets('side tap exits image gallery', (tester) async {
@@ -735,6 +762,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
 
     await tester.tapAt(const Offset(100, 300));
+    await tester.pump(kDoubleTapTimeout);
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(observer.poppedRouteName, 'image-gallery-test');
