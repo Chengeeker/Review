@@ -2,9 +2,12 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:review/core/storage/storage_service.dart';
 import 'package:review/core/network/weibo_dio_client.dart';
+import 'package:review/core/design_system/components/review_card.dart';
+import 'package:review/core/utils/haptic_feedback_util.dart';
 import 'package:review/features/detail/data/detail_repository.dart';
 import 'package:review/features/drawer_features/presentation/browsing_history_page.dart';
 import 'package:review/features/feed/data/feed_repository.dart';
@@ -26,7 +29,6 @@ class _FakeDetailRepository extends DetailRepository {
     return longText;
   }
 }
-
 class _FakeFeedRepository extends FeedRepository {
   _FakeFeedRepository(this.statuses, StorageService storage)
       : super(WeiboDioClient(storage), storage);
@@ -45,6 +47,85 @@ class _FakeFeedRepository extends FeedRepository {
 }
 
 void main() {
+  testWidgets(
+    'TweetCard long press does not open menu or trigger haptics',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      SharedPreferences.setMockInitialValues({});
+      final storage = StorageService(await SharedPreferences.getInstance());
+      final hapticCalls = <MethodCall>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'HapticFeedback.vibrate') hapticCalls.add(call);
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      final originalHapticsEnabled = HapticFeedbackUtil.isEnabled;
+      HapticFeedbackUtil.isEnabled = true;
+      HapticFeedbackUtil.resetForTesting();
+      addTearDown(() {
+        HapticFeedbackUtil.isEnabled = originalHapticsEnabled;
+        HapticFeedbackUtil.resetForTesting();
+      });
+
+      const status = WeiboStatusModel(
+        id: '123456',
+        mid: '123456',
+        textRaw: '测试微博正文',
+        createdAt: '刚刚',
+        source: '来自微博网页版',
+        repostsCount: 0,
+        commentsCount: 0,
+        attitudesCount: 0,
+        user: WeiboUserModel(id: '999', screenName: '测试用户', avatar: ''),
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [storageServiceProvider.overrideWithValue(storage)],
+          child: MaterialApp(
+            theme: ThemeData(splashFactory: const HapticSplashFactory()),
+            home: const Scaffold(
+              body: SingleChildScrollView(child: TweetCard(status: status)),
+            ),
+          ),
+        ),
+      );
+
+      final cardInkWell = find
+          .descendant(
+            of: find.byType(ReviewCard),
+            matching: find.byType(InkWell),
+          )
+          .first;
+      expect(
+        Theme.of(tester.element(cardInkWell)).splashFactory,
+        NoSplash.splashFactory,
+      );
+
+      await tester.longPress(find.byType(ReviewCard));
+      await tester.pumpAndSettle();
+
+      expect(find.text('复制微博正文'), findsNothing);
+      expect(hapticCalls, isEmpty);
+
+      final moreButton = find.byIcon(Icons.more_horiz_rounded);
+      expect(moreButton, findsAtLeastNWidgets(1));
+      await tester.tap(moreButton.first);
+      await tester.pumpAndSettle();
+      expect(find.text('复制微博正文'), findsOneWidget);
+    },
+  );
+
   testWidgets('TweetCard renders author, rich text, and actions properly',
       (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({});

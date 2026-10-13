@@ -145,8 +145,14 @@ bool _shouldCollapseLongText({
 class TweetCard extends ConsumerStatefulWidget {
   final WeiboStatusModel status;
   final bool isDetail;
+  final bool showFeedReason;
 
-  const TweetCard({super.key, required this.status, this.isDetail = false});
+  const TweetCard({
+    super.key,
+    required this.status,
+    this.isDetail = false,
+    this.showFeedReason = false,
+  });
 
   void showMoreOptions(
     BuildContext context,
@@ -657,7 +663,6 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                 ),
               );
             },
-      onLongPress: isDetail ? null : () => _showMoreOptions(context),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
         child: Column(
@@ -704,7 +709,8 @@ class _TweetCardState extends ConsumerState<TweetCard> {
               ),
               const SizedBox(height: 6),
             ] else if (status.titleText == '热门' ||
-                status.titleText?.contains('热门') == true) ...[
+                (!widget.showFeedReason &&
+                    status.titleText?.contains('热门') == true)) ...[
               Row(
                 children: [
                   Container(
@@ -743,27 +749,43 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                 ],
               ),
               const SizedBox(height: 6),
-            ] else if (status.titleText != null &&
+            ],
+            if (status.titleText != null &&
                 status.titleText!.isNotEmpty &&
-                status.visibilityLabel == null) ...[
+                (widget.showFeedReason
+                    ? status.feedReason != null
+                    : !status.isTop &&
+                          status.titleText != '置顶' &&
+                          status.titleText?.contains('热门') != true &&
+                          status.visibilityLabel == null)) ...[
               Row(
                 children: [
                   Icon(
                     status.titleText!.contains('赞')
                         ? Icons.favorite_rounded
+                        : widget.showFeedReason
+                        ? Icons.info_outline_rounded
                         : Icons.repeat_rounded,
-                    size: 13,
-                    color: Theme.of(context).colorScheme.primary
-                        .withValues(alpha: 0.8),
+                    size: widget.showFeedReason ? 16 : 13,
+                    color: widget.showFeedReason
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.primary
+                              .withValues(alpha: 0.8),
                   ),
-                  const SizedBox(width: 4),
-                  Text(
-                    status.titleText!,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.primary
-                          .withValues(alpha: 0.8),
+                  SizedBox(width: widget.showFeedReason ? 6 : 4),
+                  Expanded(
+                    child: Text(
+                      status.titleText!,
+                      style: TextStyle(
+                        fontSize: widget.showFeedReason ? 14 : 11.5,
+                        fontWeight: widget.showFeedReason
+                            ? FontWeight.normal
+                            : FontWeight.w600,
+                        color: widget.showFeedReason
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.primary
+                                  .withValues(alpha: 0.8),
+                      ),
                     ),
                   ),
                 ],

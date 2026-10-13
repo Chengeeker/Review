@@ -13,7 +13,7 @@ import '../../../core/widgets/review_refresh_header.dart';
 import '../../auth/presentation/login_page.dart';
 import '../../compose/presentation/compose_tweet_page.dart';
 import '../../home/presentation/main_scaffold.dart';
-import '../../search/presentation/search_view.dart';
+import '../../search/presentation/following_search_page.dart';
 import 'feed_controller.dart';
 import 'widgets/group_dropdown_panel.dart';
 import 'widgets/tweet_card.dart';
@@ -198,13 +198,13 @@ class _FeedViewState extends ConsumerState<FeedView>
             // Search Button (对齐截图 1 右侧搜索图标)
             IconButton(
               icon: const Icon(Icons.search_rounded),
-              tooltip: '搜索',
+              tooltip: '高级搜索',
               onPressed: () {
                 HapticFeedbackUtil.light();
                 _closeDropdown();
                 Navigator.of(
                   context,
-                ).push(MaterialPageRoute(builder: (ctx) => const SearchView()));
+                ).push(MaterialPageRoute(builder: (ctx) => const FollowingSearchPage()));
               },
             ),
             const SizedBox(width: 4),
@@ -381,7 +381,11 @@ class _FeedViewState extends ConsumerState<FeedView>
                                 });
                               }
                               final status = feedState.statuses[index];
-                              return TweetCard(status: status);
+                              return TweetCard(
+                                status: status,
+                                showFeedReason:
+                                    feedState.currentCategory == 'all_follow',
+                              );
                             }, childCount: feedState.statuses.length),
                           ),
                         ),

@@ -848,7 +848,14 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
       setState(() {});
     } else if (notification is ScrollEndNotification &&
         _thumbnailUserScrolling) {
-      _settleThumbnailScroll();
+      final epoch = _thumbnailSyncEpoch;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted &&
+            epoch == _thumbnailSyncEpoch &&
+            _thumbnailUserScrolling) {
+          _settleThumbnailScroll();
+        }
+      });
     }
     return false;
   }
@@ -979,6 +986,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                   // 显式启用分页滚动物理，避免关闭滑出手势后部分横向拖动
                   // 只被图片手势识别器消费，却没有推动 PageView。
                   physics: const ClampingScrollPhysics(),
+                  pageSnapping: !_thumbnailUserScrolling && !_thumbnailSettling,
                   itemCount: widget.pics.length,
                   onPageChanged: (index) {
                     final didChange = index != _currentIndex;

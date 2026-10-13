@@ -155,7 +155,7 @@ void main() {
     expect(poll, isNull);
   });
 
-  test('FeedRepository hydrates type-39 cards before rendering their image',
+  test('FeedRepository hydrates type-39 cards and preserves the feed reason',
       () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
@@ -176,6 +176,7 @@ void main() {
                   'id': '5345920309791640',
                   'mid': '5345920309791640',
                   'text_raw': '',
+                  'title': {'text': '公开'},
                   'page_info': {
                     'type': 'bigPic',
                     'page_pic': {
@@ -195,6 +196,7 @@ void main() {
         'id': '5345920309791640',
         'mid': '5345920309791640',
         'text_raw': 'http://t.cn/AXO3q237',
+        'title': {'text': '关注的博主赞了这条微博'},
         'user': {'id': '7699970976', 'screen_name': '中国射击队'},
         'url_struct': [
           {
@@ -211,5 +213,6 @@ void main() {
     expect(statuses, hasLength(1));
     expect(statuses.single.pics, hasLength(1));
     expect(statuses.single.textRaw, isEmpty);
+    expect(statuses.single.feedReason, '关注的博主赞了这条微博');
   });
 }

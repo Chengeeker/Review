@@ -206,7 +206,9 @@ class FeedController extends StateNotifier<FeedState> {
   Future<void> setCategory(String category, [String? title]) async {
     String resolvedTitle = title ?? state.currentCategoryTitle;
     if (title == null) {
-      if (category == 'friends' || category == 'all_follow') {
+      if (category == 'all_follow') {
+        resolvedTitle = '全部关注';
+      } else if (category == 'friends') {
         resolvedTitle = '最新微博';
       } else if (category == '4152890832681124') {
         resolvedTitle = '特别关注';
@@ -310,7 +312,9 @@ class FeedController extends StateNotifier<FeedState> {
           ? null
           : result.error ??
               (visibleStatuses.isEmpty
-                  ? (state.currentCategory == 'friends' && !auth.isLoggedIn
+                  ? ((state.currentCategory == 'friends' ||
+                              state.currentCategory == 'all_follow') &&
+                          !auth.isLoggedIn
                       ? '当前为访客模式，登录后即可查看关注博主动态'
                       : '暂无微博内容')
                   : null),

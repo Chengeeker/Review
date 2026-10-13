@@ -142,6 +142,8 @@ class FeedRepository {
           final hydrated =
               WeiboStatusModel.fromJson({...json, ...officialJson});
           status = hydrated.copyWith(
+            titleText: status.titleText,
+            titleIcon: status.titleIcon,
             pics: DetailRepository.mergeStatusPictures(
                 status.pics, hydrated.pics),
           );
@@ -441,7 +443,7 @@ class FeedRepository {
         gid: category, page: page, maxId: maxId, sinceId: sinceId);
   }
 
-  /// 100% Pure Following Feed via /ajax/feed/friendstimeline with Dual-Engine Multi-Pathway Support
+  /// Official following feed, including relationship recommendations supplied by Weibo.
   Future<TimelineResult> getFriendsTimeline({
     int page = 1,
     String maxId = '0',

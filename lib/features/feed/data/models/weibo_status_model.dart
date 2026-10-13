@@ -1085,6 +1085,10 @@ class WeiboStatusModel {
       isLongText && (fullTextRaw == null || fullTextRaw!.isEmpty);
   bool get isEdited => editCount > 0;
 
+  String? get feedReason =>
+      titleText != '置顶' && titleText != '热门' &&
+              _visibilityCodeFromValue(titleText) == null ? titleText : null;
+
   String? get visibilityLabel {
     switch (visibilityType) {
       case 0:

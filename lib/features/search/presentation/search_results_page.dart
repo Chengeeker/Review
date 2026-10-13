@@ -46,6 +46,10 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage>
   bool _isLoading = true;
   int _page = 1;
   bool _hasMore = true;
+  int _userPage = 1;
+  bool _hasMoreUsers = true;
+  bool _userSearchFailed = false;
+  int _searchGeneration = 0;
 
   final List<String> _tabs = [
     '综合',
@@ -93,29 +97,30 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage>
 
     ref.read(storageServiceProvider).addSearchHistory(cleanKeyword);
     final repo = ref.read(searchRepositoryProvider);
+    final generation = ++_searchGeneration;
+    var userSearchFailed = false;
 
     // 并发拉取：匹配博主、匹配超话、全景多维搜索结果
     final results = await Future.wait([
-      repo
-          .getSearchSuggestions(cleanKeyword)
-          .catchError((_) => const SearchSuggestResult()),
+      repo.searchUsers(cleanKeyword).catchError((_) {
+        userSearchFailed = true;
+        return <WeiboUserModel>[];
+      }),
       repo.searchChaohua(cleanKeyword).catchError((_) => <SearchChaohuaItem>[]),
       repo.searchStatusesWithDetails(keyword: cleanKeyword, page: 1),
     ]);
 
-    final suggestRes = results[0] as SearchSuggestResult;
+    final users = results[0] as List<WeiboUserModel>;
     final chaohuas = results[1] as List<SearchChaohuaItem>;
     final searchRes = results[2] as SearchStatusesResult;
 
-    if (mounted) {
+    if (mounted && generation == _searchGeneration) {
       setState(() {
-        if (suggestRes.users.isNotEmpty) {
-          _matchedUsers = suggestRes.users;
-          _primaryMatchedUser = suggestRes.users.first;
-        } else {
-          _matchedUsers = [];
-          _primaryMatchedUser = null;
-        }
+        _matchedUsers = users;
+        _primaryMatchedUser = users.isNotEmpty ? users.first : null;
+        _userPage = 1;
+        _hasMoreUsers = users.isNotEmpty;
+        _userSearchFailed = userSearchFailed;
 
         _matchedChaohuas = chaohuas;
         _primaryMatchedChaohua = chaohuas.isNotEmpty ? chaohuas.first : null;
@@ -151,13 +156,31 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage>
   }
 
   Future<bool> _loadMore() async {
+    final generation = _searchGeneration;
+    if (_tabs[_tabController.index] == '用户') {
+      if (!_hasMoreUsers) return false;
+      final nextPage = _userPage + 1;
+      final users = await ref
+          .read(searchRepositoryProvider)
+          .searchUsers(_currentKeyword, page: nextPage);
+      if (!mounted || generation != _searchGeneration) return false;
+      setState(() {
+        final ids = _matchedUsers.map((u) => u.id).toSet();
+        _matchedUsers.addAll(users.where((u) => ids.add(u.id)));
+        _userPage = nextPage;
+        _hasMoreUsers = users.isNotEmpty;
+      });
+      return users.isNotEmpty;
+    }
     if (!_hasMore) return false;
     final repo = ref.read(searchRepositoryProvider);
     final nextPage = _page + 1;
     final list = await repo.searchStatuses(
-        keyword: _currentKeyword.trim(), page: nextPage);
+      keyword: _currentKeyword.trim(),
+      page: nextPage,
+    );
 
-    if (mounted) {
+    if (mounted && generation == _searchGeneration) {
       setState(() {
         _statuses.addAll(list);
         _page = nextPage;
@@ -297,10 +320,15 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage>
         ],
       ),
       body: EasyRefresh(
+        key: ValueKey(_tabs[_tabController.index] == '用户'),
         onRefresh: () => HapticFeedbackUtil.refresh(_fetchSearch),
         onLoad: () async {
-          final hasMore = await _loadMore();
-          return hasMore ? IndicatorResult.success : IndicatorResult.noMore;
+          try {
+            final hasMore = await _loadMore();
+            return hasMore ? IndicatorResult.success : IndicatorResult.noMore;
+          } catch (_) {
+            return IndicatorResult.fail;
+          }
         },
         child: _isLoading
             ? Center(
@@ -676,9 +704,16 @@ class _SearchResultsPageState extends ConsumerState<SearchResultsPage>
     // 1. 用户 Tab
     if (currentTab == '用户') {
       if (_matchedUsers.isEmpty) {
-        return const SliverFillRemaining(
+        return SliverFillRemaining(
           hasScrollBody: false,
-          child: Center(child: Text('暂无相关用户')),
+          child: Center(
+            child: _userSearchFailed
+                ? TextButton(
+                    onPressed: _fetchSearch,
+                    child: const Text('用户搜索暂时不可用，点击重试'),
+                  )
+                : const Text('暂无相关用户'),
+          ),
         );
       }
       return SliverList(

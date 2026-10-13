@@ -129,12 +129,7 @@ class GroupDropdownPanel extends StatelessWidget {
                         context: context,
                         items: customDefaultGroups,
                         currentId: currentCategoryId,
-                        onTap: (id, name) {
-                          String effectiveId = id;
-                          if (id == 'all_follow' || id == 'friends')
-                            effectiveId = 'friends';
-                          onSelectGroup(effectiveId, name);
-                        },
+                        onTap: onSelectGroup,
                       ),
 
                     // Section 2: 我的分组 (置于默认分组下方)
@@ -209,10 +204,7 @@ class GroupDropdownPanel extends StatelessWidget {
       ),
       itemBuilder: (context, index) {
         final item = items[index];
-        final isSelected =
-            item['id'] == currentId ||
-            (item['id'] == 'friends' && currentId == 'friends') ||
-            (item['id'] == 'all_follow' && currentId == 'friends');
+        final isSelected = item['id'] == currentId;
 
         return InkWell(
           onTap: () => onTap(item['id']!, item['name']!),

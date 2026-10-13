@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:html/parser.dart' as html_parser;
 import '../../../core/constants/api_constants.dart';
 import '../../../core/network/weibo_dio_client.dart';
 import '../../feed/data/models/weibo_status_model.dart';
@@ -424,6 +425,112 @@ class SearchRepository {
     } catch (_) {}
 
     return const SearchSuggestResult();
+  }
+
+  /// 用户分类搜索；联想/侧栏候选不参与正式结果排序。
+  Future<List<WeiboUserModel>> searchUsers(String query, {int page = 1}) async {
+    final clean = query.trim().replaceFirst(RegExp(r'^@\s*'), '');
+    if (clean.isEmpty) return [];
+
+    try {
+      final response = await _client.dio.get<String>(
+        'https://s.weibo.com/user',
+        queryParameters: {'q': clean, 'page': page},
+        options: Options(
+          responseType: ResponseType.plain,
+          headers: {
+            'Referer': 'https://s.weibo.com/',
+            'Accept': 'text/html,application/xhtml+xml',
+          },
+        ),
+      );
+      final document = html_parser.parse(response.data ?? '');
+      final list = document.querySelector('#pl_user_feedList');
+      if (list != null) {
+        final users = <String, WeiboUserModel>{};
+        for (final card in list.querySelectorAll('.card-user-b')) {
+          final name = card.querySelector('a.name');
+          final uid = RegExp(r'/u/(\d+)')
+              .firstMatch(name?.attributes['href'] ?? '')
+              ?.group(1);
+          if (uid == null || name == null || name.text.trim().isEmpty) continue;
+          final info = card.querySelector('.info');
+          final fans = RegExp(r'粉丝[：:]\s*([\d.]+)\s*(万|亿)?')
+              .firstMatch(info?.text ?? '');
+          final count = double.tryParse(fans?.group(1) ?? '') ?? 0;
+          final multiplier = fans?.group(2) == '亿'
+              ? 100000000
+              : fans?.group(2) == '万'
+              ? 10000
+              : 1;
+          final badge = card.querySelector('.avator [title*="认证"]');
+          final description =
+              info
+                  ?.querySelectorAll('p')
+                  .where((p) => !p.text.contains('粉丝'))
+                  .map((p) => p.text.trim())
+                  .where((p) => p.isNotEmpty)
+                  .join(' ') ??
+              '';
+          users.putIfAbsent(
+            uid,
+            () => WeiboUserModel(
+              id: uid,
+              screenName: name.text.trim(),
+              avatar:
+                  card.querySelector('.avator img')?.attributes['src'] ?? '',
+              followersCount: (count * multiplier).round(),
+              description: description,
+              verifiedReason: badge == null ? '' : description,
+              verified: badge != null,
+              verifiedType: badge == null
+                  ? -1
+                  : (badge.attributes['title']?.contains('个人') == true ? 0 : 2),
+            ),
+          );
+        }
+        return users.values.toList();
+      }
+      if (document.querySelector('.card-no-result') != null) return [];
+    } catch (_) {
+      // 网页会话不可用时才尝试移动域，不能回退到联想候选冒充正式结果。
+    }
+
+    final response = await _client.dio.get(
+      'https://m.weibo.cn/api/container/getIndex',
+      queryParameters: {'containerid': '100103type=3&q=$clean', 'page': page},
+      options: Options(
+        headers: {
+          'Referer': 'https://m.weibo.cn/',
+          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+        },
+        extra: {'weiboMobileLogin': true},
+      ),
+    );
+    final body = response.data;
+    final data = body is Map ? body['data'] : null;
+    final cards = data is Map ? data['cards'] : null;
+    if (body is! Map || body['ok'] != 1 || cards is! List) {
+      // 访客页、鉴权失败和结构变化不能伪装为“没有相关用户”。
+      throw const FormatException('用户搜索响应不可用');
+    }
+
+    final users = <String, WeiboUserModel>{};
+    void readCards(List items) {
+      for (final card in items.whereType<Map>()) {
+        // 仅取用户卡片，不把微博卡中的作者或其他推荐当成用户结果。
+        if (card['card_type'] == 10 && card['user'] is Map<String, dynamic>) {
+          final user = WeiboUserModel.fromJson(card['user']);
+          if (user.id.isNotEmpty && user.screenName != '匿名用户') {
+            users.putIfAbsent(user.id, () => user);
+          }
+        }
+        if (card['card_group'] is List) readCards(card['card_group']);
+      }
+    }
+
+    readCards(cards);
+    return users.values.toList();
   }
 
   /// 获取网页端发布器的“想用什么话题”联想结果。

@@ -594,9 +594,98 @@ void main() {
     await gesture.up();
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(milliseconds: 160));
+    for (var frame = 0; frame < 10; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
     final finalIndex = thumbnails.controller!.page!.round();
     expect(main.controller.page, closeTo(finalIndex.toDouble(), 0.02));
     expect(find.text('${finalIndex + 1} / 18'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('thumbnail and main image stay still while drag is held', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ImageGalleryPage(
+          pics: List.filled(18, galleryTestPic),
+          initialIndex: 0,
+          statusId: 'held-drag',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    final strip = find.byKey(const ValueKey('gallery-thumbnail-strip'));
+    expect(
+      tester
+          .widget<IgnorePointer>(
+            find
+                .ancestor(of: strip, matching: find.byType(IgnorePointer))
+                .first,
+          )
+          .ignoring,
+      isFalse,
+    );
+    final thumbnails = tester.widget<PageView>(
+      find.descendant(of: strip, matching: find.byType(PageView)),
+    );
+    final main = tester.widget<ExtendedImageGesturePageView>(
+      find.byType(ExtendedImageGesturePageView),
+    );
+    final gesture = await tester.startGesture(tester.getCenter(strip));
+    for (var step = 0; step < 4; step++) {
+      await gesture.moveBy(const Offset(-24, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+
+    final heldThumbnailPage = thumbnails.controller!.page!;
+    final heldMainPage = main.controller.page!;
+    expect(
+      tester
+          .widget<ExtendedImageGesturePageView>(
+            find.byType(ExtendedImageGesturePageView),
+          )
+          .pageSnapping,
+      isFalse,
+    );
+    expect(
+      heldThumbnailPage,
+      inInclusiveRange(.4, .6),
+      reason:
+          'strip=${tester.getRect(strip)}, viewport=${thumbnails.controller!.position.viewportDimension}, pixels=${thumbnails.controller!.position.pixels}',
+    );
+    expect(heldMainPage, closeTo(heldThumbnailPage, .02));
+
+    for (var frame = 0; frame < 20; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(thumbnails.controller!.page, closeTo(heldThumbnailPage, .001));
+      expect(
+        main.controller.page,
+        closeTo(heldMainPage, .02),
+        reason:
+            'frame=$frame, mainActivity=${main.controller.position.activity.runtimeType}, mainScrolling=${main.controller.position.isScrollingNotifier.value}, thumbnail=${thumbnails.controller!.page}',
+      );
+    }
+
+    await gesture.up();
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(milliseconds: 200));
+    for (var frame = 0; frame < 10; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    final finalIndex = thumbnails.controller!.page!.round();
+    expect(thumbnails.controller!.page, closeTo(finalIndex.toDouble(), .02));
+    expect(main.controller.page, closeTo(finalIndex.toDouble(), .02));
+    expect(
+      tester
+          .widget<ExtendedImageGesturePageView>(
+            find.byType(ExtendedImageGesturePageView),
+          )
+          .pageSnapping,
+      isTrue,
+    );
     expect(tester.takeException(), isNull);
   });
 

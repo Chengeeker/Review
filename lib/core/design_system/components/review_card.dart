@@ -11,7 +11,6 @@ class ReviewCard extends StatelessWidget {
     this.elevation = 1,
     this.clipBehavior = Clip.none,
     this.onTap,
-    this.onLongPress,
     this.enableFeedback = true,
   });
 
@@ -22,7 +21,6 @@ class ReviewCard extends StatelessWidget {
   final double elevation;
   final Clip clipBehavior;
   final VoidCallback? onTap;
-  final VoidCallback? onLongPress;
   final bool enableFeedback;
 
   @override
@@ -30,21 +28,24 @@ class ReviewCard extends StatelessWidget {
     final roundedShape = shape is RoundedRectangleBorder
         ? shape as RoundedRectangleBorder
         : null;
+    final theme = Theme.of(context);
     return Card(
       margin: margin,
       color: color,
       shape: shape,
       elevation: elevation,
       clipBehavior: clipBehavior,
-      child: onTap != null || onLongPress != null
-          ? InkWell(
-              borderRadius: roundedShape?.borderRadius.resolve(
-                Directionality.of(context),
+      child: onTap != null
+          ? Theme(
+              data: theme.copyWith(splashFactory: NoSplash.splashFactory),
+              child: InkWell(
+                borderRadius: roundedShape?.borderRadius.resolve(
+                  Directionality.of(context),
+                ),
+                enableFeedback: enableFeedback,
+                onTap: onTap,
+                child: Theme(data: theme, child: child),
               ),
-              enableFeedback: enableFeedback,
-              onTap: onTap,
-              onLongPress: onLongPress,
-              child: child,
             )
           : child,
     );

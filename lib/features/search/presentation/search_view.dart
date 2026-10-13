@@ -1,7 +1,9 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/storage/storage_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
@@ -28,6 +30,8 @@ class _SearchViewState extends ConsumerState<SearchView> {
   bool _isLoadingHot = true;
   SearchSuggestResult? _suggestResult;
   bool _isLoadingSuggest = false;
+  bool _directUsersFailed = false;
+  int _suggestGeneration = 0;
   bool _isHotSearchVertical = false;
   Timer? _debounceTimer;
   final TextEditingController _searchController = TextEditingController();
@@ -36,8 +40,9 @@ class _SearchViewState extends ConsumerState<SearchView> {
   void initState() {
     super.initState();
     _loadHistory();
-    _isHotSearchVertical =
-        ref.read(storageServiceProvider).getHotSearchVerticalLayout();
+    _isHotSearchVertical = ref
+        .read(storageServiceProvider)
+        .getHotSearchVerticalLayout();
     _fetchHotSearch();
     _searchController.addListener(_onSearchTextChanged);
   }
@@ -51,39 +56,50 @@ class _SearchViewState extends ConsumerState<SearchView> {
 
   void _onSearchTextChanged() {
     final query = _searchController.text.trim();
+    final generation = ++_suggestGeneration;
+    _debounceTimer?.cancel();
+    setState(() {
+      _suggestResult = null;
+      _directUsersFailed = false;
+      _isLoadingSuggest = query.isNotEmpty;
+    });
     if (query.isEmpty) {
-      _debounceTimer?.cancel();
-      setState(() {
-        _suggestResult = null;
-        _isLoadingSuggest = false;
-      });
       return;
     }
 
-    _debounceTimer?.cancel();
-    _debounceTimer = Timer(const Duration(milliseconds: 250), () {
-      _fetchSuggestions(query);
+    _debounceTimer = Timer(const Duration(milliseconds: 400), () {
+      _fetchSuggestions(query, generation);
     });
-    setState(() {});
   }
 
-  Future<void> _fetchSuggestions(String query) async {
+  Future<void> _fetchSuggestions(String query, int generation) async {
     setState(() {
       _isLoadingSuggest = true;
     });
 
     try {
       final repo = ref.read(searchRepositoryProvider);
+      var directUsersFailed = false;
+      final usersFuture = repo.searchUsers(query).catchError((_) {
+        directUsersFailed = true;
+        return <WeiboUserModel>[];
+      });
       final result = await repo.getSearchSuggestions(query);
-      if (mounted && _searchController.text.trim() == query) {
+      final users = await usersFuture;
+      if (mounted && generation == _suggestGeneration) {
         setState(() {
-          _suggestResult = result;
+          _suggestResult = SearchSuggestResult(
+            users: users,
+            suggestions: result.suggestions,
+          );
+          _directUsersFailed = directUsersFailed;
           _isLoadingSuggest = false;
         });
       }
     } catch (_) {
-      if (mounted) {
+      if (mounted && generation == _suggestGeneration) {
         setState(() {
+          _directUsersFailed = true;
           _isLoadingSuggest = false;
         });
       }
@@ -131,9 +147,7 @@ class _SearchViewState extends ConsumerState<SearchView> {
 
     if (!mounted) return;
     await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (ctx) => SearchResultsPage(keyword: clean),
-      ),
+      MaterialPageRoute(builder: (ctx) => SearchResultsPage(keyword: clean)),
     );
 
     // 返回时刷新搜索历史
@@ -225,15 +239,19 @@ class _SearchViewState extends ConsumerState<SearchView> {
             decoration: InputDecoration(
               isDense: true,
               border: InputBorder.none,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 0,
+                vertical: 0,
+              ),
               prefixIcon: Icon(
                 Icons.search_rounded,
                 size: 20,
                 color: colorScheme.onSurfaceVariant,
               ),
-              prefixIconConstraints:
-                  const BoxConstraints(minWidth: 38, minHeight: 40),
+              prefixIconConstraints: const BoxConstraints(
+                minWidth: 38,
+                minHeight: 40,
+              ),
               suffixIcon: _searchController.text.isNotEmpty
                   ? GestureDetector(
                       behavior: HitTestBehavior.opaque,
@@ -252,8 +270,10 @@ class _SearchViewState extends ConsumerState<SearchView> {
                       ),
                     )
                   : null,
-              suffixIconConstraints:
-                  const BoxConstraints(minWidth: 36, minHeight: 40),
+              suffixIconConstraints: const BoxConstraints(
+                minWidth: 36,
+                minHeight: 40,
+              ),
               hintText: '搜索微博、话题、用户...',
               hintStyle: TextStyle(
                 fontSize: 14,
@@ -271,8 +291,10 @@ class _SearchViewState extends ConsumerState<SearchView> {
                 borderRadius: BorderRadius.circular(8),
                 onTap: () => _performSearch(_searchController.text),
                 child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
                   child: Text(
                     '搜索',
                     style: TextStyle(
@@ -313,7 +335,10 @@ class _SearchViewState extends ConsumerState<SearchView> {
     double topContentInset,
   ) {
     final query = _searchController.text.trim();
-    final users = _suggestResult?.users ?? [];
+    final users = (_suggestResult?.users ?? [])
+        .where((user) => user.followersCount >= 10000)
+        .take(3)
+        .toList();
     final suggestions = _suggestResult?.suggestions ?? [];
 
     if (_isLoadingSuggest && _suggestResult == null) {
@@ -325,14 +350,22 @@ class _SearchViewState extends ConsumerState<SearchView> {
     return ListView(
       padding: EdgeInsets.fromLTRB(16, topContentInset + 12, 16, 12),
       children: [
-        // 1. 精准匹配用户直达卡片 (支持显示头像、ID、认证信息、粉丝数等)
+        // 1. 用户直达复用正式用户搜索的官方排序。
+        if (_directUsersFailed)
+          TextButton(
+            onPressed: () => _fetchSuggestions(query, ++_suggestGeneration),
+            child: const Text('用户直达加载失败，点击重试'),
+          ),
         if (users.isNotEmpty) ...[
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Row(
               children: [
-                Icon(Icons.person_pin_rounded,
-                    size: 18, color: colorScheme.primary),
+                Icon(
+                  Icons.person_pin_rounded,
+                  size: 18,
+                  color: colorScheme.primary,
+                ),
                 const SizedBox(width: 6),
                 const Text(
                   '用户直达',
@@ -341,8 +374,9 @@ class _SearchViewState extends ConsumerState<SearchView> {
               ],
             ),
           ),
-          ...users
-              .map((user) => _buildUserSuggestCard(context, user, colorScheme)),
+          ...users.map(
+            (user) => _buildUserSuggestCard(context, user, colorScheme),
+          ),
           const SizedBox(height: 12),
           const Divider(height: 1, thickness: 0.5),
           const SizedBox(height: 8),
@@ -354,25 +388,32 @@ class _SearchViewState extends ConsumerState<SearchView> {
             padding: const EdgeInsets.symmetric(vertical: 6),
             child: Text(
               '相关搜索建议',
-              style:
-                  TextStyle(fontSize: 13, color: colorScheme.onSurfaceVariant),
+              style: TextStyle(
+                fontSize: 13,
+                color: colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
-          ...suggestions.map((word) =>
-              _buildSuggestWordRow(context, word, query, colorScheme)),
+          ...suggestions.map(
+            (word) => _buildSuggestWordRow(context, word, query, colorScheme),
+          ),
           const SizedBox(height: 4),
         ],
 
         // 3. 通用关键词全景搜索入口
         ListTile(
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 4,
+            vertical: 0,
+          ),
           visualDensity: VisualDensity.compact,
           leading: Icon(Icons.search_rounded, color: colorScheme.primary),
           title: Text(
             '搜索 "$query"',
             style: TextStyle(
-                color: colorScheme.primary, fontWeight: FontWeight.bold),
+              color: colorScheme.primary,
+              fontWeight: FontWeight.bold,
+            ),
           ),
           trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 13),
           onTap: () => _performSearch(query),
@@ -513,10 +554,7 @@ class _SearchViewState extends ConsumerState<SearchView> {
         size: 18,
         color: colorScheme.onSurfaceVariant,
       ),
-      title: Text(
-        word,
-        style: const TextStyle(fontSize: 14.5),
-      ),
+      title: Text(word, style: const TextStyle(fontSize: 14.5)),
       trailing: IconButton(
         icon: const Icon(Icons.north_west_rounded, size: 15),
         tooltip: '填入搜索框',
@@ -533,7 +571,9 @@ class _SearchViewState extends ConsumerState<SearchView> {
 
   /// 第一部分：搜索历史组件
   Widget _buildSearchHistorySection(
-      BuildContext context, ColorScheme colorScheme) {
+    BuildContext context,
+    ColorScheme colorScheme,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -542,8 +582,11 @@ class _SearchViewState extends ConsumerState<SearchView> {
           children: [
             Row(
               children: [
-                Icon(Icons.history_rounded,
-                    size: 19, color: colorScheme.primary),
+                Icon(
+                  Icons.history_rounded,
+                  size: 19,
+                  color: colorScheme.primary,
+                ),
                 const SizedBox(width: 6),
                 const Text(
                   '搜索历史',
@@ -574,15 +617,17 @@ class _SearchViewState extends ConsumerState<SearchView> {
                 borderRadius: BorderRadius.circular(16),
                 onTap: () => _performSearch(keyword),
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest
-                        .withValues(alpha: 0.55),
+                    color: colorScheme.surfaceContainerHighest.withValues(
+                      alpha: 0.55,
+                    ),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                      color: Theme.of(context)
-                          .dividerColor
+                      color: Theme.of(context).dividerColor
                           .withValues(alpha: 0.12),
                       width: 0.8,
                     ),
@@ -605,8 +650,9 @@ class _SearchViewState extends ConsumerState<SearchView> {
                           child: Icon(
                             Icons.close_rounded,
                             size: 13,
-                            color: colorScheme.onSurfaceVariant
-                                .withValues(alpha: 0.7),
+                            color: colorScheme.onSurfaceVariant.withValues(
+                              alpha: 0.7,
+                            ),
                           ),
                         ),
                       ),
@@ -644,8 +690,11 @@ class _SearchViewState extends ConsumerState<SearchView> {
           children: [
             Row(
               children: [
-                const Icon(Icons.local_fire_department_rounded,
-                    size: 19, color: Color(0xFFFF5722)),
+                const Icon(
+                  Icons.local_fire_department_rounded,
+                  size: 19,
+                  color: Color(0xFFFF5722),
+                ),
                 const SizedBox(width: 6),
                 Text(
                   '热门搜索',
@@ -719,8 +768,9 @@ class _SearchViewState extends ConsumerState<SearchView> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color:
-                  colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+              color: colorScheme.surfaceContainerHighest.withValues(
+                alpha: 0.35,
+              ),
               borderRadius: BorderRadius.circular(12),
             ),
             child: _buildHotSearchItems(context, hotItems, colorScheme),
@@ -743,7 +793,11 @@ class _SearchViewState extends ConsumerState<SearchView> {
         itemBuilder: (context, index) {
           if (index < items.length) {
             return _buildCompactHotItem(
-                context, items[index], index, colorScheme);
+              context,
+              items[index],
+              index,
+              colorScheme,
+            );
           }
           return _buildMoreHotSearchButton(context, colorScheme);
         },
@@ -764,7 +818,11 @@ class _SearchViewState extends ConsumerState<SearchView> {
       itemBuilder: (context, index) {
         if (index < items.length) {
           return _buildCompactHotItem(
-              context, items[index], index, colorScheme);
+            context,
+            items[index],
+            index,
+            colorScheme,
+          );
         }
         return _buildMoreHotSearchButton(context, colorScheme);
       },
@@ -836,14 +894,15 @@ class _SearchViewState extends ConsumerState<SearchView> {
 
   /// 第 10 个位置：“更多热搜”按钮
   Widget _buildMoreHotSearchButton(
-      BuildContext context, ColorScheme colorScheme) {
+    BuildContext context,
+    ColorScheme colorScheme,
+  ) {
     return InkWell(
       borderRadius: BorderRadius.circular(8),
       onTap: () {
         HapticFeedbackUtil.light();
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (ctx) => const HotTrendsView()),
-        );
+        Navigator.of(context)
+            .push(MaterialPageRoute(builder: (ctx) => const HotTrendsView()));
       },
       child: Container(
         margin: const EdgeInsets.symmetric(vertical: 2),
@@ -855,8 +914,11 @@ class _SearchViewState extends ConsumerState<SearchView> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.local_fire_department_rounded,
-                size: 15, color: colorScheme.primary),
+            Icon(
+              Icons.local_fire_department_rounded,
+              size: 15,
+              color: colorScheme.primary,
+            ),
             const SizedBox(width: 4),
             Text(
               '更多热搜',
@@ -867,8 +929,11 @@ class _SearchViewState extends ConsumerState<SearchView> {
               ),
             ),
             const SizedBox(width: 2),
-            Icon(Icons.arrow_forward_ios_rounded,
-                size: 11, color: colorScheme.primary),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 11,
+              color: colorScheme.primary,
+            ),
           ],
         ),
       ),
