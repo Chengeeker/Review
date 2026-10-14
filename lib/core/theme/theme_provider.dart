@@ -15,6 +15,7 @@ class ThemeState {
   final int customFontWeightDelta;
   final int systemFontWeightAdjustment;
   final int screenRefreshRateMode;
+  final double appTextScale;
 
   const ThemeState({
     this.themeMode = ThemeMode.system,
@@ -27,6 +28,7 @@ class ThemeState {
     this.customFontWeightDelta = 0,
     this.systemFontWeightAdjustment = 0,
     this.screenRefreshRateMode = 0,
+    this.appTextScale = 1.0,
   });
 
   /// 有效字重偏移：若开启自定义则完全不受系统全局设置影响，否则跟随系统全局字重
@@ -44,6 +46,7 @@ class ThemeState {
     int? customFontWeightDelta,
     int? systemFontWeightAdjustment,
     int? screenRefreshRateMode,
+    double? appTextScale,
   }) {
     return ThemeState(
       themeMode: themeMode ?? this.themeMode,
@@ -59,6 +62,7 @@ class ThemeState {
           systemFontWeightAdjustment ?? this.systemFontWeightAdjustment,
       screenRefreshRateMode:
           screenRefreshRateMode ?? this.screenRefreshRateMode,
+      appTextScale: appTextScale ?? this.appTextScale,
     );
   }
 }
@@ -118,6 +122,7 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
     final customFont = _storage.getUseCustomFontWeight();
     final customFontDelta = _storage.getCustomFontWeightDelta();
     final refreshMode = _storage.getScreenRefreshRateMode();
+    final appTextScale = _storage.getAppTextScale().clamp(0.8, 1.4).toDouble();
 
     ThemeMode mode = ThemeMode.system;
     if (modeIndex == 1) mode = ThemeMode.light;
@@ -133,6 +138,7 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
       useCustomFontWeight: customFont,
       customFontWeightDelta: customFontDelta,
       screenRefreshRateMode: refreshMode,
+      appTextScale: appTextScale,
     );
     _applyScreenRefreshRateMode(refreshMode);
   }
@@ -191,6 +197,18 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
   Future<void> setCustomFontWeightDelta(int delta) async {
     await _storage.setCustomFontWeightDelta(delta);
     state = state.copyWith(customFontWeightDelta: delta);
+  }
+
+  void previewAppTextScale(double scale) {
+    state = state.copyWith(appTextScale: scale.clamp(0.8, 1.4).toDouble());
+  }
+
+  Future<void> setAppTextScale(double scale) async {
+    final value = scale.clamp(0.8, 1.4).toDouble();
+    if (!await _storage.setAppTextScale(value)) {
+      throw StateError('保存字体大小失败');
+    }
+    state = state.copyWith(appTextScale: value);
   }
 }
 

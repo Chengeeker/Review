@@ -334,6 +334,8 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
   Offset? _pendingGalleryTapPosition;
   double _videoBottomControlsHeight = 0;
   double? _thumbnailScrollBottom;
+  bool _mainUserScrolling = false;
+  final Expando<ExtendedImageGesture> _pagingImages = Expando();
 
   // Live Photo Controller Cache
   final Map<int, VideoPlayerController> _liveControllers = {};
@@ -820,13 +822,15 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
     final scope = widget.heroScope;
     // PageView keeps neighboring pages alive. If each retained page has a
     // Hero, popping the route can launch multiple flights back to the grid.
-    // Only the page currently shown in the gallery should pair with its
-    // source thumbnail.
-    if (scope == null || pic.isVideo || index != _currentIndex) return child;
-    return Hero(
-      tag: ImageGalleryHeroTag.forPic(scope: scope, index: index, pic: pic),
-      flightShuttleBuilder: imageGalleryHeroFlightShuttleBuilder,
-      child: child,
+    // Disable neighboring flights without replacing the image gesture subtree.
+    if (scope == null || pic.isVideo) return child;
+    return HeroMode(
+      enabled: index == _currentIndex,
+      child: Hero(
+        tag: ImageGalleryHeroTag.forPic(scope: scope, index: index, pic: pic),
+        flightShuttleBuilder: imageGalleryHeroFlightShuttleBuilder,
+        child: child,
+      ),
     );
   }
 
@@ -839,6 +843,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
       _thumbnailSyncEpoch++;
       _thumbnailSettling = false;
       _thumbnailUserScrolling = true;
+      _mainUserScrolling = false;
       _activeMediaIndex.value = -1;
       _isPlayingLive = false;
       _pendingLivePlay = false;
@@ -867,15 +872,38 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
       _thumbnailSyncEpoch++;
       _thumbnailUserScrolling = false;
       _thumbnailSettling = false;
+      _mainUserScrolling = true;
+      _activeMediaIndex.value = -1;
+      for (final controller in _liveControllers.values) {
+        if (controller.value.isPlaying) controller.pause();
+      }
       if (_thumbnailController.hasClients &&
           _thumbnailController.position.isScrollingNotifier.value) {
         final position = _thumbnailController.position;
         // Stop old thumbnail inertia without snapping away from its fractional page.
         position.jumpTo(position.pixels);
       }
-      if (_thumbnailScrollBottom != null) {
-        setState(() => _thumbnailScrollBottom = null);
+      if (_thumbnailScrollBottom != null ||
+          _isPlayingLive ||
+          _pendingLivePlay) {
+        setState(() {
+          _thumbnailScrollBottom = null;
+          _isPlayingLive = false;
+          _pendingLivePlay = false;
+        });
       }
+    } else if (notification is ScrollEndNotification && _mainUserScrolling) {
+      final epoch = _thumbnailSyncEpoch;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            epoch != _thumbnailSyncEpoch ||
+            !_mainUserScrolling ||
+            _pageController.position.isScrollingNotifier.value) {
+          return;
+        }
+        _mainUserScrolling = false;
+        _activateCurrentMedia();
+      });
     }
     return false;
   }
@@ -993,6 +1021,8 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                   physics: const BouncingScrollPhysics(),
                   canScrollPage: (details) =>
                       (details?.totalScale ?? 1.0) <= 1.0,
+                  shouldAccpetHorizontalOrVerticalDrag: (trackers) =>
+                      trackers.length == 1,
                   pageSnapping: !_thumbnailUserScrolling && !_thumbnailSettling,
                   itemCount: widget.pics.length,
                   onPageChanged: (index) {
@@ -1000,7 +1030,8 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                     if (didChange && _thumbnailUserScrolling) {
                       HapticFeedbackUtil.selectionTick();
                     } else if (!_thumbnailUserScrolling &&
-                        !_thumbnailSettling) {
+                        !_thumbnailSettling &&
+                        !_mainUserScrolling) {
                       _activeMediaIndex.value = index;
                       _initLiveControllerForIndex(index);
                     }
@@ -1077,6 +1108,78 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                       // Keep slide-out disabled: during image loading the
                       // package installs a scale recognizer that can steal paging.
                       enableSlideOutPage: false,
+                      loadStateChanged: (state) {
+                        if (state.extendedImageLoadState !=
+                            LoadState.completed) {
+                          return null;
+                        }
+                        // Reuse a decoded frame's widget to avoid repeated gesture animation initialization.
+                        return _pagingImages[state
+                            .extendedImageInfo!] ??= ExtendedImageGesture(
+                          state,
+                          imageBuilder: (image, {imageGestureState}) {
+                            final gestureState = imageGestureState!;
+                            final pager = gestureState.context
+                                .findAncestorStateOfType<
+                                  ExtendedImageGesturePageViewState
+                                >();
+                            // Hero flights rebuild this image in an overlay without a pager.
+                            if (pager == null) return image;
+                            // Register paging before the image's scale recognizer sees a fast single-finger move.
+                            return Listener(
+                              onPointerDown: (_) {
+                                pager.extendedImageGestureStates.remove(
+                                  gestureState,
+                                );
+                                pager.extendedImageGestureState = gestureState;
+                              },
+                              child: RawGestureDetector(
+                                gestures: {
+                                  ExtendedHorizontalDragGestureRecognizer:
+                                      GestureRecognizerFactoryWithHandlers<
+                                        ExtendedHorizontalDragGestureRecognizer
+                                      >(
+                                        () => ExtendedHorizontalDragGestureRecognizer(
+                                          canHorizontalOrVerticalDrag: () =>
+                                              (gestureState
+                                                      .gestureDetails
+                                                      ?.totalScale ??
+                                                  1) <=
+                                              1,
+                                          shouldAccpetHorizontalOrVerticalDrag:
+                                              (trackers) =>
+                                                  trackers.length == 1,
+                                        ),
+                                        (recognizer) => recognizer
+                                          ..onDown = pager.onDragDown
+                                          ..onStart = pager.onDragStart
+                                          ..onUpdate = pager.onDragUpdate
+                                          ..onEnd = pager.onDragEnd
+                                          ..onCancel = pager.onDragCancel
+                                          ..minFlingDistance = pager
+                                              .widget
+                                              .physics
+                                              .minFlingDistance
+                                          ..minFlingVelocity = pager
+                                              .widget
+                                              .physics
+                                              .minFlingVelocity
+                                          ..maxFlingVelocity = pager
+                                              .widget
+                                              .physics
+                                              .maxFlingVelocity
+                                          ..gestureSettings =
+                                              MediaQuery.gestureSettingsOf(
+                                                context,
+                                              ),
+                                      ),
+                                },
+                                child: image,
+                              ),
+                            );
+                          },
+                        );
+                      },
                       onDoubleTap: (ExtendedImageGestureState state) {
                         HapticFeedbackUtil.light();
                         final pointerDownPosition = state.pointerDownPosition;

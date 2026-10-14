@@ -378,6 +378,64 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('continuous main flings initialize only the settled Live Photo', (
+    tester,
+  ) async {
+    final pics = [
+      _photo,
+      ...List.generate(
+        7,
+        (index) => WeiboPicModel(
+          pid: 'live-fling-$index',
+          thumbnail: _photo.thumbnail,
+          large: _photo.large,
+          original: _photo.original,
+          isLivePhoto: true,
+          livePhotoVideoUrl: 'https://example.com/live-fling-$index.mp4',
+        ),
+      ),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ImageGalleryPage(
+          pics: pics,
+          initialIndex: 0,
+          statusId: 'live-fling',
+        ),
+      ),
+    );
+    await tester.pump();
+    final main = find.byType(ExtendedImageGesturePageView);
+    final controller = tester
+        .widget<ExtendedImageGesturePageView>(main)
+        .controller;
+    for (var count = 0; count < 3; count++) {
+      await tester.fling(main, const Offset(-400, 0), 6500);
+      await tester.pump(const Duration(milliseconds: 32));
+      expect(controller.position.isScrollingNotifier.value, isTrue);
+      expect(
+        backend.created,
+        isEmpty,
+        reason:
+            'intermediate Live Photos must not start decoder initialization',
+      );
+    }
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(controller.page, greaterThan(0));
+    expect(backend.created, hasLength(1));
+    expect(backend.played, isEmpty);
+    await tester.tap(find.text('播放 Live 图'));
+    await tester.pump();
+    expect(backend.played, hasLength(1));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    await _flushPlayerDisposal(tester);
+    debugNetworkImageHttpClientProvider = null;
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
       'leaving video while initialization is pending never starts hidden playback',
       (tester) async {

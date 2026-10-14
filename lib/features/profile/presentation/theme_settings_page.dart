@@ -352,6 +352,57 @@ class ThemeSettingsPage extends ConsumerWidget {
           ),
           const SizedBox(height: 16),
 
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+            child: Text(
+              '字体大小',
+              style: Theme.of(context).textTheme.titleSmall
+                  ?.copyWith(color: colorScheme.primary),
+            ),
+          ),
+          AppSectionCard(
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              leading: Icon(
+                Icons.format_size_rounded,
+                color: colorScheme.primary,
+              ),
+              title: const Text('应用字体大小'),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('${(themeState.appTextScale * 100).round()}%'),
+                  Slider(
+                    key: const ValueKey('app-text-scale-slider'),
+                    value: themeState.appTextScale,
+                    min: 0.8,
+                    max: 1.4,
+                    divisions: 12,
+                    label: '${(themeState.appTextScale * 100).round()}%',
+                    onChanged: ref
+                        .read(themeProvider.notifier)
+                        .previewAppTextScale,
+                    onChangeEnd: (value) async {
+                      try {
+                        await ref
+                            .read(themeProvider.notifier)
+                            .setAppTextScale(value);
+                      } catch (_) {
+                        if (context.mounted) {
+                          ref.read(themeProvider.notifier).reload();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('设置保存失败')),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
           // 底部导航
           AppSectionCard(
             child: Column(

@@ -11,6 +11,7 @@ import 'core/services/link_routing_service.dart';
 import 'core/services/image_cache_maintenance.dart';
 import 'core/storage/storage_service.dart';
 import 'core/theme/app_theme.dart';
+import 'core/theme/app_text_scaler.dart';
 import 'core/theme/theme_provider.dart';
 import 'core/utils/app_toast.dart';
 import 'core/utils/haptic_feedback_util.dart';
@@ -97,10 +98,19 @@ class WBTestApp extends ConsumerWidget {
           ],
           supportedLocales: const [Locale('zh', 'CN')],
           builder: (context, child) {
-            return DefaultTextStyle(
-              style:
-                  Theme.of(context).textTheme.bodyMedium ?? const TextStyle(),
-              child: child ?? const SizedBox.shrink(),
+            final mediaQuery = MediaQuery.of(context);
+            return MediaQuery(
+              data: mediaQuery.copyWith(
+                textScaler: AppTextScaler(
+                  mediaQuery.textScaler,
+                  themeState.appTextScale,
+                ),
+              ),
+              child: DefaultTextStyle(
+                style:
+                    Theme.of(context).textTheme.bodyMedium ?? const TextStyle(),
+                child: child ?? const SizedBox.shrink(),
+              ),
             );
           },
           home: const MainScaffold(),

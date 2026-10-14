@@ -1,8 +1,11 @@
+import 'dart:async';
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:review/core/utils/spring_page_route.dart';
 import 'package:extended_image/extended_image.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -25,6 +28,72 @@ const portraitGalleryTestPic = WeiboPicModel(
   height: 16,
 );
 
+class _DiagnosticImageClient implements HttpClient {
+  _DiagnosticImageClient(this.request);
+
+  final Future<HttpClientRequest> Function() request;
+
+  @override
+  Future<HttpClientRequest> getUrl(Uri url) => request();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+class _DiagnosticImageRequest implements HttpClientRequest {
+  _DiagnosticImageRequest(this.bytes, {this.statusCode = 200});
+
+  final Uint8List bytes;
+  final int statusCode;
+
+  @override
+  HttpHeaders get headers => _DiagnosticImageHeaders();
+
+  @override
+  Future<HttpClientResponse> close() async =>
+      _DiagnosticImageResponse(bytes, statusCode: statusCode);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+class _DiagnosticImageHeaders implements HttpHeaders {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+class _DiagnosticImageResponse extends Stream<List<int>>
+    implements HttpClientResponse {
+  _DiagnosticImageResponse(this.bytes, {this.statusCode = 200});
+
+  final Uint8List bytes;
+  @override
+  final int statusCode;
+
+  @override
+  int get contentLength => bytes.length;
+
+  @override
+  HttpClientResponseCompressionState get compressionState =>
+      HttpClientResponseCompressionState.notCompressed;
+
+  @override
+  StreamSubscription<List<int>> listen(
+    void Function(List<int>)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) => Stream<List<int>>.value(bytes).listen(
+    onData,
+    onError: onError,
+    onDone: onDone,
+    cancelOnError: cancelOnError,
+  );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
 class RecordingNavigatorObserver extends NavigatorObserver {
   String? poppedRouteName;
 
@@ -35,7 +104,217 @@ class RecordingNavigatorObserver extends NavigatorObserver {
   }
 }
 
+class _GalleryImageStream extends ImageStreamCompleter {
+  void frame(ui.Image image) => setImage(ImageInfo(image: image));
+}
+
+Future<List<_GalleryImageStream>> _cacheDecodedGalleryPics(
+  WidgetTester tester,
+  List<WeiboPicModel> pics,
+) async {
+  final image = (await tester.runAsync(() async {
+    final recorder = ui.PictureRecorder();
+    Canvas(recorder).drawColor(Colors.blue, BlendMode.src);
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(120, 240);
+    picture.dispose();
+    return image;
+  }))!;
+  final providers = pics
+      .map((pic) => ExtendedNetworkImageProvider(pic.originalUrl, cache: true))
+      .toList();
+  final streams = <_GalleryImageStream>[];
+  for (final provider in providers) {
+    final stream = _GalleryImageStream()..frame(image.clone());
+    streams.add(stream);
+    imageCache.putIfAbsent(provider, () => stream);
+  }
+  addTearDown(() {
+    for (final provider in providers) {
+      imageCache.evict(provider);
+    }
+    image.dispose();
+  });
+  return streams;
+}
+
 void main() {
+  testWidgets(
+    'decoded gallery paints through actual Hero push, swipe and pop',
+    (tester) async {
+      const pathProviderChannel = MethodChannel(
+        'plugins.flutter.io/path_provider',
+      );
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        pathProviderChannel,
+        (_) async => Directory.systemTemp.path,
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          pathProviderChannel,
+          null,
+        ),
+      );
+      final pics = List.generate(
+        2,
+        (index) => WeiboPicModel(
+          pid: 'hero-decoded-$index',
+          thumbnail: 'https://gallery-test.invalid/hero-preview-$index.png',
+          large: 'https://gallery-test.invalid/hero-preview-$index.png',
+          original: 'https://gallery-test.invalid/hero-decoded-$index.png',
+          isWebpageCard: index == 1,
+        ),
+      );
+      await _cacheDecodedGalleryPics(tester, pics);
+      await _cacheDecodedGalleryPics(tester, [
+        for (final pic in pics)
+          WeiboPicModel(
+            pid: '${pic.pid}-preview',
+            thumbnail: pic.previewUrl,
+            large: pic.previewUrl,
+            original: pic.previewUrl,
+          ),
+      ]);
+      final scope = Object();
+      final navigator = GlobalKey<NavigatorState>();
+      final screen = GlobalKey();
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: screen,
+          child: MaterialApp(
+            navigatorKey: navigator,
+            home: Scaffold(
+              body: Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: List.generate(
+                    pics.length,
+                    (index) => GestureDetector(
+                      key: ValueKey('decoded-hero-source-$index'),
+                      onTap: () => navigator.currentState!.push<void>(
+                        PhysicsSpringGalleryRoute(
+                          child: ImageGalleryPage(
+                            pics: pics,
+                            initialIndex: index,
+                            statusId: 'decoded-hero',
+                            heroScope: scope,
+                          ),
+                        ),
+                      ),
+                      child: ImageGalleryHeroThumbnail(
+                        scope: scope,
+                        index: index,
+                        pic: pics[index],
+                        child: SizedBox(
+                          width: 80,
+                          height: 80,
+                          child: ExtendedImage.network(
+                            pics[index].previewUrl,
+                            cache: true,
+                            fit: pics[index].isWebpageCard
+                                ? BoxFit.contain
+                                : BoxFit.cover,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      for (final initialIndex in [0, 1]) {
+        final source = find.byKey(
+          ValueKey('decoded-hero-source-$initialIndex'),
+        );
+        final sourceImage = tester.state(
+          find.descendant(of: source, matching: find.byType(ExtendedImage)),
+        ) as ExtendedImageState;
+        final sourcePixels = sourceImage.extendedImageInfo!.image;
+        final pendingOriginal = initialIndex == 1
+            ? _GalleryImageStream()
+            : null;
+        if (pendingOriginal != null) {
+          final provider = ExtendedNetworkImageProvider(
+            pics[initialIndex].originalUrl,
+            cache: true,
+          );
+          imageCache.evict(provider);
+          imageCache.putIfAbsent(provider, () => pendingOriginal);
+        }
+        await tester.tap(source);
+        await tester.pump();
+        for (var frame = 0; frame < 6; frame++) {
+          if (frame == 2 && pendingOriginal != null) {
+            pendingOriginal.frame(sourcePixels.clone());
+          }
+          await tester.pump(const Duration(milliseconds: 16));
+          expect(tester.takeException(), isNull);
+          expect(find.byType(ErrorWidget), findsNothing);
+        }
+        final flyingImage = find.byElementPredicate(
+          (element) =>
+              element.widget is ExtendedRawImage &&
+              element.findAncestorStateOfType<ExtendedImageGestureState>() !=
+                  null &&
+              element
+                      .findAncestorStateOfType<
+                        ExtendedImageGesturePageViewState
+                      >() ==
+                  null,
+        );
+        expect(flyingImage, findsOneWidget);
+        final boundary =
+            screen.currentContext!.findRenderObject() as RenderRepaintBoundary;
+        final point = boundary.globalToLocal(tester.getCenter(flyingImage));
+        final pixel = await tester.runAsync(() async {
+          final snapshot = await boundary.toImage();
+          final bytes = await snapshot.toByteData(
+            format: ui.ImageByteFormat.rawRgba,
+          );
+          final offset =
+              (point.dy.floor() * snapshot.width + point.dx.floor()) * 4;
+          final rgba = bytes!.buffer.asUint8List().sublist(offset, offset + 4);
+          snapshot.dispose();
+          return rgba;
+        });
+        expect(pixel, [
+          0x21,
+          0x96,
+          0xf3,
+          0xff,
+        ], reason: 'the flying image must paint decoded pixels');
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(tester.takeException(), isNull);
+
+        final pager = find.byType(ExtendedImageGesturePageView);
+        final controller = tester
+            .widget<ExtendedImageGesturePageView>(pager)
+            .controller;
+        await tester.fling(
+          pager,
+          Offset(initialIndex == 0 ? -400 : 400, 0),
+          6500,
+        );
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 1));
+        expect(controller.page, closeTo(1 - initialIndex, .02));
+        navigator.currentState!.pop();
+        await tester.pump();
+        for (var frame = 0; frame < 16; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          expect(tester.takeException(), isNull);
+          expect(find.byType(ErrorWidget), findsNothing);
+        }
+        expect(find.byType(ImageGalleryPage), findsNothing);
+      }
+    },
+  );
+
   testWidgets('gallery pairs its fullscreen image with the source thumbnail', (
     tester,
   ) async {
@@ -235,13 +514,25 @@ void main() {
           (widget) => widget is Hero && widget.tag == tagFor(index),
         )
         .evaluate()
+        .where((element) {
+          var enabled = true;
+          element.visitAncestorElements((ancestor) {
+            if (ancestor.widget case HeroMode(enabled: false)) enabled = false;
+            return enabled;
+          });
+          return enabled;
+        })
         .length;
 
     await tester.tap(find.byKey(const ValueKey('source-thumbnail-0')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
     expect(heroCount(0), 2, reason: 'the open image pairs with its source');
-    expect(heroCount(1), 1, reason: 'the adjacent cached page has no Hero');
+    expect(
+      heroCount(1),
+      1,
+      reason: 'the adjacent cached page disables its Hero',
+    );
     expect(heroCount(2), 1);
 
     await tester.tap(find.byKey(const ValueKey('gallery-thumbnail-1')));
@@ -563,6 +854,323 @@ void main() {
     }
   }
 
+  testWidgets(
+    'decoded image gesture survives Hero selection and interrupted flings',
+    (tester) async {
+      var pointerDowns = 0;
+      var scrollStarts = 0;
+      final pics = List.generate(
+        8,
+        (index) => WeiboPicModel(
+          pid: 'decoded-$index',
+          thumbnail: 'https://gallery-test.invalid/decoded-$index.png',
+          large: 'https://gallery-test.invalid/decoded-$index.png',
+          original: 'https://gallery-test.invalid/decoded-$index.png',
+        ),
+      );
+      final streams = await _cacheDecodedGalleryPics(tester, pics);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Listener(
+            onPointerDown: (_) => pointerDowns++,
+            child: NotificationListener<ScrollStartNotification>(
+              onNotification: (notification) {
+                if (notification.dragDetails != null) scrollStarts++;
+                return false;
+              },
+              child: ImageGalleryPage(
+                pics: pics,
+                initialIndex: 0,
+                statusId: 'decoded',
+                heroScope: Object(),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      final main = find.byType(ExtendedImageGesturePageView);
+      final controller = tester
+          .widget<ExtendedImageGesturePageView>(main)
+          .controller;
+      ExtendedImageGestureState imageState(int index) => tester.state(
+        find.descendant(
+          of: find.byWidgetPredicate(
+            (widget) =>
+                widget is ExtendedImage &&
+                widget.image ==
+                    ExtendedNetworkImageProvider(
+                      pics[index].originalUrl,
+                      cache: true,
+                    ),
+          ),
+          matching: find.byType(ExtendedImageGesture),
+        ),
+      );
+      final drag = await tester.startGesture(tester.getCenter(main));
+      await drag.moveBy(const Offset(-40, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+      await drag.moveBy(const Offset(-160, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+      await drag.moveBy(const Offset(-160, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(pointerDowns, 1);
+      expect(scrollStarts, greaterThan(0));
+      expect(controller.page, greaterThan(0));
+      final incoming = imageState(1);
+      final incomingWidget = incoming.widget;
+      await drag.moveBy(const Offset(-400, 0));
+      await tester.pump();
+      expect(controller.page, greaterThan(.5));
+      expect(
+        imageState(1),
+        same(incoming),
+        reason: 'selecting the incoming Hero must preserve its gesture subtree',
+      );
+      expect(
+        incoming.widget,
+        same(incomingWidget),
+        reason: 'an unchanged decoded frame must not reinitialize gesture animations',
+      );
+      await drag.up();
+      await tester.pump(const Duration(seconds: 1));
+
+      for (final direction in [-1.0, -1.0, 1.0, -1.0, 1.0, 1.0]) {
+        final before = controller.page!;
+        await tester.fling(main, Offset(direction * 400, 0), 6500);
+        await tester.pump(const Duration(milliseconds: 32));
+        expect(
+          controller.page,
+          direction < 0 ? greaterThan(before) : lessThan(before),
+        );
+      }
+      await tester.pump(const Duration(seconds: 2));
+      expect(controller.page, closeTo(controller.page!.roundToDouble(), .02));
+
+      final selected = imageState(controller.page!.round());
+      final previousFrameWidget = selected.widget;
+      streams[controller.page!.round()].frame(
+        selected.widget.extendedImageState.extendedImageInfo!.image.clone(),
+      );
+      await tester.pump();
+      expect(
+        selected.widget,
+        isNot(same(previousFrameWidget)),
+        reason: 'a new decoded frame must update animated images',
+      );
+      Future<void> doubleTap() async {
+        await tester.tapAt(tester.getCenter(main));
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tapAt(tester.getCenter(main));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+
+      await doubleTap();
+      expect(selected.gestureDetails!.totalScale, closeTo(2.5, .01));
+      final zoomedPage = controller.page!;
+      await tester.fling(main, const Offset(-400, 0), 6500);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(controller.page, closeTo(zoomedPage, .02));
+      await doubleTap();
+      await doubleTap();
+      expect(selected.gestureDetails!.totalScale, closeTo(1, .01));
+      await tester.pump();
+      final center = tester.getCenter(main);
+      final left = await tester.startGesture(
+        center - const Offset(40, 0),
+        pointer: 10,
+      );
+      final right = await tester.startGesture(
+        center + const Offset(40, 0),
+        pointer: 11,
+      );
+      await left.moveBy(const Offset(-40, 0));
+      await right.moveBy(const Offset(-40, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(
+        controller.page,
+        closeTo(zoomedPage, .02),
+        reason: 'two-finger translation must not become a page drag',
+      );
+      await left.moveBy(const Offset(-60, 0));
+      await right.moveBy(const Offset(60, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(selected.gestureDetails!.totalScale, greaterThan(1));
+      await left.up();
+      await right.up();
+      selected.reset();
+      await tester.pump();
+      await tester.fling(main, const Offset(-400, 0), 6500);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(controller.page, greaterThan(zoomedPage));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'main gallery accepts a reverse fling before the previous fling settles',
+    (tester) async {
+      var pointerDowns = 0;
+      final dragScrollStarts = <ScrollStartNotification>[];
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Listener(
+            onPointerDown: (_) => pointerDowns++,
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                if (notification is ScrollStartNotification &&
+                    notification.dragDetails != null) {
+                  dragScrollStarts.add(notification);
+                }
+                return false;
+              },
+              child: ImageGalleryPage(
+                pics: List.filled(18, galleryTestPic),
+                initialIndex: 8,
+                statusId: 'reverse-fling',
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final pager = tester.widget<ExtendedImageGesturePageView>(
+        find.byType(ExtendedImageGesturePageView),
+      );
+      final main = find.byType(ExtendedImageGesturePageView);
+      final pagePosition = pager.controller.position;
+
+      // Stage 1: the pointer reaches the gallery. Stage 2/3: its horizontal
+      // drag recognizer wins and Scrollable starts a user drag.
+      await tester.fling(main, const Offset(-480, 0), 8000);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(pointerDowns, 1);
+      expect(dragScrollStarts, isNotEmpty);
+      expect(pagePosition.isScrollingNotifier.value, isTrue);
+      final forwardPage = pager.controller.page!;
+      expect(forwardPage, greaterThan(8));
+
+      // Take the still-running ballistic scroll over with the opposite drag.
+      final reverse = await tester.startGesture(tester.getCenter(main));
+      await reverse.moveBy(const Offset(64, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+      await reverse.moveBy(const Offset(160, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+      final reverseDragPage = pager.controller.page!;
+      expect(
+        reverseDragPage,
+        lessThan(forwardPage),
+        reason:
+            'page position must respond while the reverse finger drag is down',
+      );
+      await reverse.up();
+      await tester.pump(const Duration(milliseconds: 80));
+      await tester.pump(const Duration(milliseconds: 80));
+
+      final reverseFlingPage = pager.controller.page!;
+      expect(
+        reverseFlingPage,
+        lessThan(reverseDragPage),
+        reason:
+            'the reverse fling should settle backward after pointer-up; '
+            'activity=${pagePosition.activity.runtimeType}',
+      );
+      expect(pointerDowns, 2);
+      expect(dragScrollStarts.length, greaterThanOrEqualTo(2));
+
+      await tester.pump(const Duration(seconds: 2));
+      final finalPage = pager.controller.page!;
+      expect(finalPage, closeTo(finalPage.roundToDouble(), 0.02));
+      expect(find.text('${finalPage.round() + 1} / 18'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'main paging works during image loading and after decode failure',
+    (tester) async {
+      final request = Completer<HttpClientRequest>();
+      var requestStarted = false;
+      const pathProviderChannel = MethodChannel(
+        'plugins.flutter.io/path_provider',
+      );
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        pathProviderChannel,
+        (_) async => Directory.systemTemp.path,
+      );
+      final originalProvider = debugNetworkImageHttpClientProvider;
+      debugNetworkImageHttpClientProvider = () => _DiagnosticImageClient(() {
+        requestStarted = true;
+        return request.future;
+      });
+      addTearDown(() {
+        debugNetworkImageHttpClientProvider = originalProvider;
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          pathProviderChannel,
+          null,
+        );
+      });
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ImageGalleryPage(
+            pics: List.generate(
+              18,
+              (index) => WeiboPicModel(
+                pid: 'loading-test-$index',
+                thumbnail: 'https://gallery-test.invalid/loading-$index.jpg',
+                large: 'https://gallery-test.invalid/loading-$index.jpg',
+                original: 'https://gallery-test.invalid/loading-$index.jpg',
+              ),
+            ),
+            initialIndex: 8,
+            statusId: 'loading-and-failed-image',
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final main = find.byType(ExtendedImageGesturePageView);
+      final controller = tester
+          .widget<ExtendedImageGesturePageView>(main)
+          .controller;
+      expect(requestStarted, isTrue, reason: 'the current image is loading');
+      expect(request.isCompleted, isFalse, reason: 'the response is held open');
+
+      // Loading placeholder: prove pointer -> user drag -> page position.
+      await tester.fling(main, const Offset(-420, 0), 7000);
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(controller.page, greaterThan(8));
+
+      // Resolve the pending request with HTTP 404 to force the failed
+      // image state, then ensure paging can still be recognized in reverse.
+      request.complete(
+        _DiagnosticImageRequest(Uint8List(0), statusCode: HttpStatus.notFound),
+      );
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
+      final galleryImages = find.descendant(
+        of: main,
+        matching: find.byType(ExtendedImage),
+      );
+      final imageState =
+          tester.state(galleryImages.first) as ExtendedImageState;
+      expect(imageState.extendedImageLoadState, LoadState.failed);
+
+      final pageBeforeReverse = controller.page!;
+      await tester.fling(main, const Offset(420, 0), 7000);
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(controller.page, lessThan(pageBeforeReverse));
+      expect(tester.takeException(), isA<StateError>());
+      expect(tester.takeException(), isNull);
+      debugNetworkImageHttpClientProvider = originalProvider;
+    },
+  );
+
   testWidgets('main image follows thumbnail position throughout a drag', (
     tester,
   ) async {
@@ -769,8 +1377,12 @@ void main() {
         final main = find.byType(ExtendedImageGesturePageView);
         final mainPage = tester.widget<ExtendedImageGesturePageView>(main);
         expect(mainPage.physics.parent, isA<BouncingScrollPhysics>());
-        expect(mainPage.canScrollPage(GestureDetails(totalScale: 1)), isTrue);
         expect(mainPage.canScrollPage(GestureDetails(totalScale: 2)), isFalse);
+        expect(
+          mainPage.canScrollPage(GestureDetails(totalScale: 1)),
+          isTrue,
+          reason: 'page swiping must be re-enabled after returning to 1x zoom',
+        );
         await tester.drag(main, const Offset(600, 0));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 500));
