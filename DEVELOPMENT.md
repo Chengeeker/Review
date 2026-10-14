@@ -1,6 +1,6 @@
 # Review 开发与技术架构文档
 
-> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-10-13；当前应用版本：`3.2.4+175`。
+> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-10-14；当前应用版本：`3.2.6+177`。
 >
 > `README.md` 用于项目介绍；本文档维护当前实现，不记录登录 Cookie、Token、密码或其他凭据。
 
@@ -236,6 +236,10 @@ lib/
 
 ### 7.2 图片画廊
 
+画廊连续滑动的双控制器交接和可跨项目复用的最小修复方案见[图片画廊连续滑动性能修复指南](docs/IMAGE_GALLERY_SWIPE_PERFORMANCE_GUIDE.md)。
+
+主图分页采用 `BouncingScrollPhysics`，并仅在 ExtendedImage 当前缩放倍率不大于 1 时允许 PageView 翻页；放大后横向拖动由图片平移接管。`ExtendedPageController.shouldIgnorePointerWhenScrolling` 保持依赖默认值 `false`。主图 `ExtendedImage.enableSlideOutPage` 明确关闭：extended_image 8.3.1 在图片加载中/失败占位时会额外挂入 `ScaleGestureRecognizer`，实测会拦截横向分页并让主图无法接管缩略条惯性。不能仅因外层 `ExtendedImageSlidePage.slideAxis` 设置为水平就认定它正在抢手势；只有图片开启滑出时，图片手势状态才连接到该外层。若其他应用确实需要下滑退出，必须先验证加载中、失败和已解码三种状态的横向分页，不可直接全局改成 `enableSlideOutPage: true`。具体可复制配置和回归项见上述指南。
+
 混合图库当前项为普通视频时，缩略条按播放器底部控制栏的实际布局高度排列在其上方，间隔 8dp；该高度包含进度条、按钮、字体缩放和底部安全区。控制栏仅在初次布局或尺寸变化时通知图库，不在每次播放进度更新时测量。缩略条保留在图库层：拖动期间锁定底部位置，停稳后按最终媒体类型恢复位置，避免播放器卸载打断滚轮手势。图片页仍使用原有底部位置，主图全屏视口不变。
 
 顶部返回、页码/Live Photo 和下载控件与底部缩略条共用所在路由的动画状态：push 期间透明且不可交互，路由进入 completed 后以 140ms 淡入；pop 一开始立即禁用点击并淡出。顶部按钮含 `BackdropFilter` 和 fragment shader，禁止把整组按钮包进 `Opacity`/`AnimatedOpacity` 透明合成层，以免磨砂滤镜采样到黑色中间层；应分别渐变按钮图标透明度、玻璃底色和模糊强度。该处理只作用于叠层控件，不改变 Hero 尺寸、主图 PageView 视口/约束、定位几何或图片手势。
@@ -429,6 +433,8 @@ Copy-Item -LiteralPath 'build\app\outputs\flutter-apk\app-release.apk' -Destinat
 核验新包后，根目录只保留当前交付包。不要把历史版本的文件名写死在构建命令里；相同版本名、不同 `versionCode` 的覆盖构建会使用相同文件名。
 
 打包后必须用 `aapt2 dump badging` 核对包名、`versionName` 和 `versionCode`，并计算 SHA-256。APK 属于构建交付物，项目 `.gitignore` 已忽略 `*.apk`；推送源代码时不应通过强制添加把安装包混进源码提交。
+
+**工作区体积清理：** `.dart_tool/flutter_build`、`.dart_tool/hooks_runner`、`build/app`、`build/test_cache` 是可重建的 Flutter 编译/测试产物；停止所有 Flutter、Dart、Gradle 构建后可清理，后续构建会重建缓存，但首次编译会更慢。不要为了清理整个删除 `build/`：`build/previous-deliveries/` 保存回退 APK，必须保留；项目根目录只保留当前正式 APK。保留 `pubspec.lock` 与 `.dart_tool/package_config.json`，不要清理本地签名文件或用户数据目录。清理 JDK/Gradle 临时目录前，先确认没有构建进程正在使用它们。
 
 ### 10.3 版本规则
 

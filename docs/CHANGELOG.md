@@ -1,5 +1,18 @@
 # Review 变更记录
 
+## 3.2.6+177（2026-10-14）
+
+- 主图使用 `BouncingScrollPhysics`，并只在图片缩放倍率不大于 1 时允许 PageView 翻页；放大后保留图片平移。主图与缩略条手势交接、停止旧缩略惯性继续沿用 3.2.5 已修复逻辑。
+- 核实 `ExtendedPageController.shouldIgnorePointerWhenScrolling` 未被设为 true（依赖默认 false）。测试全局开启 `enableSlideOutPage` 会在图片加载/失败时加入竞争的缩放识别器，导致横滑和主图接管惯性回归失败，因此继续关闭；没有把水平轴和透明度改成纵向，避免把未生效配置误当根因。
+- 画廊专项测试 23/23 通过，覆盖 2/8/18 张横向翻页、主图接管缩略条旧惯性、图片放大时禁止分页及已有滚轮同步。改动的画廊实现与测试文件 `dart analyze` 无问题；全项目测试 261 项通过、7 项失败（文章详情 `detail=true` 路由 1 项、微博长文展开预期 6 项；均为本次未改路径的既有失败）。`git diff --check` 通过。
+- ARM64 Release 构建成功（352.7 秒）；核验 `com.review`、版本 `3.2.6`、versionCode `177`、target SDK `36`、仅 `arm64-v8a`、APK V2 签名与 3.2.5 证书一致、16 KB ZIP 对齐。交付 [Review_v3.2.6.apk](../Review_v3.2.6.apk)（32,510,209 字节），SHA-256：`B4FE8C8A20B6D93157AEF4137AD17531C1A7006738D5BB066E835DADE293CF86`；3.2.5 回退包保留于 `build/previous-deliveries/Review_v3.2.5-before-v3.2.6.apk`。未做真机连续滑动验收。
+
+## 3.2.5+176（2026-10-14）
+
+- 修复缩略条仍在惯性滚动时改为拖动主图，旧滚动活动可能继续抢占主图手势的问题。主图接管时保留缩略条小数页并停止旧惯性，不延迟主图同步、不改变全屏视口/Hero/缩放几何。
+- 新增可直接迁移到其他 Flutter 图片画廊的[连续滑动性能修复指南](IMAGE_GALLERY_SWIPE_PERFORMANCE_GUIDE.md)。画廊专项测试 23/23 通过，覆盖滚轮惯性中切换主图手势、快速甩动同步、拖动停住以及 2/8/18 张媒体。全项目测试 261 项通过、7 项失败（文章详情路由 1 项、微博长文展开阈值 6 项；均为本次未修改的既有失败）。全项目分析无 error/warning，列出 57 条既有 info；本次涉及 Dart 文件定向分析无问题，`git diff --check` 通过。
+- ARM64 Release 构建成功（363.7 秒）。核验 `com.review`、版本 `3.2.5`、versionCode `176`、target SDK `36`、仅 `arm64-v8a`、V2 签名、证书与 3.2.4 一致及 16 KB ZIP 对齐。交付 `Review_v3.2.5.apk`（32,510,209 字节），SHA-256：`068F706F8B24BD8C522BFD21170B169F52B9D0903C02141DAD41D15CC0507CB4`；旧版 `Review_v3.2.4.apk` 保留于 `build/previous-deliveries/Review_v3.2.4-before-v3.2.5.apk`。未做真机连续滑动/帧率验收。
+
 ## 3.2.4+175（2026-10-14）
 
 - 关闭微博文章卡片外层的水波纹，避免已移除长按操作后按住卡片仍出现扩散动画。卡片单击仍可进入详情，子控件恢复原主题，内部按钮反馈不变。

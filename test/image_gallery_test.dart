@@ -704,15 +704,32 @@ void main() {
     await tester.fling(strip, const Offset(-220, 0), 2200);
     await tester.pump(const Duration(milliseconds: 32));
     final main = find.byType(ExtendedImageGesturePageView);
-    await tester.drag(main, const Offset(500, 0));
+    final mainController = tester
+        .widget<ExtendedImageGesturePageView>(main)
+        .controller;
+    final thumbnailController = tester
+        .widget<PageView>(
+          find.descendant(of: strip, matching: find.byType(PageView)),
+        )
+        .controller!;
+    final pageBeforeTakeover = mainController.page!;
+    final gesture = await tester.startGesture(tester.getCenter(main));
+    await gesture.moveBy(const Offset(180, 0));
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(
+      thumbnailController.position.isScrollingNotifier.value,
+      isFalse,
+      reason: 'main interaction must stop the old thumbnail ballistic activity',
+    );
+    expect(mainController.page, lessThan(pageBeforeTakeover));
+    await gesture.moveBy(const Offset(180, 0));
+    await tester.pump(const Duration(milliseconds: 16));
+    await gesture.up();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump(const Duration(milliseconds: 500));
     final thumbnails = tester.widget<PageView>(
       find.descendant(of: strip, matching: find.byType(PageView)),
     );
-    final mainController = tester
-        .widget<ExtendedImageGesturePageView>(main)
-        .controller;
     expect(mainController.page, closeTo(thumbnails.controller!.page!, 0.02));
     expect(tester.takeException(), isNull);
   });
@@ -750,6 +767,10 @@ void main() {
         );
         expect(selected.properties.selected, isTrue);
         final main = find.byType(ExtendedImageGesturePageView);
+        final mainPage = tester.widget<ExtendedImageGesturePageView>(main);
+        expect(mainPage.physics.parent, isA<BouncingScrollPhysics>());
+        expect(mainPage.canScrollPage(GestureDetails(totalScale: 1)), isTrue);
+        expect(mainPage.canScrollPage(GestureDetails(totalScale: 2)), isFalse);
         await tester.drag(main, const Offset(600, 0));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 500));

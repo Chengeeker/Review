@@ -16,12 +16,14 @@ $changelog = Read-ProjectDocument 'docs/CHANGELOG.md'
 $retrospective = Read-ProjectDocument 'docs/RETROSPECTIVE.md'
 $topBarSpec = Read-ProjectDocument 'docs/FROSTED_TOP_BAR_DESIGN_SPEC.md'
 $uiReuseSpec = Read-ProjectDocument 'docs/REVIEW_UI_REUSE_SPEC.md'
+$gallerySwipeGuide = Read-ProjectDocument 'docs/IMAGE_GALLERY_SWIPE_PERFORMANCE_GUIDE.md'
 
 # Make cross-document references point to sections inside this complete file.
 $current = $current.Replace('(docs/CHANGELOG.md)', '(#review-changelog)')
 $current = $current.Replace('(docs/RETROSPECTIVE.md)', '(#review-retrospective)')
 $current = $current.Replace('(docs/FROSTED_TOP_BAR_DESIGN_SPEC.md)', '(#review-topbar-spec)')
 $current = $current.Replace('(docs/REVIEW_UI_REUSE_SPEC.md)', '(#review-ui-reuse-spec)')
+$current = $current.Replace('(docs/IMAGE_GALLERY_SWIPE_PERFORMANCE_GUIDE.md)', '(#review-gallery-swipe-guide)')
 $current = $current.Replace('(docs/archive/Review-legacy-2026-09-23.md)', '(#review-history)')
 $changelog = $changelog.Replace('(../DEVELOPMENT.md#', '(#')
 $changelog = $changelog.Replace('(../DEVELOPMENT.md)', '(#review-current)')
@@ -37,13 +39,14 @@ $version = $versionLine.Matches[0].Groups[1].Value
 $parts = @(
     '# Review 开发文档（完整汇编）',
     '',
-    "> 当前源码版本：``$version``。本文档汇编当前开发说明、完整变更记录、工程复盘、可迁移的磨砂顶栏设计规范和 M3 UI 复用规范与提示词。过时旧版手册不再混入现行内容，仓库原件仅供追溯。当前行为以开发说明、源码和验证结果为准；文档不保存真实凭据。",
+    "> 当前源码版本：``$version``。本文档汇编当前开发说明、完整变更记录、工程复盘、可迁移的磨砂顶栏设计规范、M3 UI 复用规范与图片画廊连续滑动指南。过时旧版手册不再混入现行内容，仓库原件仅供追溯。当前行为以开发说明、源码和验证结果为准；文档不保存真实凭据。",
     '',
     '- [当前开发说明](#review-current)',
     '- [变更与构建记录](#review-changelog)',
     '- [工程复盘与防回归要点](#review-retrospective)',
     '- [可迁移的磨砂顶栏设计规范](#review-topbar-spec)',
     '- [M3 UI 复用规范与提示词](#review-ui-reuse-spec)',
+    '- [图片画廊连续滑动性能修复方案](#review-gallery-swipe-guide)',
     '- [历史归档边界](#review-history)',
     '',
     '---',
@@ -70,6 +73,11 @@ $parts = @(
     '',
     '<a id="review-ui-reuse-spec"></a>',
     $uiReuseSpec,
+    '',
+    '---',
+    '',
+    '<a id="review-gallery-swipe-guide"></a>',
+    $gallerySwipeGuide,
     '',
     '---',
     '',

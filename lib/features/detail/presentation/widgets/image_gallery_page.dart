@@ -860,6 +860,26 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
     return false;
   }
 
+  bool _handleMainGalleryScroll(ScrollNotification notification) {
+    if (notification.depth != 0) return false;
+    if (notification is ScrollStartNotification &&
+        notification.dragDetails != null) {
+      _thumbnailSyncEpoch++;
+      _thumbnailUserScrolling = false;
+      _thumbnailSettling = false;
+      if (_thumbnailController.hasClients &&
+          _thumbnailController.position.isScrollingNotifier.value) {
+        final position = _thumbnailController.position;
+        // Stop old thumbnail inertia without snapping away from its fractional page.
+        position.jumpTo(position.pixels);
+      }
+      if (_thumbnailScrollBottom != null) {
+        setState(() => _thumbnailScrollBottom = null);
+      }
+    }
+    return false;
+  }
+
   Widget _buildThumbnailStrip() {
     return SizedBox(
       key: const ValueKey('gallery-thumbnail-strip'),
@@ -949,8 +969,6 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
 
     return ExtendedImageSlidePage(
       key: _slidePageKey,
-      // 图片画廊的主手势是左右翻页；限制退出手势为水平轴，避免
-      // 不够水平的滑动被外层 SlidePage 接管后产生斜向拖拽和卡顿感。
       slideAxis: SlideAxis.horizontal,
       slideType: SlideType.onlyImage,
       slidePageBackgroundHandler: (Offset offset, Size pageSize) {
@@ -968,24 +986,13 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
               onPointerMove: _handleGalleryPointerMove,
               onPointerUp: _handleGalleryPointerUp,
               onPointerCancel: _handleGalleryPointerCancel,
-              child: NotificationListener<ScrollStartNotification>(
-                onNotification: (notification) {
-                  if (notification.depth == 0 &&
-                      notification.dragDetails != null) {
-                    if (_thumbnailScrollBottom != null) {
-                      setState(() => _thumbnailScrollBottom = null);
-                    }
-                    _thumbnailSyncEpoch++;
-                    _thumbnailUserScrolling = false;
-                    _thumbnailSettling = false;
-                  }
-                  return false;
-                },
+              child: NotificationListener<ScrollNotification>(
+                onNotification: _handleMainGalleryScroll,
                 child: ExtendedImageGesturePageView.builder(
                   controller: _pageController,
-                  // 显式启用分页滚动物理，避免关闭滑出手势后部分横向拖动
-                  // 只被图片手势识别器消费，却没有推动 PageView。
-                  physics: const ClampingScrollPhysics(),
+                  physics: const BouncingScrollPhysics(),
+                  canScrollPage: (details) =>
+                      (details?.totalScale ?? 1.0) <= 1.0,
                   pageSnapping: !_thumbnailUserScrolling && !_thumbnailSettling,
                   itemCount: widget.pics.length,
                   onPageChanged: (index) {
@@ -1067,8 +1074,8 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                       cache: true,
                       fit: BoxFit.contain,
                       mode: ExtendedImageMode.gesture,
-                      // 浏览多图时由横向 PageView 统一处理单指拖动；否则
-                      // 斜向拖动可能被识别为滑出并直接销毁画廊页面。
+                      // Keep slide-out disabled: during image loading the
+                      // package installs a scale recognizer that can steal paging.
                       enableSlideOutPage: false,
                       onDoubleTap: (ExtendedImageGestureState state) {
                         HapticFeedbackUtil.light();
