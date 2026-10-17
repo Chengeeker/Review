@@ -6,6 +6,7 @@ import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'core/services/link_routing_service.dart';
 import 'core/services/image_cache_maintenance.dart';
@@ -20,6 +21,7 @@ import 'features/home/presentation/main_scaffold.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await LiquidGlassWidgets.initialize(enablePerformanceMonitor: false);
 
   FlutterError.onError = (details) {
     FlutterError.presentError(details);
@@ -52,9 +54,12 @@ void main() async {
   );
 
   runApp(
-    ProviderScope(
-      overrides: [storageServiceProvider.overrideWithValue(storageService)],
-      child: const WBTestApp(),
+    LiquidGlassWidgets.wrap(
+      child: ProviderScope(
+        overrides: [storageServiceProvider.overrideWithValue(storageService)],
+        child: const WBTestApp(),
+      ),
+      brightnessResolver: Theme.maybeBrightnessOf,
     ),
   );
 

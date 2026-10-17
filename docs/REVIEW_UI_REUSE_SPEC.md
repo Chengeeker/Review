@@ -1,10 +1,10 @@
 # Review M3 UI 复用规范与提示词
 
-> 提炼日期：2026-10-13。基线为本地 `D:\App\Review` 当前工作区源码，`pubspec.yaml` 为 `3.2.0+171`，HEAD 为 `25a02ef52b1f15f4124a20d0473b7cccde871788`；工作区存在未提交修改，版本号或 HEAD 不能唯一标识这份源码。本文是源码提炼，未核对当前手机上的配置、截图或根目录 APK 与源码是否完全一致。
+> 提炼日期：2026-10-18。基线为本地 `D:\App\Review` 当前工作区源码，`pubspec.yaml` 为 `3.6.0+191`，HEAD 为 `8ac858470fe309b578ea1d44957b4761ed3292ff`；工作区存在未提交修改，版本号或 HEAD 不能唯一标识这份源码。本文是源码提炼，未核对当前手机上的配置、截图或根目录 APK 与源码是否完全一致。
 
 ## 1. 复用目标与常见偏差
 
-Review 当前采用 Flutter Material 3，并在主题之上增加局部磨砂顶栏、两种底栏、设置分组、内容卡片、字体权重和转场规则。当前源码不再提供 Miuix/液态玻璃设计语言切换，历史记录中的这些实现不属于本规范。
+Review 当前默认采用 Flutter Material 3，并在主题之上增加局部磨砂顶栏、两种 M3 底栏、设置分组、内容卡片、字体权重和转场规则。另有独立、默认关闭的“使用液态玻璃效果”个性化选项；它控制画廊的返回/下载按钮，悬浮底栏还需同时开启悬浮底栏选项。该设置不是全局设计语言切换，也不恢复历史 Miuix 页面。
 
 “使用 M3”“参考 Review”“照搬主题”都不足以固定外观。主题只是一层默认值；组件和页面可以覆盖它。例如 `CardTheme` 默认 elevation 为 0，`ReviewCard` 默认传入 1，`TweetCard` 又按布局显式覆盖。迁移时要追到最终调用处，而不是把任一默认值推广到所有页面。
 
@@ -15,7 +15,7 @@ Review 当前采用 Flutter Material 3，并在主题之上增加局部磨砂顶
 以下路径均相对 `D:\App\Review`，不是要求把整套微博业务复制到新应用。
 
 | 层次 | 源码入口 | 迁移责任 |
-|---|---|---|
+|---|---|---|---|
 | 应用入口 | `lib/main.dart` | 明暗主题接线、DynamicColorBuilder、中文 locale、DefaultTextStyle |
 | 主题与状态 | `lib/core/theme/app_theme.dart`、`theme_provider.dart`、`weibo_style_provider.dart` | 配色、字体、组件主题、路由动效；核对 `lib/core/storage/storage_service.dart` 中的实际默认值 |
 | 页面壳与磨砂 | `lib/core/design_system/components/review_page_scaffold.dart`、`review_frosted_app_bar.dart` | 安全区、内容 inset、Material 色层、局部滤镜 |
@@ -50,18 +50,23 @@ Review 当前采用 Flutter Material 3，并在主题之上增加局部磨砂顶
 - 键盘表单、网页、播放器、复杂 pinned 布局按原页面约束处理，不能批量强开覆盖式布局。覆盖式 EasyRefresh 保持 70dp 触发阈值，只下移指示器，不能重复叠加安全 inset。
 - 不使用 ShaderMask、独立 blur alpha mask、BlendMode.src 或全屏模糊/截图 shader。完整原理及例外见 `FROSTED_TOP_BAR_DESIGN_SPEC.md`。
 
-### 3.3 底栏：两套实现必须区分
+### 3.3 底栏：三套实现必须区分
 
-| 项目 | 默认悬浮底栏 | 贴底 NavigationBar |
-|---|---|---|
-| 几何 | 264×64，外圆角 32，内部 padding 4；三个入口均分 | 高 68，系统底部安全区另由组件处理 |
-| 放置 | SafeArea 内，bottom padding 有系统底 inset 时 6，否则 14 | 页面底部，全宽 |
-| 背景 | surfaceContainerHigh；阴影黑色 alpha 浅色 0.12 / 深色 0.35，blur 16，offset (0,4) | 浅色 surfaceContainer；深色/纯黑见配色段；无 elevation/tint |
-| 选中 | secondaryContainer / onSecondaryContainer，选中块圆角 28，160ms easeOutCubic 淡入 | primaryContainer 指示胶囊，图标 onPrimaryContainer、标签 primary |
-| 图文 | 图标 22，图文间隔 2，文字 11.5sp，选中 w600 / 未选 w400 | 标签一直显示，12sp，选中 bold / 未选 w500 |
-| 未选色 | onSurfaceVariant | onSurfaceVariant |
+| 项目 | 标准 M3 悬浮底栏 | 贴底 NavigationBar | 液态玻璃悬浮底栏（可选） |
+|---|---|---|---|
+| 几何 | 264×64，外圆角 32，内部 padding 4；三个入口均分 | 高 68，系统底部安全区另由组件处理 | 响应式宽度 `min(440, 屏幕宽 - 40) × 2/3`，高 56，圆角 9999；SafeArea 最小 bottom 21 |
+| 放置 | SafeArea 内，bottom padding 有系统底 inset 时 6，否则 14 | 页面底部，全宽 | `GlassPage`/`GlassBackgroundSource` 作用域内；仅开关启用时采样 body |
+| 背景 | surfaceContainerHigh；阴影黑色 alpha 浅色 0.12 / 深色 0.35，blur 16，offset (0,4) | 浅色 surfaceContainer；深色/纯黑见配色段；无 elevation/tint | `#66000000`，clear body，厚度 10、blur 1.5、折射 1.16、色散 0.008；主体与背景 premium |
+| 选中 | secondaryContainer / onSecondaryContainer，选中块圆角 28，160ms easeOutCubic 淡入 | primaryContainer 指示胶囊，图标 onPrimaryContainer、标签 primary | 指示器折射 1.18、色散 0.025、inner blur 6、pinch 0.7、press scale 1.06 |
+| 图文 | 图标 22，图文间隔 2，文字 11.5sp，选中 w600 / 未选 w400 | 标签一直显示，12sp，选中 bold / 未选 w500 | 选中主题主色，未选白色；仍由库提供 tab 语义 |
 
-主 Scaffold 仅在悬浮分支 `extendBody: true`。三个入口图标采用 outlined/rounded 状态切换。三个入口的 264dp 胶囊不能直接塞进五个入口后仍宣称原样复用；入口数或文案长度改变时列为明确适配。
+主 Scaffold 仅在悬浮分支 `extendBody: true`；玻璃背景源只包 body，不能把栏本身再次采入背景。三个入口图标采用 outlined/rounded 状态切换。当前应用只有三个主路由，因此不增加未实现的消息/个人页或中间发布槽；入口数变化时重新设计宽度、语义和动作回调。玻璃开启时根页面列表底部 inset 为系统 `viewPadding.bottom + 76dp`，避免把 `extendBody` 注入的底栏高度重复计入；标准悬浮/贴底分别为 72/16dp。
+
+### 3.3.1 图片画廊顶部操作按钮
+
+仅画廊左上返回、右上下载按钮跟随“使用液态玻璃效果”。关闭时保留既有局部 shader/模糊样式与 48dp 触控区；开启时使用 `GlassButton(quality: GlassQuality.premium, useOwnLayer: true)`，并在画廊路由中建立自适应质量作用域，最低维持 `standard` 以保留静止态折射 shader。静止态使用厚度 32、折射率 1.24，让小圆钮默认就有可见的透镜边缘；不要显式覆盖 `interactionScale`，让 48dp 圆钮使用库原生约 +17dp 的按压膨胀。图片/视频内容进入透镜区域时会持续参与折射，锚定拉伸强度 0.8、回弹 0.2，色散 0.025，并使用底栏同款白色交互高光。短点仍触发返回/下载；长按与拖动只展示水滴交互，不提交按钮动作。`GlassPage` 下的 `GlassBackgroundSource` 只包图片/视频媒体视口，排除顶栏按钮，避免自采样；下载中维持禁用态，按钮 label 保留读屏语义。画廊转场仍沿用原 `ExtendedImageSlidePage` 和 Hero，不换全局路由动画。
+
+打开画廊时若匹配的来源 Hero 已有解码缩略图，首屏用共享像素的 `ui.Image.clone()` 垫住原图加载状态，原图完成后释放预览；不新建缩略图请求，非 Hero 入口仍沿用原加载态。此路径只在初始 Hero 媒体且来源帧可读取时可用。
 
 ### 3.4 设置、信息流和弹层
 
@@ -77,6 +82,7 @@ Review 当前采用 Flutter Material 3，并在主题之上增加局部磨砂顶
 ### 3.5 动效与交互
 
 - 主 Tab：页面保持挂载，当前页与目标页按入口顺序反向同步平移一个屏宽，**260ms easeOutCubic**；RTL 反转。Offstage、TickerMode、IgnorePointer 共同控制非活动页面。保留快速切换和重复点击语义，不能只换成会重建页面的 AnimatedSwitcher。
+- 液态玻璃底栏将库的按下阶段回调延迟到松手提交；长按/拖动回到当前项不执行回顶或刷新，短点按仍执行当前 Tab 的既有重复点击行为。仅水平释放速度达到 `1000 logical px/s` 的快速抛动限制到起始 Tab 的相邻项；普通慢拖按松手时水滴所在 Tab 提交，因此可从时间线慢拖至设置并跨过热搜。键盘和读屏仍可直接触发选择。仅液态玻璃分支采用此手势规则。
 - 普通路由：新页全宽滑入覆盖静止旧页，push **320ms easeOutCubic** / pop **220ms easeInCubic**；LTR 从右、RTL 从左；无旧页位移和额外淡入。Android 接预测式返回，iOS 保留 Cupertino 路由/边缘返回。主 Tab 与路由是两套动效。
 - 普通路由和 Tab 已处理 `disableAnimations`；迁移后仍需检查局部动画，不能推断所有动画均已覆盖系统减少动画偏好。
 - 画廊显式 PageRouteBuilder / Hero 独立保留；显隐控件不能修改全屏 PageView 约束。不要用全局路由主题替换图库动画。
@@ -93,11 +99,11 @@ Review 当前采用 Flutter Material 3，并在主题之上增加局部磨砂顶
 UI 规范：D:\App\Review\docs\REVIEW_UI_REUSE_SPEC.md
 完整开发文档：D:\App\开发文档\Review.md
 
-1. 先读目标项目的 AGENTS.md/开发文档，再读 Review UI 规范、当前开发说明与工程复盘中的 UI 防回归记录。以指定基线的实际源码及最终调用参数为准；历史 Miuix、液态玻璃、旧 ShaderMask 顶栏方案不能作为当前实现。
+1. 先读目标项目的 AGENTS.md/开发文档，再读 Review UI 规范、当前开发说明与工程复盘中的 UI 防回归记录。以指定基线的实际源码及最终调用参数为准；历史 Miuix 页面、旧版液态玻璃底栏和旧 ShaderMask 顶栏方案不能作为当前实现。3.4.1 液态玻璃底栏按当前 `ReviewNavigationBar` 实现接入，液态玻璃开关与悬浮底栏偏好分开显示及保存。
 2. 开工前固定参考快照：记录 Review HEAD、工作区改动、Flutter SDK/锁文件，以及需迁移 UI 文件的快照或哈希。不要只用版本号标识参考。读取本地工作区，不能自动改用远程 main 或升级后的默认 M3。
 3. 先列“目标页面 → Review 对应页面 → 共享组件 → 允许替换的业务内容”映射。按规范第 2 节读取主题、入口接线、页面壳、导航、设置卡片和行、对应业务页、反馈/触感。追踪调用处覆盖，不能只复制 ThemeData。
 4. 同为 Flutter 时，直接迁移需要的 UI 实现和必要依赖，保持组件树、最终颜色角色、padding/margin、圆角、字体/行高、图标状态、阴影、分割线、系统栏、键盘避让和动效参数。允许改 import、类名、业务模型、文案、资源和回调；不能凭审美替换控件、合并不同卡片样式、重新排版或加入“更现代”的设计。按依赖边界接入目标业务，不搬入微博认证、接口、凭据和无关功能。
-5. 分别复用默认 264×64 悬浮底栏和 68dp 贴底底栏；设置分组 24dp 无边框无阴影；默认信息流卡片 22dp、8/4 margin、elevation 1；磨砂顶栏 Material alpha 0.45 + 顶部 0.95→底部 0 渐变 + 裁剪内 sigma 20。其他细节全部按规范和最终源码，不推广成全局统一值。
+5. 分别复用标准 264×64 悬浮底栏、68dp 贴底底栏，以及只用于悬浮栏的可选玻璃分支；玻璃分支需要 GlassPage/body source、指定折射参数和 +76dp 安全留白。设置分组 24dp 无边框无阴影；默认信息流卡片 22dp、8/4 margin、elevation 1；磨砂顶栏 Material alpha 0.45 + 顶部 0.95→底部 0 渐变 + 裁剪内 sigma 20。其他细节全部按规范和最终源码，不推广成全局统一值。
 6. 主 Tab 保活及双页 260ms 平移、普通路由 320/220ms 覆盖式转场、图库 Hero、弹窗 60ms 原地淡入分别接入。保留返回手势、RTL、系统减少动画、触感开关和防重复反馈。局部滤镜保持裁剪，列表缓存和分页不因 UI 迁移退化。
 7. 固定验收环境：相同设备/模拟器、屏幕逻辑尺寸和 DPR、系统字体及缩放/字重、locale、系统导航方式、主题种子色/动态取色、明暗/纯黑、悬浮底栏开关、卡片样式、内容数据和滚动位置。先用动态取色关闭、经典红、默认字重、默认 card_rounded 建立可重复基线；若参考真机采用其他设置，则两端一起对齐。
 8. 对应页面至少比较首页、设置首页、设置子页、搜索/输入、弹窗/底部面板和相关详情；覆盖浅色/深色/纯黑、悬浮/贴底、滚动顶栏、键盘和大字体。使用相同模拟业务内容做截图并排/叠加检查，转场用录屏；列出实际差异并修正。有对应场景的 Review widget 回归测试应一并迁移/适配；补充有必要的目标布局测试。编译成功不能作为视觉一致证明。

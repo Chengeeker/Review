@@ -1,5 +1,11 @@
 # Review 工程复盘
 
+## 信息流缩略帧先显：避免画廊打开时等待原图（3.6.0）
+
+- 信息流图片缩略图已解码，但首次打开时画廊只等待大图 `ExtendedImage.network`，Hero 动画结束后可能短暂显示空白/黑帧。GreenNote 的做法是从来源 Hero 读取解码帧，在原图加载状态中临时显示，再交接给原图。
+- Review 复用自身 `_HeroImageGeometry.capture` 和已存在的 Hero 配对：只在 push 时获取匹配的来源图像，克隆句柄给目标画廊初始项；原图完成后等本帧绘制结束再 dispose，画廊销毁时也清理尚未交接的句柄。没有新网络请求，也不改变返回动画、缩放手势、其他入口或多图懒加载。
+- 只要来源 Hero 无法读取已解码像素或 tag/初始索引不匹配，就继续旧加载流程；快速静态验证不能代表真实网络首帧或转场观感，需在目标设备检查冷缓存、热缓存及原图完成交接。
+
 ## 应用字体大小设置（3.3.0）
 
 - 个性化页面的滑杆布局、0.8–1.4 范围、0.05 步进和实时百分比参照 Review X。拖动过程只更新 Riverpod 状态，松开后才写入 SharedPreferences，避免每帧磁盘写入。
@@ -200,6 +206,11 @@
 - 对照用户提供的 Android 相册截图，把圆形玻璃按钮视觉直径收至 44dp，保留 48dp 可点击区域；模糊 sigma 从 4 降至 2.5，球冠高度从 3 降至 1.4 shader 单位，折射位移上限从 1.25 降至 0.45。保留空气/玻璃界面 Snell 角计算，只减弱形变量；描边和阴影也更柔和。其他渲染后端和 shader 加载失败时保留模糊/描边。
 - 不对整页截图、不调用同步 `toImageSync`、不做逐帧 CPU 图像处理。历史悬浮栏卡死问题来自页面级捕获与同步离屏合成；局部 shader 必须继续局限在这两个按钮内。
 
+## 画廊玻璃按钮接入个性化开关（3.5.0）
+
+- “使用液态玻璃效果”原先只影响悬浮底栏；扩展后还控制画廊左上返回、右上下载按钮。关闭时继续走原有局部 shader/模糊实现；开启时用 `liquid_glass_widgets` 的 `GlassButton`、独立按钮层和默认自适应画质，画廊控件显隐通过 `LiquidGlassSettings.visibility` 跟随页面过场，不把玻璃 shader 包在整组 `Opacity` 中。
+- 仅玻璃模式在画廊路由加 `GlassPage`/`GlassAdaptiveScope`，背景源限制在媒体视口，排除顶栏按钮；不要让玻璃关闭分支挂载背景捕获。库的标准/降级路径会使用 `GlassBackgroundSource`；播放动态视频时背景纹理可能随帧更新，APK 静态检查无法证明低端设备帧率或视频下的背景折射效果，需按设备验收。
+
 - **更正（2.16.9：透镜方向与拖动帧负载）**：2.16.8 shader 用 `position - normal * ...` 向胶囊内部取样，和 Kyant `RoundedRectRefractionShader` 的 `coord + d * grad` 相反；SDF 外法线方向才形成凸透镜，向内采样会变成凹透镜。2.16.5 的旧记录也把这个方向写反了。拖动时原实现每个指针事件都重启左右边缘两个位置弹簧和速度弹簧；现改为单一位置弹簧，速度样本直接驱动形变，释放时再弹簧复位。设备尚未连接，因此卡顿改善和最终观感仍需真机验收。
 
 - **现象与根因（2.16.8：液态玻璃像毛玻璃底板上的选中块）**：Flutter 实时路径把整个胶囊中心统一放大，而 Legado/Kyant 的 `lens` 按 SDF 法线和 `circleMap` 只重折射胶囊内侧的一圈；Review 还只以 30% 透明度把图标行放入滤镜输入，又在透镜上方重画完整图标，因此图标没有进入折射结果。选中胶囊还比实际槽位宽 10dp，较实的渐变和边框进一步压住了折射。上游 `FloatingBottomBar` 用 `rememberCombinedBackdrop(backdrop, tabsBackdrop)` 合并页面与完整图标层，以 `lens(10dp × press, 14dp × press, depthEffect = true)`、`DampedDragAnimation`、78/56 按压缩放和带方向的速度拉伸共同产生水滴移动。当前 Review 用 Flutter `ImageFilter.shader` 移植相同的边缘折射轮廓与分层关系，图标行置于透镜下、选中层不再被重画遮盖，槽宽与每个导航项对齐。Legado 声明 `io.github.kyant0:backdrop:2.0.1`、`io.github.kyant0:capsule:2.1.3` 和应用级 Haze `1.7.3`；其中实际透镜在 Backdrop，Haze 不是该选中透镜的实现。源码：[FloatingBottomBar](https://github.com/HapeLee/legado-with-MD3/blob/main/app/src/main/java/io/legado/app/ui/widget/components/FloatingBottomBar.kt)、[DampedDragAnimation](https://github.com/HapeLee/legado-with-MD3/blob/main/app/src/main/java/io/legado/app/ui/animation/DampedDragAnimation.kt)、[Kyant SDF lens shader](https://github.com/Kyant0/AndroidLiquidGlass/blob/kmp/backdrop/src/commonMain/kotlin/com/kyant/backdrop/internal/Shaders.kt)、[Legado dependencies](https://github.com/HapeLee/legado-with-MD3/blob/main/gradle/libs.versions.toml)。Flutter/Compose 的采样与坐标系统不同，源码适配完成和 APK 构建不能代替目标设备上的动态观感验收。
@@ -208,6 +219,9 @@
 - Miuix 卡片不提供 Material 祖先，卡片中复用的 `ChoiceChip`、`ListTile` 等 Material 子控件可能因缺少 `Material` 报错。共享卡片封装应在 Miuix 卡片内部提供透明 Material 层，并以真实包含旧 Material 子控件的页面回归。
 - Miuix 自带开关可能无条件触发震动，绕过 Review 可关闭的全局触感偏好。设置控件应从 Review 的用户操作回调统一触发反馈；玻璃背景捕获只在悬浮底栏玻璃模式挂载，按 1x 捕获页面背景并排除导航栏自身，避免多余纹理工作或反馈循环。
 - 界面风格开关在“设置 → 个性化 → 明暗模式”下方；风格与悬浮栏材质分开保存。悬浮栏关闭时隐藏材质选项但保留选值，旧用户默认仍为 Material 3 + 标准材质。回归应覆盖六种风格/导航组合、备份白名单、明暗与纯黑色板桥接及关闭/重开后材质记忆。
+- **更正（3.4.1：液态玻璃开关独立于悬浮底栏）**：3.4.0 曾把“使用液态玻璃效果”隐藏在“使用悬浮底栏”开启条件下；用户要求玻璃偏好在个性化里独立显示。设置应常驻且独立保存，玻璃底栏仅在两个偏好同时启用时采样/渲染，关闭悬浮栏时保留用户选择。旧有“悬浮栏关闭时隐藏材质选项”的布局约定不适用于该设置。
+- **更正（3.4.3：液态玻璃首启观感延迟）**：3.4.1/3.4.2 在 `GlassAdaptiveScope` 固定 `initialQuality: standard`，跳过库的启动质量热身；标准画质会在后续长期稳定帧窗口后才可能升档，造成用户感知的“玻璃尚未加载”。`LiquidGlassWidgets.initialize()` 已在 `runApp` 前预热 shader，因此应移除固定标准初始值，走库默认 premium 起步、静态能力检查及帧耗时热身降级路径。这样可在首屏展示完整效果，并保留低性能设备的质量降级，不回到 3.4.0 无自适应保护的固定 premium 实现。主体 blur 从 1.5 调至 2.0、折射率从 1.16 调至 1.19，轻微加强背景的柔化和透镜感；设备帧率与实际观感仍需真机确认。
+- **现象与源码风险（3.4.1：开启玻璃后整页灰屏/不可操作）**：本次无法连接用户设备复现。源码确认底栏对所有设备固定传 `premium` 且没有自适应质量作用域；库的质量适配器在存在 `GlassAdaptiveScope` 时先检查 shader 支持，并按帧时降级/恢复。现改为仅在玻璃底栏启用时建立局部作用域，以 `standard` 起步，保留正常设备升至 `premium` 的路径；这补上 Android 的兼容降级路径，但仍需在报告问题的设备确认真实根因及视觉表现。
 - **现象（2.15.1：Miuix 标准悬浮栏垂直居中）**：`MiuixFloatingNavigationBar` 内部使用带底部间距的 `Align`；直接放进 Scaffold 底栏时，父节点给出的整屏剩余高度让它在中间对齐。2.15.1 曾尝试仅约束内容高度，但实际页面仍出现居中；2.15.2 在调用处用含库同款底部间距的固定外层高度，并将库组件显式放在外层底部。不要改 Miuix 的共享组件实现，以免影响 Stack 等正常用法。
 - **现象（2.15.1：玻璃选中态缺少液态水滴感）**：M3 原实现使用静态胶囊，Miuix 玻璃导航默认指示器颜色透明度低。两种风格应复用 `MiuixGlassNavigationBar` 的弹性位置动画，并分别按 M3 色板和 Miuix 中性色提高指示器对比；不要再包一层静态选中胶囊遮掉动画。
 - **更正（2.15.2：玻璃仍没有大水滴效果）**：`MiuixGlassNavigationBar` 的选中指示器本质上只是动画移动的 ShapeDecoration，改颜色并不会产生折射。上游底栏把跟手弹簧透镜单独绘制在玻璃轨道上；2.15.2 虽叠加了 `MiuixGlassPanel`，但透镜只采样页面背景，图标/文字在其上重绘，所以没有折射前景内容，也缺少按压/速度形变。不能只把 ShapeDecoration 改成彩色胶囊并称为液态玻璃。
@@ -288,6 +302,14 @@
 - **现象**：普通微博列表有两张真实配图，详情却多出“抽奖详情”的小图。**根因**：将 `url_type=39` 通用网页链接及网页缩略图都视为自动动态图片，详情补全后把抽奖导航图混进配图。**修复与回归点**：按单条链接的标题、对象类型或微博抽奖域名在共享模型里排除抽奖缩略图，同时取消该链接的自动卡片补全资格；不能按整篇正文出现“抽奖”或按图片尺寸过滤真实配图。覆盖 `url_struct` 链接内图片、`url_objects` 图片、移动端 `page_info` 和历史快照往返；生日/夺金分层卡片、祝福与普通正文链接必须继续保留。已有旧快照中已经存下的误配图不做无依据删除，重新获取官方状态后使用新规则。
 
 ## Android 与交互
+
+- **画廊液态按钮水滴边缘不明显（3.5.1）**：先前按钮虽使用 `GlassButton`，但 `stretch: 0` 禁用了拖动形变，`isStationary: true` 让玻璃层不按交互状态渲染，色散 `0.008` 也低于底栏水滴的 `0.025`。保留按钮动作和开关关闭路径；开启时复用底栏水滴折射率/色散、启用锚定拉伸与回弹，并匹配底栏白色交互高光。回归检查短点仍触发原动作、长按/拖动不执行点击、下载中仍禁用；高刷新率/低端设备的实际观感与帧率需真机确认。
+- **更正（3.5.3：画廊按钮仍像普通玻璃）**：3.5.1 只调整了折射参数，却没有把 `GlassButton` 的默认 `standard` 画质改为完整 Impeller shader 路径；同时显式 `interactionScale: 1.06` 把 48dp 按钮按压膨胀压到约 3dp。开启时应请求 `GlassQuality.premium`，交给已存在的 `GlassAdaptiveScope` 按设备能力降级，并移除固定缩放覆盖，使用库原生约 17dp 的按压膨胀；媒体视口必须作为背景纹理来源，按钮层不进入采样以防反馈。静态构建不能证明按钮下的文字/图像弯曲强度，仍需真机检查。
+- **更正（3.5.4：画廊按钮静止态透镜不明显）**：48dp 按钮使用厚度 10 时，静止态的折射边缘很弱，只有按压膨胀成更大的水滴后才容易看见；自适应质量降到 `minimal` 也会移除折射 shader。保持原有 `GlassButton` 静态 shader 和长按形变路径，将玻璃厚度调到 32、折射率调到 1.24，并将仅包住画廊按钮的质量下限设为 `standard`，使图片/视频在按钮静止时也持续经过透镜边缘折射。两个小按钮面积有限；不叠加第二套 BackdropFilter，避免重复采样和额外 GPU 成本。实时视频下的观感与性能仍需目标设备核验。
+
+- **液态玻璃底栏按住水滴误触（3.4.2）**：库会在按下阶段回调当前 Tab，导致时间线/热搜重复点击的回顶/刷新逻辑在长按拖动开始时误执行；拖动释放又会按当前指示器位置叠加速度步进，快速抛动可能跨过热搜。共享玻璃导航适配层应缓存触控选择直到 pointer-up，以最终拖动回调提交；长按/拖动落回起始 Tab 时抑制同页动作。3.4.2 初版把相邻页限制套在所有水平拖动上，普通慢拖也可能被截断；当前只将释放水平速度达到 `1000 logical px/s` 的快速抛动限制到起始页相邻一项，慢拖按水滴最终位置提交。取消手势不提交，键盘/读屏操作保持即时。
+
+- **慢拖水滴到设置却停在热搜（3.5.2）**：共享释放逻辑原先把每次水平拖动都夹到起始页前后一个索引，导致有意慢拖时间线到设置也只能停在热搜。用 Flutter `VelocityTracker` 读取释放水平速度，仅在绝对速度达到 `1000 logical px/s` 时保留一页上限；低于阈值时提交玻璃栏最终回调的 Tab。静态分析/构建不能代替目标设备的真实手势速度验收。
 
 - **主底栏与普通页面转场（3.1.0）**：参考 Lurk 的真实实现，普通页面是新页整屏覆盖滑入、旧页不动且不淡化；LTR/RTL 进入方向相反，push/pop 使用 ease-out/ease-in 并尊重系统关闭动画。主底栏需同时驱动离开页和进入页反向平移一个屏宽；不要用 `PageView.animateToPage`，因为跨多个索引会按页数移动，和 Lurk 的单屏切换不一致。用 `Stack` 保持页面挂载，只给当前页及转场中的前一页启用绘制/动画；保留重复点击当前底栏触发的既有回顶/刷新语义。Android 动画开启时保留 `WidgetsBindingObserver` 到 `PageRoute` 的预测式返回进度桥接，并在路由卸载时注销；iOS 保留 Cupertino 边缘返回手势；图库 `PageRouteBuilder`/Hero 动画不接入全局普通页面转场。
 

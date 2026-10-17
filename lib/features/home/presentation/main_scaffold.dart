@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../../core/design_system/components/review_navigation_bar.dart';
 import '../../../core/theme/theme_provider.dart';
@@ -207,18 +208,28 @@ class _MainScaffoldState extends ConsumerState<MainScaffold>
   Widget build(BuildContext context) {
     final themeState = ref.watch(themeProvider);
     final useFloating = themeState.useFloatingNavBar;
+    final useLiquidGlassNavigation = useFloating && themeState.useLiquidGlass;
     final scaffoldKey = ref.watch(mainScaffoldKeyProvider);
     final navigationBar = ReviewNavigationBar(
       selectedIndex: _currentIndex,
       onSelected: _onNavigationItemSelected,
       hasBottomInset: MediaQuery.paddingOf(context).bottom > 0,
     );
-    return Scaffold(
-      key: scaffoldKey,
-      drawer: const AppDrawer(),
-      extendBody: useFloating,
-      body: _buildTabContent(),
-      bottomNavigationBar: navigationBar,
+    final page = GlassPage(
+      enableBackgroundSampling: useLiquidGlassNavigation,
+      child: Scaffold(
+        key: scaffoldKey,
+        drawer: const AppDrawer(),
+        extendBody: useFloating,
+        body: GlassBackgroundSource(
+          enabled: useLiquidGlassNavigation,
+          child: _buildTabContent(),
+        ),
+        bottomNavigationBar: navigationBar,
+      ),
     );
+    return useLiquidGlassNavigation
+        ? GlassAdaptiveScope(child: page)
+        : page;
   }
 }

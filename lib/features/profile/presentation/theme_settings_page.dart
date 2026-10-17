@@ -439,6 +439,44 @@ class ThemeSettingsPage extends ConsumerWidget {
           ),
           const SizedBox(height: 16),
 
+          AppSectionCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+                  child: Text(
+                    '显示效果',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: context.adjustWeight(FontWeight.bold),
+                      color: colorScheme.onSurfaceVariant,
+                      letterSpacing: 0.0,
+                    ),
+                  ),
+                ),
+                ReviewSwitchTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 3,
+                  ),
+                  leading: Icon(
+                    Icons.blur_on_rounded,
+                    color: colorScheme.primary,
+                  ),
+                  title: '使用液态玻璃效果',
+                  summary: '控制液态玻璃控件；当前应用于悬浮底栏',
+                  value: themeState.useLiquidGlass,
+                  onChanged: (val) {
+                    HapticFeedbackUtil.light();
+                    ref.read(themeProvider.notifier).setUseLiquidGlass(val);
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+
           // 5. 自定义应用图标 (Custom App Icon)
           AppSectionCard(
             child: Column(

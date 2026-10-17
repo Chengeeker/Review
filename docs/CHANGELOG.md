@@ -1,5 +1,71 @@
 # Review 变更记录
 
+## 3.6.0+191（2026-10-18）
+
+- 图片画廊通过匹配的信息流 Hero 复用已经解码的缩略图帧，在原图加载时先显示预览；原图完成后于下一帧释放克隆的图像句柄并显示原图。沿用现有图片地址、缓存和 Hero 动画，不新增缩略图请求；没有可匹配的已解码 Hero 帧时保持既有加载方式。
+- 合并 3.5.4 画廊按钮常态透镜改进：默认玻璃折射保持可见，画廊作用域最低质量为 `standard`。
+- `image_gallery_page.dart` 定向 `flutter analyze --no-pub` 无问题，`dart format` 未修改文件，`git diff --check` 通过；本轮未运行测试。ARM64 Release 构建成功（192.1 秒），核验包名 `com.review`、版本 `3.6.0`、`versionCode` 191、target SDK 36、仅 `arm64-v8a`、16 KB ZIP 对齐和 APK V2 签名；证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975` 与前版一致。
+- 交付 [Review_v3.6.0.apk](../Review_v3.6.0.apk)（33,395,602 字节），SHA-256：`62B039A066FC2C4CE2B1EEA7FB8A33300F68D571067BC95A4276AD0E3A11014D`；3.5.4+190 ARM64 回退包保留于 [Review_v3.5.4+190-before-v3.6.0.apk](../build/previous-deliveries/Review_v3.5.4+190-before-v3.6.0.apk)（33,395,602 字节），SHA-256：`7F6C09CDE35DB961C37E417FC04BD23BE9B3A2DD17F68D46A84BF2AA04424E00`。未在目标设备检查冷缓存首帧和预览到原图的切换观感。
+
+## 3.5.4+190（2026-10-18）
+
+- 修正图片画廊返回/下载玻璃按钮静止态透镜折射不明显的问题。开启液态玻璃时将按钮折射厚度从 10 调至 32、折射率从 1.18 调至 1.24，并将该画廊作用域质量下限设为 `standard`，避免降到无折射 shader 的 `minimal`；未按压时持续折射下方图片/视频，按压水滴交互和关闭开关时的样式不变。
+- 版本从 `3.5.3+189` 升至 `3.5.4+190`。`image_gallery_page.dart` 定向分析无问题，`git diff --check` 通过，未运行测试。ARM64 Release 构建成功（188.3 秒），核验包名 `com.review`、版本 `3.5.4`、`versionCode` 190、target SDK 36、仅 `arm64-v8a`、16 KB ZIP 对齐和 APK V2 签名；签名证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975` 与前版一致。
+- 3.5.4 ARM64 回退包归档为 [Review_v3.5.4+190-before-v3.6.0.apk](../build/previous-deliveries/Review_v3.5.4+190-before-v3.6.0.apk)（33,395,602 字节），SHA-256：`7F6C09CDE35DB961C37E417FC04BD23BE9B3A2DD17F68D46A84BF2AA04424E00`。未在目标设备安装或验收静止态透镜/长按观感。
+
+## 3.5.3+189（2026-10-18）
+
+- 修正图片画廊按钮没有大水滴折射的问题：开启时让 `GlassButton` 请求 `premium` shader 质量并保留自适应质量上限；移除 `interactionScale: 1.06`，恢复 48dp 按钮原生约 17dp 按压膨胀，让媒体内容在水滴下方参与完整折射。开关关闭时的现有局部 shader/模糊样式不变。
+- 版本从 `3.5.2+188` 升至 `3.5.3+189`。画廊文件 `flutter analyze --no-pub` 无问题，`dart format` 未修改文件，`git diff --check` 通过；未运行测试。ARM64 Release 构建成功（158.8 秒），核验包名 `com.review`、版本 `3.5.3`、`versionCode` 189、target SDK 36、仅 `arm64-v8a`、16 KB ZIP 对齐和 APK V2 签名；签名证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975` 与前版一致。
+- 交付 [Review_v3.5.3.apk](../Review_v3.5.3.apk)（33,395,602 字节），SHA-256：`FD03DA0058448C4BAC7E8C0BBF88E40F6B7CDC6AF3DC5AB896A3069733D55C0E`；3.5.2+188 回退包保留于 [Review_v3.5.2+188-before-v3.5.3.apk](../build/previous-deliveries/Review_v3.5.2+188-before-v3.5.3.apk)（33,395,602 字节），SHA-256：`A143637E0C8BE8C99951135AA8F67FE064AF222C0FD90FBBD8F53A77328FBF6F`。未进行目标设备安装或实际按钮折射/按压观感验收。
+
+## 3.5.2+188（2026-10-18）
+
+- 修复液态玻璃底栏慢速长拖跨多页时被错误限制到相邻页的问题。使用 Flutter `VelocityTracker` 读取松手水平速度，只对达到 `1000 logical px/s` 的快速抛动限制一页；慢拖按水滴最终所在 Tab 提交，时间线可慢拖到设置并跨过热搜。
+- 版本由 `3.5.1+187` 升至 `3.5.2+188`。导航组件 `flutter analyze --no-pub` 无问题，`git diff --check` 通过；未运行测试。ARM64 Release 构建成功（255.2 秒），核验包名 `com.review`、版本 `3.5.2`、`versionCode` 188、target SDK 36、仅 `arm64-v8a`、16 KB ZIP 对齐和 APK V2 签名；签名证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975` 与前版一致。
+- 交付 [Review_v3.5.2.apk](../Review_v3.5.2.apk)（33,395,602 字节），SHA-256：`A143637E0C8BE8C99951135AA8F67FE064AF222C0FD90FBBD8F53A77328FBF6F`；3.5.1+187 回退包保留于 [Review_v3.5.1+187-before-v3.5.2.apk](../build/previous-deliveries/Review_v3.5.1+187-before-v3.5.2.apk)（33,395,602 字节），SHA-256：`BE861A9AA8A9FE9309C92411A008F0B432F8E7BD4336A4CA948CB8E08BE20EE8`。未进行目标设备安装或慢拖/快速抛动的真机验收。
+
+## 3.5.1+187（2026-10-18）
+
+- 加强液态玻璃开启时画廊返回/下载按钮的水滴边缘折射：色散提高到与底栏选中水滴相同的 0.025，按住拖动时启用锚定拉伸和回弹，并匹配底栏白色交互高光。短点仍执行按钮动作，长按/拖动用于水滴交互；开关关闭时的按钮保持原样。
+- 版本按既有功能修正规则从 `3.5.0+186` 升至 `3.5.1+187`。目标画廊文件 `flutter analyze` 无问题，`git diff --check` 通过；未运行测试。最终 ARM64 Release 构建成功（353.7 秒），核验包名 `com.review`、版本 `3.5.1`、`versionCode` 187、target SDK 36、仅 `arm64-v8a`、16 KB ZIP 对齐和 APK V2 签名；签名证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975` 与前版一致。
+- 交付 [Review_v3.5.1.apk](../Review_v3.5.1.apk)（33,395,602 字节），SHA-256：`BE861A9AA8A9FE9309C92411A008F0B432F8E7BD4336A4CA948CB8E08BE20EE8`；3.5.0+186 回退包保留于 `build/previous-deliveries/Review_v3.5.0+186-before-v3.5.1.apk`（33,395,602 字节）。未进行目标设备安装、边缘折射画面或 GPU 帧率验收。
+
+## 3.5.0+186（2026-10-18）
+
+- 将个性化“使用液态玻璃效果”开关延伸到图片画廊左上返回和右上下载按钮。关闭时沿用原有局部 shader/模糊样式；开启时使用 `liquid_glass_widgets` 的 `GlassButton`，保留原按钮动作、过场显隐、下载禁用态和读屏标签。
+- 仅开启时为画廊路由建立自适应玻璃质量作用域与媒体背景源；背景源排除顶部按钮，避免采集玻璃自身。版本按功能规则由 `3.4.3+185` 升至 `3.5.0+186`。
+- 画廊文件 `dart analyze` 无问题，`git diff --check` 通过；未运行 Flutter 测试。ARM64 Release 构建成功（223.4 秒），核验包名 `com.review`、版本 `3.5.0`、`versionCode` 186、target SDK 36、仅 `arm64-v8a`、16 KB ZIP 对齐和 APK V2 签名。签名证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975` 与前版一致。
+- 交付 [Review_v3.5.0+186-before-v3.5.1.apk](../build/previous-deliveries/Review_v3.5.0+186-before-v3.5.1.apk)（33,395,602 字节），SHA-256：`2520556E1CCC254310691B13BF13DCFFD84E5CEEFFB7EB85128749CB8CF67F2A`；3.4.3+185 回退包保留于 `build/previous-deliveries/Review_v3.4.3+185-before-v3.5.0.apk`（33,330,066 字节）。未进行目标设备安装、画面或 GPU 帧率验收。
+
+## 3.4.3+185（2026-10-18）
+
+- 修复液态玻璃底栏首启时长时间停留在标准画质的问题。原局部 `GlassAdaptiveScope(initialQuality: GlassQuality.standard)` 跳过了库的启动热身，恢复 premium 需等待多轮稳定帧窗口；移除固定初始质量后，底栏使用已预热的 premium 首帧路径，并保留 shader 支持探测和帧耗时自适应降级。
+- 主体背景 blur 从 1.5 调到 2.0、折射率从 1.16 调到 1.19，轻微加强柔化与透镜折射；其余导航与手势行为不变。
+- 定向分析通过（2 个修改的 Dart 文件无问题，4.2 秒）；`git diff --check` 通过，未运行 Flutter 测试。ARM64 Release 构建成功（242.0 秒），核验 `com.review`、版本 `3.4.3`、`versionCode` 185、target SDK 36、仅 `arm64-v8a`、16 KB ZIP 对齐及 APK V2 签名；证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975` 与前版一致。交付 [Review_v3.4.3.apk](../Review_v3.4.3.apk)（33,330,066 字节），SHA-256：`777595EAC38F7710A412BD91CAF346797B9694C5E7D4868DAAF21C7B0994B40F`；3.4.2+184 回退包保留于 `build/previous-deliveries/Review_v3.4.2+184-before-v3.4.3.apk`。未连接 Android 设备，真实启动时序、视觉折射和 GPU 帧率尚未真机验收。
+
+## 3.4.2+184（2026-10-17）
+
+- 修复液态玻璃底栏在时间线/热搜长按水滴时，按下阶段提前执行当前 Tab 回顶/刷新的问题。玻璃手势回调改为松手后提交；长按或拖回当前页时不触发同页动作，短点按仍保留既有重复点击行为，键盘与读屏语义激活仍即时执行。
+- 液态玻璃拖动释放最多切换到起始页相邻的一项，拦截速度补偿造成的跨两页跳转（例如时间线直接跳到设置）。标准导航栏逻辑未改。
+- 定向分析无问题，`git diff --check` 通过；ARM64 Release 构建成功（191.4 秒），未运行 Flutter 测试。APK 核验 `com.review`、版本 `3.4.2`、`versionCode` 184、target SDK 36、仅 `arm64-v8a`、16 KB ZIP 对齐及 APK V2 签名；证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975` 与前版一致。交付 [Review_v3.4.2.apk](../Review_v3.4.2.apk)（33,330,066 字节），SHA-256：`C1C917BC0EEC1FEF89C072AF20F3F4926EFDD064AF177D5C8836D266F7CFAD8F`；3.4.1 回退包保留于 `build/previous-deliveries/Review_v3.4.1+183-before-v3.4.2.apk`。未连接 Android 设备，手势时序、视觉效果和 GPU 帧率尚未真机验收。
+
+## 3.4.1+183（2026-10-17）
+
+- 将“使用液态玻璃效果”移出“底部导航”分组，作为独立、常驻的个性化设置；关闭悬浮底栏时仍可设置并保留偏好，当前仅悬浮底栏消费该偏好。
+- 液态玻璃栏宽度改为原响应式宽度的 `2/3`。只在玻璃底栏实际启用时建立局部 `GlassAdaptiveScope`，以 `standard` 开始并根据 shader 支持与运行帧耗时自适应升降质量，避免在所有 Android 设备上始终强制 `premium`。
+- 版本名升至 `3.4.1`、Android `versionCode` 升至 `183`。修改文件定向分析无问题；全项目分析无 error/warning、报告 57 条 info；未运行 Flutter 测试。`git diff --check` 通过。
+- ARM64 Release 构建成功（226.0 秒），核验 `com.review`、版本 `3.4.1`、`versionCode` 183、target SDK 36、仅 `arm64-v8a`、16 KB ZIP 对齐和 APK V2 签名；证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975` 与 `3.4.0+182` 一致。交付 [Review_v3.4.1.apk](../Review_v3.4.1.apk)（33,330,066 字节），SHA-256：`7261E93DE5B3050F252A10BCB03EC563F08B45C72D2A3153679E9F545FE719AC`；`3.4.0+182` 回退包保留于 `build/previous-deliveries/Review_v3.4.0+182-before-v3.4.1.apk`。未连接 Android 设备，尚未做安装、视觉或 GPU 帧率验收。
+
+## 3.4.0+182（2026-10-17）
+
+- 引入 `liquid_glass_widgets: ^1.13.0` 并按要求在应用启动时预热 shader、接入亮度解析器。
+- 个性化增加“使用液态玻璃效果”，默认关闭并纳入 WebDAV 个性化备份；仅悬浮底栏开启该选项时生效。
+- 主页面使用 `GlassPage`、`Scaffold.extendBody` 和单一 body `GlassBackgroundSource`；将现有时间线/热搜/设置三项导航替换为按指定折射、高光、色散、尺寸与安全区参数配置的 `GlassTabBar.bottom`。库导航语义、轻触反馈和重复点击回顶/刷新的回调保持原样。
+- 液态玻璃模式为三个根页面按 `viewPadding.bottom + 76dp` 增加滚动留白，避免 `extendBody` 注入底栏高度后重复计入；禁用时继续使用原 M3 导航和页面留白。
+- 修改文件定向分析未发现错误/警告，仅有既有的 `feed_view.dart` `axisAlignment` 弃用 info；本轮未运行 Flutter 测试。`git diff --check` 通过。
+- ARM64 Release 构建成功（271.5 秒），核验 `com.review`、版本 `3.4.0`、`versionCode` 182、target SDK 36、仅 `arm64-v8a`、16 KB ZIP 对齐及 APK V2 签名；证书 SHA-256 与 `3.3.0` 相同。交付 [Review_v3.4.0.apk](../Review_v3.4.0.apk)（33,330,066 字节），SHA-256：`8BD345B55199C15857A38E163C1CDFA80880C0B169A1A9ED610D97EF942A0F5D`；`3.3.0` 回退包保留于 `build/previous-deliveries/Review_v3.3.0-before-v3.4.0.apk`。没有连接真机，本轮未做安装、GPU 帧率或视觉验收。
+
 ## 3.3.0+181（2026-10-14）
 
 - 个性化新增应用字体大小滑杆，布局、范围及步进参考 Review X；拖动时全局即时预览，松手保存，默认 100%。

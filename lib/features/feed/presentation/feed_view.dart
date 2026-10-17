@@ -87,6 +87,7 @@ class _FeedViewState extends ConsumerState<FeedView>
   Widget build(BuildContext context) {
     final feedState = ref.watch(feedControllerProvider);
     final authState = ref.watch(authProvider);
+    final themeState = ref.watch(themeProvider);
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final topBarBackground =
@@ -359,8 +360,12 @@ class _FeedViewState extends ConsumerState<FeedView>
                         SliverPadding(
                           padding: EdgeInsets.only(
                             top: topChromeHeight + 4,
-                            bottom: ref.watch(themeProvider).useFloatingNavBar
-                                ? 72.0
+                            bottom: themeState.useFloatingNavBar
+                                ? themeState.useLiquidGlass
+                                      ? MediaQuery.viewPaddingOf(context)
+                                                .bottom +
+                                            76.0
+                                      : 72.0
                                 : 16.0,
                           ),
                           sliver: SliverList(

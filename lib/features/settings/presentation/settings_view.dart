@@ -33,7 +33,11 @@ class SettingsView extends ConsumerWidget {
     final isLoggedIn = authState.isLoggedIn;
 
     // 当开启悬浮胶囊底栏时，预留适度紧凑的底部边距，防止遮挡退出登录与底部设置项
-    final bottomNavPadding = themeState.useFloatingNavBar ? 72.0 : 16.0;
+    final bottomNavPadding = themeState.useFloatingNavBar
+        ? themeState.useLiquidGlass
+              ? MediaQuery.viewPaddingOf(context).bottom + 76.0
+              : 72.0
+        : 16.0;
 
     return Scaffold(
       body: ListView(

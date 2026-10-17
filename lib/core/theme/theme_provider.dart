@@ -11,6 +11,7 @@ class ThemeState {
   final bool isPureBlackDark;
   final bool enableHaptics;
   final bool useFloatingNavBar;
+  final bool useLiquidGlass;
   final bool useCustomFontWeight;
   final int customFontWeightDelta;
   final int systemFontWeightAdjustment;
@@ -24,6 +25,7 @@ class ThemeState {
     this.isPureBlackDark = false,
     this.enableHaptics = true,
     this.useFloatingNavBar = true,
+    this.useLiquidGlass = false,
     this.useCustomFontWeight = false,
     this.customFontWeightDelta = 0,
     this.systemFontWeightAdjustment = 0,
@@ -42,6 +44,7 @@ class ThemeState {
     bool? isPureBlackDark,
     bool? enableHaptics,
     bool? useFloatingNavBar,
+    bool? useLiquidGlass,
     bool? useCustomFontWeight,
     int? customFontWeightDelta,
     int? systemFontWeightAdjustment,
@@ -55,6 +58,7 @@ class ThemeState {
       isPureBlackDark: isPureBlackDark ?? this.isPureBlackDark,
       enableHaptics: enableHaptics ?? this.enableHaptics,
       useFloatingNavBar: useFloatingNavBar ?? this.useFloatingNavBar,
+      useLiquidGlass: useLiquidGlass ?? this.useLiquidGlass,
       useCustomFontWeight: useCustomFontWeight ?? this.useCustomFontWeight,
       customFontWeightDelta:
           customFontWeightDelta ?? this.customFontWeightDelta,
@@ -119,6 +123,7 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
     );
     final haptics = _storage.getEnableHaptics();
     final floatingNav = _storage.getUseFloatingNavBar();
+    final useLiquidGlass = _storage.getUseLiquidGlass();
     final customFont = _storage.getUseCustomFontWeight();
     final customFontDelta = _storage.getCustomFontWeightDelta();
     final refreshMode = _storage.getScreenRefreshRateMode();
@@ -135,6 +140,7 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
       isPureBlackDark: pureBlack,
       enableHaptics: haptics,
       useFloatingNavBar: floatingNav,
+      useLiquidGlass: useLiquidGlass,
       useCustomFontWeight: customFont,
       customFontWeightDelta: customFontDelta,
       screenRefreshRateMode: refreshMode,
@@ -187,6 +193,11 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
   Future<void> setUseFloatingNavBar(bool enabled) async {
     await _storage.setUseFloatingNavBar(enabled);
     state = state.copyWith(useFloatingNavBar: enabled);
+  }
+
+  Future<void> setUseLiquidGlass(bool enabled) async {
+    await _storage.setUseLiquidGlass(enabled);
+    state = state.copyWith(useLiquidGlass: enabled);
   }
 
   Future<void> setUseCustomFontWeight(bool enabled) async {

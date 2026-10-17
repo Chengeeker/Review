@@ -23,6 +23,7 @@ class StorageService {
   static const String keyThemeMode = 'theme_mode';
   static const String keyUseDynamicColor = 'use_dynamic_color';
   static const String keyUseFloatingNavBar = 'use_floating_nav_bar';
+  static const String keyUseLiquidGlass = 'use_liquid_glass_effect';
   static const String keySavedDefaultGroups = 'saved_default_groups_json';
   static const String keySavedPersonalGroups = 'saved_personal_groups_json';
   static const String keySavedHotGroups = 'saved_hot_groups_json';
@@ -184,6 +185,9 @@ class StorageService {
   bool getUseFloatingNavBar() => _prefs.getBool(keyUseFloatingNavBar) ?? true;
   Future<bool> setUseFloatingNavBar(bool val) =>
       _prefs.setBool(keyUseFloatingNavBar, val);
+  bool getUseLiquidGlass() => _prefs.getBool(keyUseLiquidGlass) ?? false;
+  Future<bool> setUseLiquidGlass(bool val) =>
+      _prefs.setBool(keyUseLiquidGlass, val);
 
   int getImageSavePathType() => getInt(keyImageSavePathType, defaultValue: 0);
   Future<bool> setImageSavePathType(int value) =>
@@ -448,6 +452,7 @@ class StorageService {
     keyThemeMode,
     keyUseDynamicColor,
     keyUseFloatingNavBar,
+    keyUseLiquidGlass,
     keySavedDefaultGroups,
     keySavedPersonalGroups,
     keySavedHotGroups,

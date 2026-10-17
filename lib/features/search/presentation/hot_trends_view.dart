@@ -329,7 +329,11 @@ class _HotCategoryListViewState extends ConsumerState<_HotCategoryListView>
     }
 
     final themeState = ref.watch(themeProvider);
-    final double bottomNavPadding = themeState.useFloatingNavBar ? 72.0 : 16.0;
+    final double bottomNavPadding = themeState.useFloatingNavBar
+        ? themeState.useLiquidGlass
+              ? MediaQuery.viewPaddingOf(context).bottom + 76.0
+              : 72.0
+        : 16.0;
 
     return EasyRefresh(
       header: reviewFrostedAppBarRefreshHeader,

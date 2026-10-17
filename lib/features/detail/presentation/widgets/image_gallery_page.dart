@@ -17,11 +17,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderImage, RenderClipRRect;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../../core/auth/auth_provider.dart';
 import '../../../../core/constants/api_constants.dart';
 import '../../../../core/storage/storage_service.dart';
+import '../../../../core/theme/theme_provider.dart';
 import '../../../../core/utils/app_toast.dart';
 import '../../../../core/utils/haptic_feedback_util.dart';
 import '../../../feed/data/models/weibo_status_model.dart';
@@ -76,8 +78,9 @@ class ImageGalleryHeroTag {
 ///
 /// Flutter's default Hero shuttle always uses the destination child's layout.
 /// On pop that is the small feed thumbnail, which can briefly replace the
-/// fullscreen image before the reverse flight starts. Use the fullscreen
-/// destination on push and the fullscreen source on pop instead.
+/// fullscreen image before the reverse flight starts. Keep the fullscreen
+/// destination on push, preview its source frame while the original loads, and
+/// use the fullscreen source on pop.
 Widget imageGalleryHeroFlightShuttleBuilder(
   BuildContext flightContext,
   Animation<double> animation,
@@ -87,7 +90,19 @@ Widget imageGalleryHeroFlightShuttleBuilder(
 ) {
   final fromHero = fromHeroContext.widget as Hero;
   final toHero = toHeroContext.widget as Hero;
-  if (flightDirection != HeroFlightDirection.pop) return toHero.child;
+  if (flightDirection != HeroFlightDirection.pop) {
+    final tag = fromHero.tag;
+    final source = _HeroImageGeometry.capture(fromHeroContext);
+    final gallery = toHeroContext
+        .findAncestorStateOfType<_ImageGalleryPageState>();
+    if (tag is ImageGalleryHeroTag &&
+        source != null &&
+        gallery != null &&
+        tag.index == gallery.widget.initialIndex) {
+      gallery._retainOpeningPreview(source.image);
+    }
+    return toHero.child;
+  }
 
   final tag = fromHero.tag;
   final targetRenderObject = toHeroContext.findRenderObject();
@@ -336,6 +351,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
   double? _thumbnailScrollBottom;
   bool _mainUserScrolling = false;
   final Expando<ExtendedImageGesture> _pagingImages = Expando();
+  ui.Image? _openingPreview;
 
   // Live Photo Controller Cache
   final Map<int, VideoPlayerController> _liveControllers = {};
@@ -406,6 +422,8 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
 
   @override
   void dispose() {
+    _openingPreview?.dispose();
+    _openingPreview = null;
     _routeAnimation?.removeStatusListener(_handleRouteAnimationStatus);
     _restoreSystemUi();
     _galleryTapTimer?.cancel();
@@ -420,6 +438,21 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
     }
     _liveControllers.clear();
     super.dispose();
+  }
+
+  void _retainOpeningPreview(ui.Image image) {
+    if (_openingPreview != null) return;
+    _openingPreview = image.clone();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  void _releaseOpeningPreviewAfterFrame() {
+    final preview = _openingPreview;
+    if (preview == null) return;
+    _openingPreview = null;
+    WidgetsBinding.instance.addPostFrameCallback((_) => preview.dispose());
   }
 
   void _restoreSystemUi() {
@@ -988,6 +1021,9 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
 
   @override
   Widget build(BuildContext context) {
+    final useLiquidGlass = ref.watch(
+      themeProvider.select((state) => state.useLiquidGlass),
+    );
     final currentPic = widget.pics.isNotEmpty
         ? widget.pics[_currentIndex]
         : null;
@@ -995,7 +1031,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
         currentPic?.isLivePhoto == true &&
         currentPic?.livePhotoVideoUrl != null;
 
-    return ExtendedImageSlidePage(
+    final galleryPage = ExtendedImageSlidePage(
       key: _slidePageKey,
       slideAxis: SlideAxis.horizontal,
       slideType: SlideType.onlyImage,
@@ -1009,292 +1045,313 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
           children: [
             // Gesture PageView with Physics-based Spring Morphing
             // Raw pointer tracking avoids competing with ExtendedImage double taps.
-            Listener(
-              onPointerDown: _handleGalleryPointerDown,
-              onPointerMove: _handleGalleryPointerMove,
-              onPointerUp: _handleGalleryPointerUp,
-              onPointerCancel: _handleGalleryPointerCancel,
-              child: NotificationListener<ScrollNotification>(
-                onNotification: _handleMainGalleryScroll,
-                child: ExtendedImageGesturePageView.builder(
-                  controller: _pageController,
-                  physics: const BouncingScrollPhysics(),
-                  canScrollPage: (details) =>
-                      (details?.totalScale ?? 1.0) <= 1.0,
-                  shouldAccpetHorizontalOrVerticalDrag: (trackers) =>
-                      trackers.length == 1,
-                  pageSnapping: !_thumbnailUserScrolling && !_thumbnailSettling,
-                  itemCount: widget.pics.length,
-                  onPageChanged: (index) {
-                    final didChange = index != _currentIndex;
-                    if (didChange && _thumbnailUserScrolling) {
-                      HapticFeedbackUtil.selectionTick();
-                    } else if (!_thumbnailUserScrolling &&
-                        !_thumbnailSettling &&
-                        !_mainUserScrolling) {
-                      _activeMediaIndex.value = index;
-                      _initLiveControllerForIndex(index);
-                    }
-                    setState(() {
-                      _currentIndex = index;
-                      _isPlayingLive = false;
-                      _pendingLivePlay = false;
-                    });
-                    // Pause previous live videos
-                    for (final entry in _liveControllers.entries) {
-                      if (entry.key != index && entry.value.value.isPlaying) {
-                        entry.value.pause();
+            GlassBackgroundSource(
+              enabled: useLiquidGlass,
+              child: Listener(
+                onPointerDown: _handleGalleryPointerDown,
+                onPointerMove: _handleGalleryPointerMove,
+                onPointerUp: _handleGalleryPointerUp,
+                onPointerCancel: _handleGalleryPointerCancel,
+                child: NotificationListener<ScrollNotification>(
+                  onNotification: _handleMainGalleryScroll,
+                  child: ExtendedImageGesturePageView.builder(
+                    controller: _pageController,
+                    physics: const BouncingScrollPhysics(),
+                    canScrollPage: (details) =>
+                        (details?.totalScale ?? 1.0) <= 1.0,
+                    shouldAccpetHorizontalOrVerticalDrag: (trackers) =>
+                        trackers.length == 1,
+                    pageSnapping:
+                        !_thumbnailUserScrolling && !_thumbnailSettling,
+                    itemCount: widget.pics.length,
+                    onPageChanged: (index) {
+                      final didChange = index != _currentIndex;
+                      if (didChange && _thumbnailUserScrolling) {
+                        HapticFeedbackUtil.selectionTick();
+                      } else if (!_thumbnailUserScrolling &&
+                          !_thumbnailSettling &&
+                          !_mainUserScrolling) {
+                        _activeMediaIndex.value = index;
+                        _initLiveControllerForIndex(index);
                       }
-                    }
-                    if (!_thumbnailUserScrolling &&
-                        !_thumbnailSettling &&
-                        _thumbnailController.hasClients) {
-                      // A main-image gesture takes ownership, cancelling any
-                      // old thumbnail inertia without feeding selection back.
-                      _thumbnailController.jumpToPage(index);
-                    }
-                  },
-                  itemBuilder: (context, index) {
-                    final pic = widget.pics[index];
-                    if (pic.isVideo) {
-                      // PageView may retain offscreen children. An explicit
-                      // active-index signal tears down hidden players too.
-                      return ValueListenableBuilder<int>(
-                        valueListenable: _activeMediaIndex,
-                        builder: (context, activeIndex, _) =>
-                            activeIndex == index
-                            ? WeiboVideoPlayerPage(
-                                key: ValueKey('gallery-video-$index'),
-                                videoUrl: pic.videoUrl ?? '',
-                                statusId: widget.statusId,
-                                coverUrl: pic.previewUrl,
-                                title: pic.videoTitle,
-                                authorName: widget.authorName,
-                                embedded: true,
-                                onToggleChrome: _toggleChrome,
-                                onFullscreenChanged: (isFullscreen) =>
-                                    _setChromeVisible(!isFullscreen),
-                                onBottomControlsHeightChanged:
-                                    _setVideoBottomControlsHeight,
-                              )
-                            : ExtendedImage.network(
-                                pic.previewUrl,
-                                headers: ApiConstants.imageHeaders,
+                      setState(() {
+                        _currentIndex = index;
+                        _isPlayingLive = false;
+                        _pendingLivePlay = false;
+                      });
+                      // Pause previous live videos
+                      for (final entry in _liveControllers.entries) {
+                        if (entry.key != index && entry.value.value.isPlaying) {
+                          entry.value.pause();
+                        }
+                      }
+                      if (!_thumbnailUserScrolling &&
+                          !_thumbnailSettling &&
+                          _thumbnailController.hasClients) {
+                        // A main-image gesture takes ownership, cancelling any
+                        // old thumbnail inertia without feeding selection back.
+                        _thumbnailController.jumpToPage(index);
+                      }
+                    },
+                    itemBuilder: (context, index) {
+                      final pic = widget.pics[index];
+                      if (pic.isVideo) {
+                        // PageView may retain offscreen children. An explicit
+                        // active-index signal tears down hidden players too.
+                        return ValueListenableBuilder<int>(
+                          valueListenable: _activeMediaIndex,
+                          builder: (context, activeIndex, _) =>
+                              activeIndex == index
+                              ? WeiboVideoPlayerPage(
+                                  key: ValueKey('gallery-video-$index'),
+                                  videoUrl: pic.videoUrl ?? '',
+                                  statusId: widget.statusId,
+                                  coverUrl: pic.previewUrl,
+                                  title: pic.videoTitle,
+                                  authorName: widget.authorName,
+                                  embedded: true,
+                                  onToggleChrome: _toggleChrome,
+                                  onFullscreenChanged: (isFullscreen) =>
+                                      _setChromeVisible(!isFullscreen),
+                                  onBottomControlsHeightChanged:
+                                      _setVideoBottomControlsHeight,
+                                )
+                              : ExtendedImage.network(
+                                  pic.previewUrl,
+                                  headers: ApiConstants.imageHeaders,
+                                  fit: BoxFit.contain,
+                                  cache: true,
+                                ),
+                        );
+                      }
+                      final controller = _liveControllers[index];
+                      final isInitialized = _liveInitialized[index] ?? false;
+                      final isLongPic =
+                          pic.isLong ||
+                          (pic.height > 0 &&
+                              pic.width > 0 &&
+                              pic.height / pic.width > 2.0);
+
+                      final foregroundImage = ExtendedImage.network(
+                        pic.originalUrl.isNotEmpty
+                            ? pic.originalUrl
+                            : (pic.largeUrl.isNotEmpty
+                                  ? pic.largeUrl
+                                  : pic.bmiddleUrl),
+                        width: double.infinity,
+                        height: double.infinity,
+                        headers: ApiConstants.imageHeaders,
+                        cache: true,
+                        fit: BoxFit.contain,
+                        mode: ExtendedImageMode.gesture,
+                        // Keep slide-out disabled: during image loading the
+                        // package installs a scale recognizer that can steal paging.
+                        enableSlideOutPage: false,
+                        loadStateChanged: (state) {
+                          if (state.extendedImageLoadState !=
+                              LoadState.completed) {
+                            // shortcut: preview is available only for matching Hero launches, extend when other entry points expose decoded frames.
+                            if (index == widget.initialIndex &&
+                                state.extendedImageLoadState ==
+                                    LoadState.loading &&
+                                _openingPreview != null) {
+                              return RawImage(
+                                key: const ValueKey('gallery-opening-preview'),
+                                image: _openingPreview,
                                 fit: BoxFit.contain,
-                                cache: true,
-                              ),
-                      );
-                    }
-                    final controller = _liveControllers[index];
-                    final isInitialized = _liveInitialized[index] ?? false;
-                    final isLongPic =
-                        pic.isLong ||
-                        (pic.height > 0 &&
-                            pic.width > 0 &&
-                            pic.height / pic.width > 2.0);
-
-                    final foregroundImage = ExtendedImage.network(
-                      pic.originalUrl.isNotEmpty
-                          ? pic.originalUrl
-                          : (pic.largeUrl.isNotEmpty
-                                ? pic.largeUrl
-                                : pic.bmiddleUrl),
-                      width: double.infinity,
-                      height: double.infinity,
-                      headers: ApiConstants.imageHeaders,
-                      cache: true,
-                      fit: BoxFit.contain,
-                      mode: ExtendedImageMode.gesture,
-                      // Keep slide-out disabled: during image loading the
-                      // package installs a scale recognizer that can steal paging.
-                      enableSlideOutPage: false,
-                      loadStateChanged: (state) {
-                        if (state.extendedImageLoadState !=
-                            LoadState.completed) {
-                          return null;
-                        }
-                        // Reuse a decoded frame's widget to avoid repeated gesture animation initialization.
-                        return _pagingImages[state
-                            .extendedImageInfo!] ??= ExtendedImageGesture(
-                          state,
-                          imageBuilder: (image, {imageGestureState}) {
-                            final gestureState = imageGestureState!;
-                            final pager = gestureState.context
-                                .findAncestorStateOfType<
-                                  ExtendedImageGesturePageViewState
-                                >();
-                            // Hero flights rebuild this image in an overlay without a pager.
-                            if (pager == null) return image;
-                            // Register paging before the image's scale recognizer sees a fast single-finger move.
-                            return Listener(
-                              onPointerDown: (_) {
-                                pager.extendedImageGestureStates.remove(
-                                  gestureState,
-                                );
-                                pager.extendedImageGestureState = gestureState;
-                              },
-                              child: RawGestureDetector(
-                                gestures: {
-                                  ExtendedHorizontalDragGestureRecognizer:
-                                      GestureRecognizerFactoryWithHandlers<
-                                        ExtendedHorizontalDragGestureRecognizer
-                                      >(
-                                        () => ExtendedHorizontalDragGestureRecognizer(
-                                          canHorizontalOrVerticalDrag: () =>
-                                              (gestureState
-                                                      .gestureDetails
-                                                      ?.totalScale ??
-                                                  1) <=
-                                              1,
-                                          shouldAccpetHorizontalOrVerticalDrag:
-                                              (trackers) =>
-                                                  trackers.length == 1,
-                                        ),
-                                        (recognizer) => recognizer
-                                          ..onDown = pager.onDragDown
-                                          ..onStart = pager.onDragStart
-                                          ..onUpdate = pager.onDragUpdate
-                                          ..onEnd = pager.onDragEnd
-                                          ..onCancel = pager.onDragCancel
-                                          ..minFlingDistance = pager
-                                              .widget
-                                              .physics
-                                              .minFlingDistance
-                                          ..minFlingVelocity = pager
-                                              .widget
-                                              .physics
-                                              .minFlingVelocity
-                                          ..maxFlingVelocity = pager
-                                              .widget
-                                              .physics
-                                              .maxFlingVelocity
-                                          ..gestureSettings =
-                                              MediaQuery.gestureSettingsOf(
-                                                context,
-                                              ),
-                                      ),
+                              );
+                            }
+                            return null;
+                          }
+                          if (index == widget.initialIndex) {
+                            _releaseOpeningPreviewAfterFrame();
+                          }
+                          // Reuse a decoded frame's widget to avoid repeated gesture animation initialization.
+                          return _pagingImages[state
+                              .extendedImageInfo!] ??= ExtendedImageGesture(
+                            state,
+                            imageBuilder: (image, {imageGestureState}) {
+                              final gestureState = imageGestureState!;
+                              final pager = gestureState.context
+                                  .findAncestorStateOfType<
+                                    ExtendedImageGesturePageViewState
+                                  >();
+                              // Hero flights rebuild this image in an overlay without a pager.
+                              if (pager == null) return image;
+                              // Register paging before the image's scale recognizer sees a fast single-finger move.
+                              return Listener(
+                                onPointerDown: (_) {
+                                  pager.extendedImageGestureStates.remove(
+                                    gestureState,
+                                  );
+                                  pager.extendedImageGestureState =
+                                      gestureState;
                                 },
-                                child: image,
-                              ),
-                            );
-                          },
-                        );
-                      },
-                      onDoubleTap: (ExtendedImageGestureState state) {
-                        HapticFeedbackUtil.light();
-                        final pointerDownPosition = state.pointerDownPosition;
-                        final begin = state.gestureDetails!.totalScale ?? 1.0;
-                        double end = 1.0;
-                        if (begin <= 1.05) {
-                          end = isLongPic ? 3.5 : 2.5;
-                        } else if (begin <= 3.6) {
-                          end = 6.0;
-                        } else {
-                          end = 1.0;
-                        }
-
-                        _doubleTapAnimationController.stop();
-                        _doubleTapAnimationController.reset();
-
-                        if (_doubleTapListener != null) {
-                          _doubleTapAnimation?.removeListener(
-                            _doubleTapListener!,
+                                child: RawGestureDetector(
+                                  gestures: {
+                                    ExtendedHorizontalDragGestureRecognizer:
+                                        GestureRecognizerFactoryWithHandlers<
+                                          ExtendedHorizontalDragGestureRecognizer
+                                        >(
+                                          () => ExtendedHorizontalDragGestureRecognizer(
+                                            canHorizontalOrVerticalDrag: () =>
+                                                (gestureState
+                                                        .gestureDetails
+                                                        ?.totalScale ??
+                                                    1) <=
+                                                1,
+                                            shouldAccpetHorizontalOrVerticalDrag:
+                                                (trackers) =>
+                                                    trackers.length == 1,
+                                          ),
+                                          (recognizer) => recognizer
+                                            ..onDown = pager.onDragDown
+                                            ..onStart = pager.onDragStart
+                                            ..onUpdate = pager.onDragUpdate
+                                            ..onEnd = pager.onDragEnd
+                                            ..onCancel = pager.onDragCancel
+                                            ..minFlingDistance = pager
+                                                .widget
+                                                .physics
+                                                .minFlingDistance
+                                            ..minFlingVelocity = pager
+                                                .widget
+                                                .physics
+                                                .minFlingVelocity
+                                            ..maxFlingVelocity = pager
+                                                .widget
+                                                .physics
+                                                .maxFlingVelocity
+                                            ..gestureSettings =
+                                                MediaQuery.gestureSettingsOf(
+                                                  context,
+                                                ),
+                                        ),
+                                  },
+                                  child: image,
+                                ),
+                              );
+                            },
                           );
-                        }
+                        },
+                        onDoubleTap: (ExtendedImageGestureState state) {
+                          HapticFeedbackUtil.light();
+                          final pointerDownPosition = state.pointerDownPosition;
+                          final begin = state.gestureDetails!.totalScale ?? 1.0;
+                          double end = 1.0;
+                          if (begin <= 1.05) {
+                            end = isLongPic ? 3.5 : 2.5;
+                          } else if (begin <= 3.6) {
+                            end = 6.0;
+                          } else {
+                            end = 1.0;
+                          }
 
-                        _doubleTapAnimation =
-                            Tween<double>(begin: begin, end: end).animate(
-                              CurvedAnimation(
-                                parent: _doubleTapAnimationController,
-                                curve: Curves.easeOutCubic,
-                              ),
+                          _doubleTapAnimationController.stop();
+                          _doubleTapAnimationController.reset();
+
+                          if (_doubleTapListener != null) {
+                            _doubleTapAnimation?.removeListener(
+                              _doubleTapListener!,
                             );
+                          }
 
-                        _doubleTapListener = () {
-                          state.handleDoubleTap(
-                            scale: _doubleTapAnimation!.value,
-                            doubleTapPosition: pointerDownPosition,
+                          _doubleTapAnimation =
+                              Tween<double>(begin: begin, end: end).animate(
+                                CurvedAnimation(
+                                  parent: _doubleTapAnimationController,
+                                  curve: Curves.easeOutCubic,
+                                ),
+                              );
+
+                          _doubleTapListener = () {
+                            state.handleDoubleTap(
+                              scale: _doubleTapAnimation!.value,
+                              doubleTapPosition: pointerDownPosition,
+                            );
+                          };
+                          _doubleTapAnimation!.addListener(_doubleTapListener!);
+
+                          _doubleTapAnimationController.forward();
+                        },
+                        initGestureConfigHandler: (state) {
+                          return GestureConfig(
+                            // Do not let the image shrink below its fitted
+                            // size: ExtendedImage recenters sub-1.0 scales,
+                            // which otherwise makes pinch focus jump away.
+                            minScale: 1.0,
+                            animationMinScale: 1.0,
+                            maxScale: 8.0,
+                            animationMaxScale: 9.0,
+                            speed: 1.0,
+                            inertialSpeed: 120.0,
+                            initialScale: 1.0,
+                            inPageView: true,
+                            initialAlignment: InitialAlignment.center,
                           );
-                        };
-                        _doubleTapAnimation!.addListener(_doubleTapListener!);
+                        },
+                      );
+                      final backgroundUrl = pic.webpageCardBackgroundUrl
+                          ?.trim();
+                      final hasBackground =
+                          backgroundUrl != null &&
+                          backgroundUrl.isNotEmpty &&
+                          backgroundUrl != pic.originalUrl &&
+                          backgroundUrl != pic.largeUrl;
 
-                        _doubleTapAnimationController.forward();
-                      },
-                      initGestureConfigHandler: (state) {
-                        return GestureConfig(
-                          // Do not let the image shrink below its fitted
-                          // size: ExtendedImage recenters sub-1.0 scales,
-                          // which otherwise makes pinch focus jump away.
-                          minScale: 1.0,
-                          animationMinScale: 1.0,
-                          maxScale: 8.0,
-                          animationMaxScale: 9.0,
-                          speed: 1.0,
-                          inertialSpeed: 120.0,
-                          initialScale: 1.0,
-                          inPageView: true,
-                          initialAlignment: InitialAlignment.center,
-                        );
-                      },
-                    );
-                    final backgroundUrl = pic.webpageCardBackgroundUrl?.trim();
-                    final hasBackground =
-                        backgroundUrl != null &&
-                        backgroundUrl.isNotEmpty &&
-                        backgroundUrl != pic.originalUrl &&
-                        backgroundUrl != pic.largeUrl;
+                      final imageWidget = ColoredBox(
+                        color: pic.isWebpageCard
+                            ? Colors.white
+                            : Colors.transparent,
+                        child: hasBackground
+                            ? Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  IgnorePointer(
+                                    child: ExtendedImage.network(
+                                      backgroundUrl,
+                                      width: double.infinity,
+                                      height: double.infinity,
+                                      headers: ApiConstants.imageHeaders,
+                                      fit: BoxFit.contain,
+                                      cache: true,
+                                    ),
+                                  ),
+                                  foregroundImage,
+                                ],
+                              )
+                            : foregroundImage,
+                      );
 
-                    final imageWidget = ColoredBox(
-                      color: pic.isWebpageCard
-                          ? Colors.white
-                          : Colors.transparent,
-                      child: hasBackground
-                          ? Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                IgnorePointer(
-                                  child: ExtendedImage.network(
-                                    backgroundUrl,
-                                    width: double.infinity,
-                                    height: double.infinity,
-                                    headers: ApiConstants.imageHeaders,
-                                    fit: BoxFit.contain,
-                                    cache: true,
+                      return _withGalleryHero(
+                        index,
+                        pic,
+                        Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            imageWidget,
+                            // Live Photo Video Overlay when active
+                            if (pic.isLivePhoto &&
+                                controller != null &&
+                                isInitialized &&
+                                _isPlayingLive &&
+                                _currentIndex == index)
+                              Positioned.fill(
+                                child: Center(
+                                  child: AspectRatio(
+                                    aspectRatio:
+                                        controller.value.aspectRatio > 0
+                                        ? controller.value.aspectRatio
+                                        : 1.0,
+                                    child: VideoPlayer(controller),
                                   ),
                                 ),
-                                foregroundImage,
-                              ],
-                            )
-                          : foregroundImage,
-                    );
-
-                    return _withGalleryHero(
-                      index,
-                      pic,
-                      Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          imageWidget,
-                          // Live Photo Video Overlay when active
-                          if (pic.isLivePhoto &&
-                              controller != null &&
-                              isInitialized &&
-                              _isPlayingLive &&
-                              _currentIndex == index)
-                            Positioned.fill(
-                              child: Center(
-                                child: AspectRatio(
-                                  aspectRatio: controller.value.aspectRatio > 0
-                                      ? controller.value.aspectRatio
-                                      : 1.0,
-                                  child: VideoPlayer(controller),
-                                ),
                               ),
-                            ),
-                        ],
-                      ),
-                    );
-                  },
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
             ),
@@ -1348,6 +1405,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                                 Icons.arrow_back_rounded,
                                 color: Colors.white,
                               ),
+                              useLiquidGlass: useLiquidGlass,
                               // 返回动作不再依赖水波纹触感。
                               onPressed: () => Navigator.of(context).pop(),
                             ),
@@ -1455,6 +1513,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                                       Icons.download_rounded,
                                       color: Colors.white,
                                     ),
+                              useLiquidGlass: useLiquidGlass,
                               onPressed: _isSaving ? null : _saveCurrentImage,
                             ),
                           ],
@@ -1468,6 +1527,15 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
         ),
       ),
     );
+    return useLiquidGlass
+        ? GlassAdaptiveScope(
+            minQuality: GlassQuality.standard,
+            child: GlassPage(
+              enableBackgroundSampling: true,
+              child: galleryPage,
+            ),
+          )
+        : galleryPage;
   }
 }
 
@@ -1478,6 +1546,7 @@ class _GalleryGlassIconButton extends StatefulWidget {
     required this.onPressed,
     required this.opacity,
     required this.opacityKey,
+    required this.useLiquidGlass,
   });
 
   final Widget icon;
@@ -1485,6 +1554,7 @@ class _GalleryGlassIconButton extends StatefulWidget {
   final VoidCallback? onPressed;
   final double opacity;
   final Key opacityKey;
+  final bool useLiquidGlass;
 
   @override
   State<_GalleryGlassIconButton> createState() =>
@@ -1498,7 +1568,21 @@ class _GalleryGlassIconButtonState extends State<_GalleryGlassIconButton> {
   @override
   void initState() {
     super.initState();
-    if (ui.ImageFilter.isShaderFilterSupported) _loadShader();
+    if (!widget.useLiquidGlass && ui.ImageFilter.isShaderFilterSupported) {
+      _loadShader();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _GalleryGlassIconButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.useLiquidGlass == widget.useLiquidGlass) return;
+    if (widget.useLiquidGlass) {
+      _shader?.dispose();
+      _shader = null;
+    } else if (ui.ImageFilter.isShaderFilterSupported) {
+      _loadShader();
+    }
   }
 
   Future<void> _loadShader() async {
@@ -1506,7 +1590,12 @@ class _GalleryGlassIconButtonState extends State<_GalleryGlassIconButton> {
       final program = await (_programFuture ??= ui.FragmentProgram.fromAsset(
         'shaders/gallery_glass_button.frag',
       ));
-      if (mounted) setState(() => _shader = program.fragmentShader());
+      final shader = program.fragmentShader();
+      if (!mounted || widget.useLiquidGlass) {
+        shader.dispose();
+        return;
+      }
+      setState(() => _shader = shader);
     } catch (_) {
       // Blur and the highlight surface remain usable if shader loading fails.
     }
@@ -1521,6 +1610,46 @@ class _GalleryGlassIconButtonState extends State<_GalleryGlassIconButton> {
   @override
   Widget build(BuildContext context) {
     final opacity = widget.opacity;
+    if (widget.useLiquidGlass) {
+      return GestureDetector(
+        excludeFromSemantics: true,
+        // Long holds are reserved for exploring the liquid effect.
+        onLongPress: () {},
+        child: GlassButton(
+          label: widget.tooltip,
+          width: 48,
+          height: 48,
+          icon: widget.icon,
+          iconSize: 22,
+          iconColor: Colors.white,
+          onTap: () => widget.onPressed?.call(),
+          enabled: widget.onPressed != null,
+          useOwnLayer: true,
+          stretch: 0.8,
+          anchorStretchSettings: const AnchorStretchSettings(
+            intensity: 0.8,
+            squashFactor: 0.3,
+            translationDamping: 0.15,
+            bounciness: 0.2,
+          ),
+          glowColor: const Color(0x20FFFFFF),
+          glowOpacity: 1,
+          quality: GlassQuality.premium,
+          settings: LiquidGlassSettings(
+            visibility: opacity,
+            glassColor: const Color(0x66000000),
+            bodyMode: GlassBodyMode.clear,
+            thickness: 32,
+            blur: 2,
+            lightIntensity: 0.25,
+            ambientStrength: 0,
+            refractiveIndex: 1.24,
+            chromaticAberration: 0.025,
+            shadowElevation: 0,
+          ),
+        ),
+      );
+    }
     final blur = ui.ImageFilter.blur(
       sigmaX: 2.5 * opacity,
       sigmaY: 2.5 * opacity,
