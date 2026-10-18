@@ -200,29 +200,16 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   // Fetch a raw page without blocking UI or setting state directly
   Future<List<WeiboStatusModel>> _fetchRawPage(int page,
       {int feature = 0, String? uidToUse}) async {
-    final client = ref.read(weiboDioClientProvider);
     final effectiveUid =
         uidToUse ?? (_user.id.isNotEmpty ? _user.id : widget.uid);
     if (effectiveUid == null || effectiveUid.isEmpty) return [];
 
-    try {
-      final res = await client.dio.get(
-        ApiConstants.userTimeline,
-        queryParameters: {
-          'uid': effectiveUid,
-          'page': page,
-          'feature': feature,
-        },
-        options:
-            Options(headers: {'Referer': 'https://weibo.com/u/$effectiveUid'}),
-      );
-
-      if (res.data is Map<String, dynamic>) {
-        final rawList = res.data['data']?['list'] as List? ?? [];
-        return await ref.read(feedRepositoryProvider).parseStatuses(rawList);
-      }
-    } catch (_) {}
-    return [];
+    return ref.read(feedRepositoryProvider).getUserTimeline(
+          uid: effectiveUid,
+          page: page,
+          feature: feature,
+          resolveLongText: false,
+        );
   }
 
   // Actively prefetch background pages in parallel to maintain a rich video/album buffer
@@ -379,32 +366,21 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
 
   Future<bool> _loadTimeline(
       {required int page, bool isRefresh = false, String? uidToUse}) async {
-    final client = ref.read(weiboDioClientProvider);
     final effectiveUid =
         uidToUse ?? (_user.id.isNotEmpty ? _user.id : widget.uid);
     final weiboStyle = ref.read(weiboStyleProvider);
 
     try {
-      final res = await client.dio.get(
-        ApiConstants.userTimeline,
-        queryParameters: {
-          if (effectiveUid != null && effectiveUid.isNotEmpty)
-            'uid': effectiveUid,
-          'page': page,
-          'feature': _currentFeature,
-        },
-        options:
-            Options(headers: {'Referer': 'https://weibo.com/u/$effectiveUid'}),
-      );
-
-      if (res.data is Map<String, dynamic>) {
-        final rawList = res.data['data']?['list'] as List? ?? [];
-        var list = await ref
-            .read(feedRepositoryProvider)
-            .parseStatuses(rawList, resolveLongText: true);
+      if (effectiveUid != null && effectiveUid.isNotEmpty) {
+        var list = await ref.read(feedRepositoryProvider).getUserTimeline(
+              uid: effectiveUid,
+              page: page,
+              feature: _currentFeature,
+              resolveLongText: true,
+            );
 
         // 2. 个人主页是否显示ta赞过的微博过滤
-        if (!weiboStyle.showProfileLikedTweets && effectiveUid != null) {
+        if (!weiboStyle.showProfileLikedTweets) {
           list = list.where((s) {
             final isLikedTitle =
                 s.titleText != null && s.titleText!.contains('赞');
@@ -445,7 +421,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             _page = page;
             _hasMore = list.isNotEmpty;
             _isLoading = false;
-            if (effectiveUid != null && effectiveUid.isNotEmpty) {
+            if (effectiveUid.isNotEmpty) {
               _profileTimelineCache[effectiveUid] = List.from(_statuses);
               _profileVideoCache[effectiveUid] = _getVideoStatuses();
             }
@@ -458,6 +434,7 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
     // Fallback: Query discover/topic stream if mymblog is not directly accessible in visitor mode
     if (isRefresh && _statuses.isEmpty) {
       try {
+        final client = ref.read(weiboDioClientProvider);
         final searchRes = await client.dio.get(
           ApiConstants.hotTimeline,
           queryParameters: {

@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/network/weibo_dio_client.dart';
+import '../../../core/network/weibo_native_api.dart';
 import '../../../core/storage/storage_service.dart';
 import '../../detail/data/detail_repository.dart';
 import 'models/weibo_engagement_models.dart';
@@ -85,13 +86,18 @@ class UserGroupsResult {
 class FeedRepository {
   final WeiboDioClient _client;
   final StorageService _storage;
+  final WeiboNativeApi _nativeApi;
   final DetailRepository _detailRepository;
   final Map<String, Future<Map<String, dynamic>?>> _officialStatusRequests = {};
 
   static const int _statusParseConcurrency = 6;
 
-  FeedRepository(this._client, this._storage)
-      : _detailRepository = DetailRepository(_client);
+  FeedRepository(
+    this._client,
+    this._storage, {
+    WeiboNativeApi? nativeApi,
+  })  : _nativeApi = nativeApi ?? WeiboNativeApi(),
+        _detailRepository = DetailRepository(_client);
 
   /// Parses desktop timeline statuses and, only when an official engagement
   /// marker is present, fills omitted poll/topic metadata from the official
@@ -366,6 +372,43 @@ class FeedRepository {
     final hot = <WeiboGroupModel>[];
     var loaded = false;
 
+    // 方案 0: 原生客户端 API 通道 (groups/allgroups，不依赖网页 Cookie)
+    try {
+      final nativeData = await _nativeApi.getJson('groups/allgroups');
+      if (nativeData != null && nativeData['groups'] is List) {
+        final rawGroups = nativeData['groups'] as List;
+        for (final item in rawGroups) {
+          if (item is Map) {
+            final title = item['title']?.toString() ?? '';
+            final groupList = item['group'] as List? ?? [];
+            for (final g in groupList) {
+              if (g is Map) {
+                final model =
+                    WeiboGroupModel.fromJson(Map<String, dynamic>.from(g));
+                if (model.gid.isNotEmpty && model.title.isNotEmpty) {
+                  if (title == '我的分组') {
+                    pers.add(model);
+                  } else if (title == '默认分组') {
+                    def.add(model);
+                  } else if (title == '我的频道' || title == '频道推荐') {
+                    hot.add(model);
+                  }
+                }
+              }
+            }
+          }
+        }
+        if (def.isNotEmpty || pers.isNotEmpty || hot.isNotEmpty) {
+          return UserGroupsResult(
+            defaultGroups: def,
+            personalGroups: pers,
+            hotGroups: hot,
+            loaded: true,
+          );
+        }
+      }
+    } catch (_) {}
+
     try {
       final response = await _client.dio.get(
         '/ajax/feed/allGroups',
@@ -449,6 +492,52 @@ class FeedRepository {
     String maxId = '0',
     String sinceId = '0',
   }) async {
+    // 方案 0: 原生客户端 API 通道 (api.weibo.cn 签名接口，不依赖网页 Cookie)
+    try {
+      final nativeParams = <String, String>{
+        'page': page.toString(),
+        'count': '25',
+        'trim_user': '0',
+        'trim_page_recom': '1',
+        'base_app': '0',
+        'ignore_inturrpted_error': 'true',
+      };
+      if (sinceId != '0' && sinceId.isNotEmpty) {
+        nativeParams['since_id'] = sinceId;
+      }
+      if (maxId != '0' && maxId.isNotEmpty) {
+        nativeParams['max_id'] = maxId;
+      }
+
+      final endpoint = (page == 1 && (maxId == '0' || maxId.isEmpty))
+          ? 'statuses/unread_friends_timeline'
+          : 'statuses/friends/timeline';
+
+      final data = await _nativeApi.getJson(endpoint, nativeParams);
+      if (data != null) {
+        final rawStatuses = data['statuses'] as List? ?? [];
+        final statuses = await _parseStatuses(
+          rawStatuses,
+          resolveLongText: true,
+        );
+
+        if (statuses.isNotEmpty) {
+          final nextMaxId = data['max_id'] != null &&
+                  data['max_id'] != 0 &&
+                  data['max_id'].toString() != '0'
+              ? data['max_id'].toString()
+              : (statuses.last.id.isNotEmpty ? statuses.last.id : maxId);
+
+          return TimelineResult(
+            statuses: statuses,
+            maxId: nextMaxId,
+            sinceId: data['since_id']?.toString() ?? '0',
+            hasMore: true,
+          );
+        }
+      }
+    } catch (_) {}
+
     // 方案 1: 桌面端 Ajax 直连通道 (GET /ajax/feed/friendstimeline 带 list_id=10001 与 refresh 标识)
     try {
       final queryParams = <String, dynamic>{
@@ -656,6 +745,48 @@ class FeedRepository {
     String maxId = '0',
     String sinceId = '0',
   }) async {
+    // 方案 0: 原生客户端 API 通道 (api.weibo.cn/2/groups/timeline)
+    try {
+      final nativeParams = <String, String>{
+        'list_id': gid,
+        'page': page.toString(),
+        'count': '25',
+        'trim_user': '0',
+        'trim_page_recom': '1',
+        'base_app': '0',
+      };
+      if (sinceId != '0' && sinceId.isNotEmpty) {
+        nativeParams['since_id'] = sinceId;
+      }
+      if (maxId != '0' && maxId.isNotEmpty) {
+        nativeParams['max_id'] = maxId;
+      }
+
+      final data = await _nativeApi.getJson('groups/timeline', nativeParams);
+      if (data != null) {
+        final rawStatuses = data['statuses'] as List? ?? [];
+        final statuses = await _parseStatuses(
+          rawStatuses,
+          resolveLongText: true,
+        );
+
+        if (statuses.isNotEmpty) {
+          final nextMaxId = data['max_id'] != null &&
+                  data['max_id'] != 0 &&
+                  data['max_id'].toString() != '0'
+              ? data['max_id'].toString()
+              : (statuses.last.id.isNotEmpty ? statuses.last.id : maxId);
+
+          return TimelineResult(
+            statuses: statuses,
+            maxId: nextMaxId,
+            sinceId: data['since_id']?.toString() ?? sinceId,
+            hasMore: true,
+          );
+        }
+      }
+    } catch (_) {}
+
     try {
       final response = await _client.dio.get(
         '/ajax/feed/groupstimeline',
@@ -705,6 +836,65 @@ class FeedRepository {
     } catch (_) {}
 
     return const TimelineResult(statuses: [], hasMore: false);
+  }
+
+  /// Direct Weibo User Timeline (个人主页微博列表) with Dual Channel (Native API + Web Fallback)
+  Future<List<WeiboStatusModel>> getUserTimeline({
+    required String uid,
+    int page = 1,
+    int feature = 0,
+    bool resolveLongText = true,
+  }) async {
+    final effectiveUid = uid.trim();
+    if (effectiveUid.isEmpty) return [];
+
+    // 方案 0: 原生客户端 API 通道 (api.weibo.cn/2/statuses/user_timeline)
+    try {
+      final nativeParams = <String, String>{
+        'uid': effectiveUid,
+        'page': page.toString(),
+        'feature': feature.toString(),
+        'count': '20',
+        'trim_user': '0',
+        'base_app': '0',
+      };
+      final data =
+          await _nativeApi.getJson('statuses/user_timeline', nativeParams);
+      if (data != null) {
+        final rawStatuses = data['statuses'] as List? ??
+            data['data']?['list'] as List? ??
+            [];
+        if (rawStatuses.isNotEmpty) {
+          return await _parseStatuses(
+            rawStatuses,
+            resolveLongText: resolveLongText,
+          );
+        }
+      }
+    } catch (_) {}
+
+    // 方案 1: Web 端直连通道 (GET /ajax/statuses/mymblog)
+    try {
+      final res = await _client.dio.get(
+        ApiConstants.userTimeline,
+        queryParameters: {
+          'uid': effectiveUid,
+          'page': page,
+          'feature': feature,
+        },
+        options:
+            Options(headers: {'Referer': 'https://weibo.com/u/$effectiveUid'}),
+      );
+      if (res.data is Map<String, dynamic>) {
+        final rawList = res.data['data']?['list'] as List? ?? [];
+        return await _parseStatuses(
+          rawList,
+          resolveLongText: resolveLongText,
+        );
+      }
+    } catch (_) {}
+
+    return [];
   }
 
   Future<PollVoteResult> setPollVote({
@@ -1328,5 +1518,6 @@ class FeedRepository {
 final feedRepositoryProvider = Provider<FeedRepository>((ref) {
   final client = ref.watch(weiboDioClientProvider);
   final storage = ref.watch(storageServiceProvider);
-  return FeedRepository(client, storage);
+  final nativeApi = ref.watch(weiboNativeApiProvider);
+  return FeedRepository(client, storage, nativeApi: nativeApi);
 });

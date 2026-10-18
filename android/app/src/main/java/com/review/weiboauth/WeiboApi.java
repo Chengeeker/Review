@@ -23,7 +23,7 @@ public final class WeiboApi {
     private static final String API_ROOT = "https://api.weibo.cn/2/";
     private static final String REVIEW_CONFIG = "https://weibo.com/ajax/config/getconfig";
     private static final int TIMEOUT_MS = 20_000;
-    private static final int MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+    private static final int MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 
     static final class ApiResult {
         final int httpCode;
@@ -203,15 +203,38 @@ public final class WeiboApi {
         return new ApiResult(response.httpCode, responseCode, next, false, false);
     }
 
+    public String request(WeiboSession session, String endpoint, Map<String, String> extraParams) throws Exception {
+        Map<String, String> query = commonLoginQuery();
+        if (session != null) {
+            if (session.gsid != null && !session.gsid.isEmpty()) {
+                query.put("gsid", session.gsid);
+            }
+            if (session.uid != null && !session.uid.isEmpty()) {
+                query.put("s", nativeRuntime.oauthSignature(session.uid));
+            }
+        }
+        if (extraParams != null) {
+            for (Map.Entry<String, String> entry : extraParams.entrySet()) {
+                if (entry.getValue() != null) {
+                    query.put(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+        String cleanEndpoint = endpoint.startsWith("/") ? endpoint.substring(1) : endpoint;
+        JsonResponse response = sendJsonRequest("GET", cleanEndpoint, query, null);
+        return response.json != null ? response.json.toString() : "{}";
+    }
+
     private JsonResponse sendJsonRequest(String method, String endpoint, Map<String, String> query,
                                          Map<String, String> form) throws Exception {
-        String noCumUrl = RequestData.addQuery(API_ROOT + endpoint, query);
+        String cleanEndpoint = endpoint.startsWith("/") ? endpoint.substring(1) : endpoint;
+        String noCumUrl = RequestData.addQuery(API_ROOT + cleanEndpoint, query);
         String pathWithQuery = new URL(noCumUrl).getFile();
         String cum = nativeRuntime.cum(pathWithQuery);
         if (cum != null && !cum.isEmpty()) {
             query.put("cum", cum);
         }
-        String url = RequestData.addQuery(API_ROOT + endpoint, query);
+        String url = RequestData.addQuery(API_ROOT + cleanEndpoint, query);
 
         HttpURLConnection connection = open(url);
         int status;
@@ -235,9 +258,14 @@ public final class WeiboApi {
             connection.disconnect();
         }
 
-        android.util.Log.i("WeiboAuth", method + " " + endpoint + " status=" + status);
+        android.util.Log.i("WeiboAuth", method + " " + cleanEndpoint + " status=" + status);
 
         String responseCode = json == null ? "non_json" : responseCode(json);
+        if (json != null && json.has("error_code") && json.optInt("error_code") != 0) {
+            String msg = json.optString("error", "");
+            if (empty(msg)) msg = json.optString("msg", "");
+            throw new ApiFailure("api_error", status, String.valueOf(json.opt("error_code")), msg);
+        }
         if (status < 200 || status >= 300 || json == null) {
             String msg = json != null ? json.optString("msg", "") : "";
             if (empty(msg) && json != null) msg = json.optString("errmsg", "");

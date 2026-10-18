@@ -41,6 +41,11 @@ class ReviewNavigationBar extends ConsumerWidget {
     ),
   ];
 
+  static double _floatingBarWidth(BuildContext context) =>
+      math.min(440.0, MediaQuery.sizeOf(context).width - 40.0).toDouble() *
+      2 /
+      3;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final useFloating = ref.watch(
@@ -81,8 +86,8 @@ class ReviewNavigationBar extends ConsumerWidget {
         child: Padding(
           padding: EdgeInsets.only(bottom: hasBottomInset ? 6 : 14),
           child: Container(
-            width: 264,
-            height: 64,
+            width: _floatingBarWidth(context),
+            height: 56,
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
               color: colorScheme.surfaceContainerHigh,
@@ -316,12 +321,7 @@ class _LiquidGlassNavigationBarState extends State<_LiquidGlassNavigationBar> {
     child: Align(
       alignment: Alignment.bottomCenter,
       child: SizedBox(
-        width:
-            math
-                .min(440.0, MediaQuery.sizeOf(context).width - 40.0)
-                .toDouble() *
-            2 /
-            3,
+        width: ReviewNavigationBar._floatingBarWidth(context),
         height: 56,
         child: Listener(
           onPointerDown: _onPointerDown,

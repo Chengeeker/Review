@@ -1,6 +1,6 @@
 # Review 开发与技术架构文档
 
-> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-10-18；当前应用版本：`3.6.1+192`。
+> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-10-18；当前应用版本：`3.7.0+193`。
 >
 > `README.md` 用于项目介绍；本文档维护当前实现，不记录登录 Cookie、Token、密码或其他凭据。
 
@@ -50,7 +50,7 @@ Review 是 Flutter 编写的微博网页端风格客户端。凡是涉及微博�
 
 液态玻璃底栏使用 `liquid_glass_widgets: ^1.13.0`。`main()` 在 `runApp` 前执行 `LiquidGlassWidgets.initialize(enablePerformanceMonitor: false)`，并以 `LiquidGlassWidgets.wrap` 包裹应用、传入 `Theme.maybeBrightnessOf`。主页面由 `GlassPage` 提供隔离作用域；仅在“使用悬浮底栏”和独立的“使用液态玻璃效果”同时开启时，才将 `GlassBackgroundSource(enabled: true)` 挂到主页面 body，`Scaffold.extendBody` 在该路径为 true。背景源只采集页面 body，不包含导航栏本身，避免反馈采样；关闭效果时不运行背景采样并回到原材质导航。玻璃底栏实际启用时，在局部 `GlassAdaptiveScope` 不覆写初始画质：使用库完成初始化预热后的 premium 首帧路径，并按静态 shader 支持探测和运行帧耗时自适应降级/恢复，避免固定 `standard` 起步后等待质量升档；应用其他页面不参与这项检测。
 
-液态玻璃只替换当前实际存在的“时间线、热搜、设置”三个槽位，不增加尚不存在的消息/我的入口或发布按钮。宽度为既有响应式宽度 `min(440, 屏幕宽度 - 40)` 的约 `2/3`、栏高 56、底部 `SafeArea` 最小留白 21；主体参数为深色 40% 玻璃、clear body、厚度 10、blur 2.0、折射率 1.19、色散 0.008，主体和背景质量均为 premium（受局部自适应质量上限约束）；选中指示器折射率 1.18、色散 0.025、inner blur 6、pinch 0.7、press scale 1.06。选中指示胶囊使用深色 40% 填充（`#66000000`），选中和未选中图标/文字均为白色，以胶囊明暗与图标状态区分选中项，保证浅色图片背景上的文字可读；未选中仍使用白色。玻璃触控的选择回调延迟至松手：短点按仍保留当前 Tab 的回顶/刷新，长按或水平拖动不触发同页动作；只有水平释放速度达到 `1000 logical px/s` 的快速抛动才限制为起始页相邻一项，普通慢拖按松手时水滴所在页面选择（如时间线慢拖到设置可跨过热搜）。取消手势不提交；键盘和读屏语义激活仍即时生效。三个根页面在液态玻璃模式为 `MediaQuery.viewPadding.bottom + 76dp`；使用原始系统 inset，避免 `Scaffold.extendBody` 注入底栏高度后重复留白。标准悬浮和贴底模式仍分别使用 72dp 与 16dp。“使用液态玻璃效果”在个性化页作为独立分组常驻显示并独立保存；悬浮底栏需同时开启悬浮栏和液态玻璃开关，画廊返回/下载按钮只受液态玻璃开关控制。
+悬浮底栏的标准 M3 与液态玻璃两种样式共用响应式宽度 `min(440, 屏幕宽度 - 40)` 的 `2/3` 和 56dp 高度；标准样式仍使用主题 surface 背景、阴影、32dp 圆角和 4dp 内边距，液态玻璃样式仍使用独立光学参数。液态玻璃只替换当前实际存在的“时间线、热搜、设置”三个槽位，不增加尚不存在的消息/我的入口或发布按钮；底部 `SafeArea` 最小留白 21。主体参数为深色 40% 玻璃、clear body、厚度 10、blur 2.0、折射率 1.19、色散 0.008，主体和背景质量均为 premium（受局部自适应质量上限约束）；选中指示器折射率 1.18、色散 0.025、inner blur 6、pinch 0.7、press scale 1.06。选中指示胶囊使用深色 40% 填充（`#66000000`），选中和未选中图标/文字均为白色，以胶囊明暗与图标状态区分选中项，保证浅色图片背景上的文字可读。玻璃触控的选择回调延迟至松手：短点按仍保留当前 Tab 的回顶/刷新，长按或水平拖动不触发同页动作；只有水平释放速度达到 `1000 logical px/s` 的快速抛动才限制为起始页相邻一项，普通慢拖按松手时水滴所在页面选择（如时间线慢拖到设置可跨过热搜）。取消手势不提交；键盘和读屏语义激活仍即时生效。三个根页面在液态玻璃模式为 `MediaQuery.viewPadding.bottom + 76dp`；使用原始系统 inset，避免 `Scaffold.extendBody` 注入底栏高度后重复留白。标准悬浮和贴底模式仍分别使用 72dp 与 16dp。“使用液态玻璃效果”在个性化页作为独立分组常驻显示并独立保存；悬浮底栏需同时开启悬浮栏和液态玻璃开关，画廊返回/下载按钮只受液态玻璃开关控制。
 
 图片画廊左上角返回与右上角下载保留 48dp 点击区。开关关闭时使用既有局部 shader/模糊按钮，布局和按钮回调保持当前状态；开关开启时使用库 `GlassButton` 的 `premium` 折射路径，由画廊局部 `GlassAdaptiveScope` 在 `standard` 与 `premium` 间依据设备能力自适应，避免降到不含折射 shader 的 `minimal`，且使用独立按钮玻璃层。静止态将透镜厚度设为 32、折射率设为 1.24，使 48dp 圆钮默认显示清晰的边缘折射；不要显式覆盖 `interactionScale`：库原生按压膨胀约增加最长边 17dp，让圆钮按住后展开成更大的水滴。只给这两个小控件保留 `standard` 下限，控制 GPU 成本。结合 `chromaticAberration: 0.025`、`stretch: 0.8` 和锚定拉伸强度 0.8，按压拖动时图片/视频内容随水滴边缘产生形变。触控高光沿用底栏白色交互光。短点仍执行返回/下载；长按与拖动只保留水滴交互，不执行按钮动作。画廊仅在该偏好开启时包裹 `GlassPage`，并将 `GlassBackgroundSource` 限定在图片/视频媒体视口，不把顶栏按钮采入背景源；下载期间按钮仍禁用，按钮标签继续提供读屏语义。动态背景采样成本、低端设备自适应质量与实时视频观感仍需目标设备检查。
 
@@ -209,9 +209,8 @@ lib/
 
 以下是当前代码实际使用的接口类别；接口字段可能随微博网页端变化，新增调用必须先核对网页端响应，不得只根据本地模型名称推断成功。
 
-| 功能 | 当前接口与双通道分发规则 |
-| --- | --- |
-| 关注流/热门流/分组流 | 登录后先尝试 `/ajax/feed/friendstimeline`；首屏失败或为空时尝试 `/ajax/feed/unreadfriendstimeline`。**在移动会话下或桌面关注流无内容时，自动无缝回退移动端关注流 `GET https://m.weibo.cn/feed/friends`**；访客可回退 `/ajax/feed/hottimeline`；分组使用 `/ajax/feed/groupstimeline`、`/ajax/feed/allGroups` |
+| 关注流/热门流/分组流 | **优先官方客户端原生 API（通道 0）**：关注流首屏走 `statuses/unread_friends_timeline`、分页走 `statuses/friends/timeline`；分组流走 `groups/timeline`（传 `list_id`）；分组列表走 `groups/allgroups`。原生未就绪或请求失败时，自动无缝降级至 Web 端通道：先尝试桌面 `/ajax/feed/friendstimeline` 与 `/ajax/feed/unreadfriendstimeline`；在移动会话下或桌面关注流无内容时，自动无缝回退移动端关注流 `GET https://m.weibo.cn/feed/friends`；访客可回退 `/ajax/feed/hottimeline`；分组回退 `/ajax/feed/groupstimeline`、`/ajax/feed/allGroups` |
+| 用户主页微博流 | **优先官方客户端原生 API（通道 0）**：调用 `statuses/user_timeline`（传 `uid`），直连官方移动核心接口，彻底消除网页 Cookie 到期限制；原生未就绪或调用失败时，自动降级回退至网页端 `/ajax/statuses/mymblog` |
 | 发布/编辑/删除 | 发布优先 `/ajax/statuses/update`（桌面失败或移动会话时回退移动端 `m.weibo.cn/api/statuses/update`）；编辑使用 `/ajax/statuses/modify`；**删除微博按会话分发：移动端使用 `m.weibo.cn/profile/delMyblog`（携带 `mid`、`st`、`MLOGIN=1`），桌面端使用 `/ajax/statuses/destroy`** |
 | 评论/回复/二级评论 | 评论流与二级评论读取使用 `/ajax/statuses/buildComments`（一级评论使用 `fetch_level=0`，楼中楼使用 `fetch_level=1`，均使用响应外层 `max_id` 分页）。**评论写操作按会话分发：移动端使用 `m.weibo.cn/api/comments/create`、`reply`、`destroy`（携带 `st` 与 `MLOGIN=1`）；桌面端使用 `/ajax/statuses/buildComments`、`/ajax/comments/reply`、`/ajax/statuses/destroyComment`** |
 | 点赞/收藏 | **全操作支持双通道路由与乐观状态自动回滚**：点赞/取消点赞在移动端走 `m.weibo.cn/api/attitudes/create` 与 `destroy`（携带 `id`、`attitude=heart`、`st`、`MLOGIN=1`），桌面端走 `/ajax/statuses/setLike` 与 `cancelLike`；收藏/取消收藏在移动端走 `m.weibo.cn/api/favorites/create` 与 `destory`（携带 `id`、`st`、`MLOGIN=1`），桌面端走 `/ajax/statuses/createFavorites` 与 `destoryFavorites`。我的收藏与我的赞列表在桌面 `/ajax/favorites/all_fav` 与 `/ajax/statuses/likelist` 无返回时，自动降级回退移动端接口及容器流 |
@@ -382,6 +381,11 @@ lib/
 - **冷启动后台线程 JNI aa4 缺失引发 SIGABRT 根治（2.19.11）**：
   1. **斩断冷启动死循环链路**：在 `WeiboAuthManager.java` 的 `restoreSession()` 中彻底移除同步调用 `api().refresh(session)`，直接返回本地 KeyStore 安全解密的 `session`（包含合法 `uid` 与 `cookie`），冷启动链路瞬间秒开（0 毫秒阻塞、0 崩溃风险）。
   2. **完整对齐上游 Share `WeicoSecurityUtils` JNI 规范**：依据上游 `WeicoSecurityUtils.smali` 完整重建 Java 壳层，补齐底层 native `generateS` 所依赖的 `aa4(String, String, String)` 静态回调及纯 Java 散列选取算法 `toSecurityValue`、`sha512`、`toHex`；同时补齐 `aa2`、`aa3`、`aaa`、`securityPsd`、`sinaPushParse`、`charToByte`、`hexString2Bytes` 以及全部底层 Native 导出签名，彻底杜绝 `mid == null` 和 `Fatal signal 6 (SIGABRT)`。
+- **信息流接入原生客户端 API，实现双通道容灾架构（3.7.0+193）**：
+  1. **核心根因与痛点验证**：此前登录系统虽成功获取底层客户端级 `WeiboSession`（内含 `gsid`、`sut`、`uid` 等持久凭据），但 Flutter 侧仅拿到并使用了网页端 Web Cookie（`SUB`/`SUBP`）。网页端 Cookie 有效期较短，一旦到期或被服务端主动失效，即便原生 Session 登录态未掉，Flutter 侧调用 `https://weibo.com/ajax/...` 依然会报未登录或刷不出信息流。
+  2. **官方客户端原生 API 直连通道（通道 0）**：原生层 `WeiboApi` 新增通用签名请求方法 `request(session, endpoint, params)`，自动装配移动端标准登录参数（`commonLoginQuery`）、绑定 `gsid`、计算 `oauthSignature(uid)`（基于 `WeicoSecurityUtils` 完整 JNI 体系）与 `cum` 校验签名，直连 `https://api.weibo.cn/2/`。`WeiboAuthManager` 引入内存活动会话缓存 `activeSession`，提供 `hasNativeSession()` 状态检查，消除每次请求的重复 AES-GCM 解密开销。`MainActivity.kt` 将异步通信线程池扩容为 4 线程，防止多流并发加载时产生串行阻塞，并通过 MethodChannel 提供 `requestWeiboApi` 与 `hasNativeSession`。
+  3. **Flutter 侧多层降级与双通道容灾**：引入 `WeiboNativeApi`，为 `FeedRepository` 注入原生请求能力。关注流优先请求原生未读关注流 `statuses/unread_friends_timeline`（首屏）与历史关注流 `statuses/friends/timeline`（分页）；原生异常或无返回时，自动平滑降级至桌面 Ajax（`friendstimeline` / `unreadfriendstimeline`）、移动端 H5（`m.weibo.cn/feed/friends`）及访客热门流。分组流与分组列表优先通过原生 API `groups/timeline`（带 `list_id`）与 `groups/allgroups` 读取；失败时降级至桌面端。用户主页微博流统一抽象为 `FeedRepository.getUserTimeline`，优先调用原生 API `statuses/user_timeline`，彻底摆脱网页 Cookie 寿命限制；失败时降级至桌面端 `/ajax/statuses/mymblog`。
+  4. **完全向后兼容**：保留既有 Web Cookie 导入与全部 Web 请求逻辑，形成“原生 API 优先 + Web 双通道容灾”高可靠闭环。
 
 ## 9. 设置页当前范围
 

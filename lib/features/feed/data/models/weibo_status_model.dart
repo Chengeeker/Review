@@ -1262,6 +1262,14 @@ class WeiboStatusModel {
       }
     }
 
+    if (pics.isEmpty && json['original_pic'] != null && json['original_pic'].toString().isNotEmpty) {
+      pics.add(WeiboPicModel.fromJson({
+        'thumbnail': {'url': json['thumbnail_pic']?.toString() ?? ''},
+        'large': {'url': json['bmiddle_pic']?.toString() ?? json['original_pic']?.toString() ?? ''},
+        'original': {'url': json['original_pic']?.toString() ?? ''},
+      }));
+    }
+
     // Parse mix_media_info (Multi-video / Mixed Media)
     final mixMediaInfo = json['mix_media_info'];
     if (mixMediaInfo is Map && mixMediaInfo['items'] is List) {
@@ -1289,8 +1297,8 @@ class WeiboStatusModel {
                             label == 'mp4_2160p60') {
                           vUrl = url;
                           break;
-                        } else if (vUrl == null) {
-                          vUrl = url;
+                        } else {
+                          vUrl ??= url;
                         }
                       }
                     }

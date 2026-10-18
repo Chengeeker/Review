@@ -29,7 +29,7 @@ class MainActivity : FlutterActivity() {
     private val MESSAGE_NOTIFICATIONS_CHANNEL = "com.review/message_notifications"
     private val MESSAGE_NOTIFICATION_WORK = "review_message_notifications"
     private var methodChannel: MethodChannel? = null
-    private val weiboAuthExecutor = Executors.newSingleThreadExecutor()
+    private val weiboAuthExecutor = Executors.newFixedThreadPool(4)
     @Volatile private var weiboAuthManager: WeiboAuthManager? = null
     private var initialUrl: String? = null
     private var notificationPermissionResult: MethodChannel.Result? = null
@@ -645,6 +645,16 @@ class MainActivity : FlutterActivity() {
                         true
                     }
                     "restoreSession" -> submitWeiboAuth(result) { it.restoreSession() }
+                    "hasNativeSession" -> submitWeiboAuth(result) { it.hasNativeSession() }
+                    "requestWeiboApi" -> {
+                        val endpoint = call.argument<String>("endpoint")?.trim().orEmpty()
+                        val params = call.argument<Map<String, String>>("params") ?: emptyMap()
+                        if (endpoint.isEmpty()) {
+                            loginInputError(result, "API endpoint cannot be empty")
+                        } else {
+                            submitWeiboAuth(result) { it.requestApi(endpoint, params) }
+                        }
+                    }
                     "logout" -> submitWeiboAuth(result) {
                         it.logout()
                         true

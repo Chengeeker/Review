@@ -11,10 +11,34 @@ public final class WeiboAuthManager {
     private final Context context;
     private final EncryptedSessionStore sessionStore;
     private WeiboSession pendingSession;
+    private WeiboSession activeSession;
 
     public WeiboAuthManager(Context context) {
         this.context = context.getApplicationContext();
         this.sessionStore = new EncryptedSessionStore(this.context);
+    }
+
+    private synchronized WeiboSession getActiveSession() {
+        if (activeSession != null) return activeSession;
+        try {
+            activeSession = sessionStore.load();
+        } catch (Throwable t) {
+            Log.w(TAG, "Failed to load active session", t);
+        }
+        return activeSession;
+    }
+
+    public synchronized boolean hasNativeSession() {
+        WeiboSession session = getActiveSession();
+        return session != null && session.gsid != null && !session.gsid.isEmpty();
+    }
+
+    public synchronized String requestApi(String endpoint, Map<String, String> params) throws Exception {
+        WeiboSession session = getActiveSession();
+        if (session == null || session.gsid == null || session.gsid.isEmpty()) {
+            throw new WeiboApi.ApiFailure("session_missing", 401, "none", "未登录或缺少原生会话");
+        }
+        return api().request(session, endpoint, params);
     }
 
     public synchronized Map<String, Object> requestSmsCode(String phone, String area) throws Exception {
@@ -50,6 +74,7 @@ public final class WeiboAuthManager {
     public synchronized boolean acceptPendingSession() throws Exception {
         if (pendingSession == null) return false;
         sessionStore.save(pendingSession);
+        activeSession = pendingSession;
         pendingSession = null;
         return true;
     }
@@ -60,7 +85,7 @@ public final class WeiboAuthManager {
 
     public synchronized Map<String, Object> restoreSession() {
         try {
-            WeiboSession session = sessionStore.load();
+            WeiboSession session = getActiveSession();
             if (session == null) return null;
 
             Map<String, Object> result = new LinkedHashMap<>();
@@ -75,6 +100,7 @@ public final class WeiboAuthManager {
     }
 
     public synchronized void logout() throws Exception {
+        activeSession = null;
         pendingSession = null;
         sessionStore.clear();
     }

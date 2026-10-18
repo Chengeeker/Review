@@ -1,5 +1,20 @@
 # Review 变更记录
 
+## 3.7.0+193（2026-10-18）
+
+- **信息流接入官方客户端原生 API，实现双通道容灾架构**：
+  - 核实并解决“登录未掉但网页 Cookie 到期导致信息流刷不出”的问题。原生底层（`WeiboApi`/`WeiboAuthManager`）具备完整的客户端鉴权凭据（`gsid`、`sut`、`oauthSignature` 及 `cum` 校验签名），扩展原生请求转发接口，使信息流能以原生移动客户端身份直连官方核心 API（`https://api.weibo.cn/2/`）。
+  - **关注流**：优先通过原生 API 调用 `statuses/unread_friends_timeline`（首屏未读）与 `statuses/friends/timeline`（历史分页），原生失效或网络异常时自动无缝降级至桌面 Ajax、移动端 H5 关注流及热门流。
+  - **分组流与分组列表**：优先通过原生 API 获取分组微博 `groups/timeline`（带 `list_id`）与分组列表 `groups/allgroups`，异常时降级至桌面端接口。
+  - **用户主页微博流**：统一抽象为 `FeedRepository.getUserTimeline`，优先调用原生 API `statuses/user_timeline`，彻底摆脱网页端 Cookie 寿命限制；失败时降级至桌面端 `/ajax/statuses/mymblog`。
+  - **双通道容灾与完全向后兼容**：保留所有既有网页端 Cookie 导入与 Web 请求链路；支持桌面端、移动端与原生 API 三层容灾。
+- 架构与工程实现：
+  - `WeiboApi.java` 增加 `request(session, endpoint, params)` 方法并扩容响应上限至 4MB，`WeiboAuthManager.java` 引入内存会话缓存 `activeSession` 与 `hasNativeSession()`。
+  - `MainActivity.kt` 原生通信线程池扩容至 4 线程，防止多并发请求串行阻塞；MethodChannel 增加 `hasNativeSession` 与 `requestWeiboApi`。
+  - 新增 `WeiboNativeApi` Dart 客户端封装，`native_api_feed_test.dart` 5 个单元测试用例全量通过（5/5 passed），`flutter analyze --no-pub` 零告警。
+- 版本按功能更新规则由 `3.6.1+192` 升至 `3.7.0+193`。ARM64 Release 构建成功（197.4 秒），核验包名 `com.review`、版本 `3.7.0`、`versionCode` 193、target SDK 36、仅 `arm64-v8a` 及 APK V2 签名；签名证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975`。
+- 交付 [Review_v3.7.0.apk](../Review_v3.7.0.apk)（33,395,602 字节），SHA-256：`60F088181071F7FA63D689E3A83B7EA310C29604F84DADFC06DA31F7C5F85AC1`；旧版回退包保留于 [Review_v3.6.1+192-before-v3.7.0.apk](../build/previous-deliveries/Review_v3.6.1+192-before-v3.7.0.apk)（33,395,602 字节），SHA-256：`6FB53CBA1CAE651BC52F03F69A7AD08CC44D7208A7CC33ECBDA4FD7357065062`。
+
 ## 3.6.1+192（2026-10-18）
 
 - 提高液态玻璃悬浮底栏在浅色图片背景上的选中项可读性：选中水滴填充改为深色 40% 不透明度，选中图标和文字改为白色；保留折射、模糊和长按拖动行为。
