@@ -71,7 +71,6 @@ class ReviewNavigationBar extends ConsumerWidget {
     if (useLiquidGlass) {
       return _LiquidGlassNavigationBar(
         selectedIndex: selectedIndex,
-        selectedColor: colorScheme.primary,
         onSelected: onSelected,
       );
     }
@@ -196,12 +195,10 @@ class _NavigationDestination {
 class _LiquidGlassNavigationBar extends StatefulWidget {
   const _LiquidGlassNavigationBar({
     required this.selectedIndex,
-    required this.selectedColor,
     required this.onSelected,
   });
 
   final int selectedIndex;
-  final Color selectedColor;
   final ValueChanged<int> onSelected;
 
   @override
@@ -364,13 +361,13 @@ class _LiquidGlassNavigationBarState extends State<_LiquidGlassNavigationBar> {
             ),
             quality: GlassQuality.premium,
             backgroundQuality: GlassQuality.premium,
-            indicatorColor: const Color(0x20FFFFFF),
+            indicatorColor: const Color(0x66000000),
             interactionGlowColor: const Color(0x20FFFFFF),
             indicatorPinchStrength: 0.7,
             innerBlur: 6,
             pressScale: 1.06,
-            selectedIconColor: widget.selectedColor,
-            selectedLabelColor: widget.selectedColor,
+            selectedIconColor: Colors.white,
+            selectedLabelColor: Colors.white,
             unselectedIconColor: Colors.white,
             unselectedLabelColor: Colors.white,
           ),

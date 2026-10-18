@@ -1,11 +1,17 @@
 # Review 变更记录
 
+## 3.6.1+192（2026-10-18）
+
+- 提高液态玻璃悬浮底栏在浅色图片背景上的选中项可读性：选中水滴填充改为深色 40% 不透明度，选中图标和文字改为白色；保留折射、模糊和长按拖动行为。
+- 版本按既有 bug 修正规则从 `3.6.0+191` 升至 `3.6.1+192`。`review_navigation_bar.dart` 定向分析无问题，`dart format` 未修改文件，`git diff --check` 通过；未运行测试。ARM64 Release 构建成功（175.9 秒），核验包名 `com.review`、版本 `3.6.1`、`versionCode` 192、target SDK 36、仅 `arm64-v8a`、16 KB ZIP 对齐及 APK V2 签名；签名证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975`。
+- 交付 [Review_v3.6.1.apk](../Review_v3.6.1.apk)（33,395,602 字节），SHA-256：`6FB53CBA1CAE651BC52F03F69A7AD08CC44D7208A7CC33ECBDA4FD7357065062`；旧版回退包保留于 [Review_v3.6.0+191-before-v3.6.1.apk](../build/previous-deliveries/Review_v3.6.0+191-before-v3.6.1.apk)（33,395,602 字节），SHA-256：`62B039A066FC2C4CE2B1EEA7FB8A33300F68D571067BC95A4276AD0E3A11014D`。未在目标设备对浅色图片背景进行视觉验收。
+
 ## 3.6.0+191（2026-10-18）
 
 - 图片画廊通过匹配的信息流 Hero 复用已经解码的缩略图帧，在原图加载时先显示预览；原图完成后于下一帧释放克隆的图像句柄并显示原图。沿用现有图片地址、缓存和 Hero 动画，不新增缩略图请求；没有可匹配的已解码 Hero 帧时保持既有加载方式。
 - 合并 3.5.4 画廊按钮常态透镜改进：默认玻璃折射保持可见，画廊作用域最低质量为 `standard`。
 - `image_gallery_page.dart` 定向 `flutter analyze --no-pub` 无问题，`dart format` 未修改文件，`git diff --check` 通过；本轮未运行测试。ARM64 Release 构建成功（192.1 秒），核验包名 `com.review`、版本 `3.6.0`、`versionCode` 191、target SDK 36、仅 `arm64-v8a`、16 KB ZIP 对齐和 APK V2 签名；证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975` 与前版一致。
-- 交付 [Review_v3.6.0.apk](../Review_v3.6.0.apk)（33,395,602 字节），SHA-256：`62B039A066FC2C4CE2B1EEA7FB8A33300F68D571067BC95A4276AD0E3A11014D`；3.5.4+190 ARM64 回退包保留于 [Review_v3.5.4+190-before-v3.6.0.apk](../build/previous-deliveries/Review_v3.5.4+190-before-v3.6.0.apk)（33,395,602 字节），SHA-256：`7F6C09CDE35DB961C37E417FC04BD23BE9B3A2DD17F68D46A84BF2AA04424E00`。未在目标设备检查冷缓存首帧和预览到原图的切换观感。
+- 交付 [Review_v3.6.0+191-before-v3.6.1.apk](../build/previous-deliveries/Review_v3.6.0+191-before-v3.6.1.apk)（33,395,602 字节），SHA-256：`62B039A066FC2C4CE2B1EEA7FB8A33300F68D571067BC95A4276AD0E3A11014D`；3.5.4+190 ARM64 回退包保留于 [Review_v3.5.4+190-before-v3.6.0.apk](../build/previous-deliveries/Review_v3.5.4+190-before-v3.6.0.apk)（33,395,602 字节），SHA-256：`7F6C09CDE35DB961C37E417FC04BD23BE9B3A2DD17F68D46A84BF2AA04424E00`。未在目标设备检查冷缓存首帧和预览到原图的切换观感。
 
 ## 3.5.4+190（2026-10-18）
 

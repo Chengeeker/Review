@@ -1,6 +1,6 @@
 # Review M3 UI 复用规范与提示词
 
-> 提炼日期：2026-10-18。基线为本地 `D:\App\Review` 当前工作区源码，`pubspec.yaml` 为 `3.6.0+191`，HEAD 为 `8ac858470fe309b578ea1d44957b4761ed3292ff`；工作区存在未提交修改，版本号或 HEAD 不能唯一标识这份源码。本文是源码提炼，未核对当前手机上的配置、截图或根目录 APK 与源码是否完全一致。
+> 提炼日期：2026-10-18。基线为本地 `D:\App\Review` 当前工作区源码，`pubspec.yaml` 为 `3.6.1+192`，基础提交为 `760dc73b1ea519750eb588de1b06c343b5d37fc4`；工作区存在未提交修改，版本号或提交不能唯一标识这份源码。本文是源码提炼，未核对当前手机上的配置、截图或根目录 APK 与源码是否完全一致。
 
 ## 1. 复用目标与常见偏差
 
@@ -56,9 +56,9 @@ Review 当前默认采用 Flutter Material 3，并在主题之上增加局部磨
 |---|---|---|---|
 | 几何 | 264×64，外圆角 32，内部 padding 4；三个入口均分 | 高 68，系统底部安全区另由组件处理 | 响应式宽度 `min(440, 屏幕宽 - 40) × 2/3`，高 56，圆角 9999；SafeArea 最小 bottom 21 |
 | 放置 | SafeArea 内，bottom padding 有系统底 inset 时 6，否则 14 | 页面底部，全宽 | `GlassPage`/`GlassBackgroundSource` 作用域内；仅开关启用时采样 body |
-| 背景 | surfaceContainerHigh；阴影黑色 alpha 浅色 0.12 / 深色 0.35，blur 16，offset (0,4) | 浅色 surfaceContainer；深色/纯黑见配色段；无 elevation/tint | `#66000000`，clear body，厚度 10、blur 1.5、折射 1.16、色散 0.008；主体与背景 premium |
+| 背景 | surfaceContainerHigh；阴影黑色 alpha 浅色 0.12 / 深色 0.35，blur 16，offset (0,4) | 浅色 surfaceContainer；深色/纯黑见配色段；无 elevation/tint | `#66000000`，clear body，厚度 10、blur 2.0、折射 1.19、色散 0.008；主体与背景 premium |
 | 选中 | secondaryContainer / onSecondaryContainer，选中块圆角 28，160ms easeOutCubic 淡入 | primaryContainer 指示胶囊，图标 onPrimaryContainer、标签 primary | 指示器折射 1.18、色散 0.025、inner blur 6、pinch 0.7、press scale 1.06 |
-| 图文 | 图标 22，图文间隔 2，文字 11.5sp，选中 w600 / 未选 w400 | 标签一直显示，12sp，选中 bold / 未选 w500 | 选中主题主色，未选白色；仍由库提供 tab 语义 |
+| 图文 | 图标 22，图文间隔 2，文字 11.5sp，选中 w600 / 未选 w400 | 标签一直显示，12sp，选中 bold / 未选 w500 | 选中/未选图文均为白色；选中胶囊使用 `#66000000` 深色填充并保留液态折射，以胶囊和图标状态区分；仍由库提供 tab 语义 |
 
 主 Scaffold 仅在悬浮分支 `extendBody: true`；玻璃背景源只包 body，不能把栏本身再次采入背景。三个入口图标采用 outlined/rounded 状态切换。当前应用只有三个主路由，因此不增加未实现的消息/个人页或中间发布槽；入口数变化时重新设计宽度、语义和动作回调。玻璃开启时根页面列表底部 inset 为系统 `viewPadding.bottom + 76dp`，避免把 `extendBody` 注入的底栏高度重复计入；标准悬浮/贴底分别为 72/16dp。
 
