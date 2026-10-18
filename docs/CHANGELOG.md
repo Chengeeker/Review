@@ -1,5 +1,106 @@
 # Review 变更记录
 
+## 3.10.5+203（2026-10-18）
+
+- 彻底排查并解决启用底栏液态玻璃后切换主页面（时间线、热搜、设置）卡顿和掉帧问题，统一相册与底栏的液态玻璃高性能渲染规范。
+- 审计根因与优化实现：
+  1. 移除全屏背景采样风暴：移除了 `main_scaffold.dart` 中包裹整个 `Scaffold` 的 `GlassPage` 和包裹内容区域的 `GlassBackgroundSource`，彻底杜绝了 260ms 横移切换切页期间对整屏（1080×2400）每帧执行 `toImageSync` 栅格化和 GPU 纹理上传造成的 Raster 线程阻塞。
+  2. 物理采样区域收敛至 340×56 胶囊：在 `ReviewNavigationBar` 外层包裹独立的 `RepaintBoundary` 进行图层物理隔离，底栏的动态折射与重绘被严格限制在自身的胶囊几何区域内，不污染外部长列表页面。
+  3. 彻底根治重影、对齐位置与交互双模完美收敛：
+     - 底栏位置精准对齐：将液态玻璃底栏与标准胶囊底栏统一采用 `Padding(bottom: widget.hasBottomInset ? 6 : 14)`，彻底解决在全面屏手势模式与三键导航下底栏异常浮起与遮挡视口的问题；
+     - 消除文字图标双层叠画：恢复底层反向动态遮罩与选中指示器分层渲染，杜绝未选内容与选中内容重叠造成的错位重影，文字与图标恢复锐利清晰；
+     - 交互双模动态收敛（原生 GlassTabBar.bottom）：
+       * 100% 保持 `GlassTabBar.bottom` 纯正液态玻璃材质、反向动态遮罩与 3D 高光；
+       * 彻底消除点击切换的水珠挤压与膨胀形变：排查发现 `DraggableIndicatorPhysics.buildJellyTransform` 与 `AnimatedGlassIndicator` 内部在弹簧移动时直接根据瞬时速度硬编码了 60% 横向挤压与 124% 纵向拉伸，且 `thickness` 强制变 1.0 导致背景药丸淡出、大水珠镜头淡入。现通过源码级增强让 `buildJellyTransform` 与 `thickness` 严格响应 `indicatorPinchStrength`，点击切换时（`indicatorPinchStrength: 0.0`，`indicatorExpansion: EdgeInsets.zero`）完全禁用形变矩阵并保持刚体背景药丸，实现选中背景平滑直接平移过去（与未开液态玻璃开关时一致）；
+       * 完整保留长按与拖拽大水珠：长按（>= 220ms）或拖动滑块时恢复大水滴果冻形变（`indicatorPinchStrength: 0.7`，`indicatorExpansion: (12, 8)`），保留长按移动跟随跳转的原生手感。
+  4. 相册高性能原则统一：移除了 `image_gallery_page.dart` 中包裹 4K/HDR 图片手势视口的全局玻璃层，悬浮操作按钮采用自包含独立层 `GlassButton(useOwnLayer: true)`，将模糊局限在 48×48 按钮物理区域内，彻底杜绝大图手势滑动与缩放的离屏开销。
+- 质量门禁与基准性能测试：
+  - 核心回归测试：主导航 `main_navigation_test.dart`、液态玻璃性能专项测试 `glass_performance_test.dart`、相册手势与联动 `image_gallery_test.dart`、HDR 原生确认 `gallery_hdr_test.dart` 100% 通过；
+  - 静态检查：Flutter 静态代码分析 0 error 0 warning。
+- ARM64 Release 构建成功；核验 `com.review`、`3.10.5`、versionCode 203、target SDK 36、仅 `arm64-v8a`，V2 签名及 16 KiB ZIP 页面对齐通过。
+- 交付 [Review_v3.10.5.apk](../Review_v3.10.5.apk)，32,822,190 字节（31.3 MB），SHA-256 `DA562284D92F9B6BAC5E81AC939F6162AD282A47A0EF83D452D94F403D8A671C`。3.10.4 按 SHA-256 `15530AD5BCA2E053F1ACE89E203CD056948090D240CBD9955CF2DAB9471556A1` 校验归档至 `build/previous-deliveries/Review_v3.10.4-before-v3.10.5.apk`，新包核验后根目录只保留 3.10.5。开发文档已同步至 `D:\App\开发文档\Review.md`。
+
+## 3.10.4+202（2026-10-18）
+
+- 对齐 GreenNote 画廊架构，彻底解决打开 HDR 照片时约 1 秒延迟才开始 HDR 映射流程的问题。
+- 根因分析与对齐修复：
+  1. 移除 `image_gallery_page.dart` 中阻断挂载的 `_loadedImageUrls.contains(imageUrl)` 门禁，消除等待 Flutter 完整下载解码大图的串行阻塞。
+  2. 解除 Hero 转场阻断：`active` 设为 `activeIndex == index && !_isPlayingLive`，不再被 `_chromeRouteVisible` 阻塞，允许 Native PlatformView 在 320ms 转场动画期间即提前启动硬件并行解码。
+  3. 平滑渐变机制：引入 `visible: activeIndex == index && _chromeRouteVisible && !_isPlayingLive`，配合 `Opacity(opacity: visible ? 1.0 : 0.0)` 在转场期间保持隐藏并透出下层 Flutter 预览图，转场结束无缝切换为 1.0，完全消除跳变与白屏。
+  4. 窗口色彩模式首帧即开：在 `ImageGalleryPage.initState()` 首帧通过 `_checkHdrDisplaySupport()` 与 `_updateWindowHdr()` 检测 HDR 候选图，第 0 帧立即向底层调用 `setWindowHdr(true)`，让屏幕底层色彩管线提前就绪，并移除关闭窗口 HDR 时的全局 `bitmaps.evictAll()` 避免翻页颠簸。
+  5. 增强 Android 原生 `HdrImageSupport.kt`：扩充线程池至双线程，支持 `url` 与 `headers` 参数；支持内存缓存（0ms）、本地磁盘 `cacheimage/<md5>` 直接解码，以及在磁盘未命中时通过 Native 边下边解边缓存，解码成功后以 `ImageDecoder.ALLOCATOR_HARDWARE` 呈现并触发 `hdrImageDecoded` 回调。
+- 37 项 HDR 与图片画廊测试全部通过，Flutter 静态代码分析 0 error 0 warning。
+
+## 3.10.3+201（2026-10-18）
+
+- 信息流 HDR 角标改为与 GreenNote 网格角标同样的 10sp 文字、5×2dp 内边距、4dp 圆角、0.8dp 白边，不再多出投影。
+- 打开候选 HDR 原图时，先复用九宫格已合并的 Range 元数据结果，再通过确定的 MD5 缓存文件路径找到已缓存原图，和 Flutter 首次大图解码并行启动 Android gain-map 解码；页面叠层继续等原图画好和转场结束。减少原来两个大图解码串行等待，不对缓存缺失时额外下载或猜测 HDR，Android 最终仍须确认 gain-map。
+- 37 项 HDR/画廊回归通过，含 GreenNote 角标参数、MD5 缓存精确命中、并发 Range 探测与 native decode 合并、HDR/SDR 候选识别和原 Hero/缩放/分页回归。3 个相关 Dart 源码与测试文件分析无告警，差异空白检查通过。
+- 本机 ADB 没有连接设备；未测 vivo X300 Pro 的真实 HDR 亮度映射时延、动画观感和清晰度。自动化确认的是缓存命中时原生 HDR 解码会提前启动，缓存缺失、范围请求失败或不支持的设备沿用已有路径。
+- ARM64 Release 构建成功（本地依赖缓存，Gradle 离线组装约 68 秒；首次在线构建等待 TLS 475.6 秒后停止并沿用相同 Gradle 参数离线重试）。核验 `com.review`、`3.10.3`、versionCode 201、target SDK 36、仅 `arm64-v8a`，V2 签名及 16 KiB ZIP 对齐通过；签名证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975` 与前版一致。ARM64 AOT 已检出候选 HDR 本地缓存预热函数。
+- 交付 [Review_v3.10.3.apk](../Review_v3.10.3.apk)，33,526,702 字节，SHA-256 `36EC5B532C877ECCE6A285B0BD8CDC23F99C7C1D4BD3347ECBCF7637C67F3A01`。3.10.2 按 SHA-256 `5AEFB643D0FC5EADAE237E6B58FE670C7120DCE24F05604C32AC74A8BDC99B18` 校验归档至 `build/previous-deliveries/Review_v3.10.2-before-v3.10.3.apk`，新包核验后根目录只保留 3.10.3。开发文档已同步至 `D:\App\开发文档\Review.md`，未提交或推送源码。
+
+## 3.10.2+200（2026-10-18）
+
+- 私信/群聊附件视频显示封面和播放入口，隐藏“分享视频”协议文字，点击轻震动后复用图片画廊与既有视频播放器；打开/关闭沿用图片 Hero，转场期间不创建视频解码器。
+- 按官方 WebIM metadata 的 replace 两步解析播放 fid，保留私有附件鉴权，支持 media_type=10 和元数据确认的 MP4 文件；列表只查元数据、不自动播放或下载视频。封面鉴权按自身 URL 单独生成。
+- 修复链接卡片优先短链而忽略实体与长地址的问题；微博/用户卡片优先原生详情/主页，其他卡片优先有效长地址，官方 HTTP t.cn 短链升级 HTTPS。
+- 77 项定向回归通过；再补私信/群聊 media_type=5 的 MP4 兼容用例，聊天文件 14 项全部通过（本轮合计覆盖 79 个不同用例）。涵盖私有鉴权、replace 两次元数据查询、无列表自动播放、一次打开仅创建一个播放器、返回不重建、卡片实际进入原生详情，以及原有混合媒体、图片 Hero、HDR、发送和历史回归。8 个相关 Dart 文件分析无问题，差异空白检查通过。
+- 本轮未重跑全量套件；前版全量的 7 项既有文章/长文本断言失败仍见 3.10.1 记录。本机 ADB 无设备，未用真实账号/手机核验视频首帧、声音、触感、转场观感及卡片服务端权限。未发送测试私信或群消息。
+- ARM64 Release 构建成功（384.7 秒）；耗时包含依赖仓库 TLS 握手等待，在线构建自行恢复并成功，未实际改用离线参数。核验 `com.review`、`3.10.2`、versionCode 200、target SDK 36、仅 `arm64-v8a`，V2 签名及 16 KiB ZIP 对齐通过；签名证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975` 与前版一致。包内 ARM64 AOT 已检出本版新增 metadata callback 与接口标记。
+- 交付 [Review_v3.10.2.apk](../Review_v3.10.2.apk)，33,461,166 字节，SHA-256 `5AEFB643D0FC5EADAE237E6B58FE670C7120DCE24F05604C32AC74A8BDC99B18`。3.10.1 按 SHA-256 `61C0FEC4ECB7F149DE0033F36F72CD5B6492D6F29BA5E1960600E75675D4C3EB` 校验归档至 `build/previous-deliveries/Review_v3.10.1-before-v3.10.2.apk`，新包核验后根目录只保留 3.10.2。开发文档已同步至 `D:\App\开发文档\Review.md`，未提交或推送源码。
+
+## 3.10.1+199（2026-10-18）
+
+- 修复 HDR 角标首次探测完成后不显示、需要打开图片再返回九宫格才显示的问题。完成清理回调不再返回请求自身的 Future，首次等待者现在能正常完成；不新增网络探测或轮询。
+- 减少主 Tab 平移时的重复页面绘制，标准悬浮底栏指示条改为固定尺寸平移；保留页面状态、快速切换和原有动画时长。修复时间线页面退出时访问已销毁 ref 的异常。
+- 移除私信/群聊上拉刷新控件，历史仍自动分页。按当前官方 Web 修正发送表单编码及文本字段，识别群聊 mid 成功响应，按 ID 回读确认；发送失败保留草稿并显示服务端错误，发送期间新编辑的草稿不被覆盖，不自动重复发送。
+- 定向 41 项回归全部通过，涵盖冷启动九宫格、HDR/SDR、并发与失败清理、真实 HTTP adapter 的表单字节、私信/群聊接受和拒绝、HTTP 失败保留草稿、回读边界、发送期间编辑、聊天历史与图片 Hero、主 Tab 绘制复用和 18 图兼容。9 个相关 Dart 文件分析无问题，`git diff --check` 通过。
+- 全量测试 306 项通过、7 项失败；失败为既有 `article_card_test.dart` 文章封面详情入口和 `widget_test.dart` 6 项长文本展开断言，逐一核对均已出现在较早的 `build/chat-baseline-tests.log` / `build/chat-full-tests.log`。本轮完整结果保存在 `build/review-3101-full-tests-final.log`，不将全量记为通过。未连接真机核验 HDR 高光、实际 120fps 或真实账号消息投递。
+- ARM64 Release 构建成功（244.7 秒）；`aapt2` 核验 `com.review`、`3.10.1`、versionCode 199、target SDK 36、仅 `arm64-v8a`，V2 签名和 16 KiB ZIP 对齐通过。签名证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975` 与前版相同。
+- 交付 [Review_v3.10.1.apk](../Review_v3.10.1.apk)，33,461,166 字节，SHA-256 `61C0FEC4ECB7F149DE0033F36F72CD5B6492D6F29BA5E1960600E75675D4C3EB`。3.10.0 已按原 SHA-256 `0C80CB8BF935F5A69F26CFA73363F7B97DD17F9F6E375729223D1345F2240D9C` 校验归档至 `build/previous-deliveries/Review_v3.10.0-before-v3.10.1.apk`；核验新包后根目录仅保留 3.10.1。未提交或推送源码；完整开发文档已同步至 `D:\App\开发文档\Review.md`。
+
+## 3.10.0+198（2026-10-18）
+
+- 信息流单图和九宫格右下角预览 HDR 角标；仅请求新浪 `/large/` 图片的 256 KiB 范围头部，不预下载完整图片、不附带微博账号 Cookie，并缓存有限数量的结果。范围与画廊 HDR 元数据检查保持一致，避免缩略图漏掉较靠后的标记。
+- 私信与群聊多图复用现有图片画廊及 Hero 放大/缩回转场；同一消息的图片在画廊中可左右切换，点击图片触发一次轻震动。
+- 定向 HDR/聊天回归 16 项通过；5 个相关 Dart 文件分析无问题，`git diff --check` 通过。新浪样本原图的 Range 返回 HTTP 206，头部包含 HDR 标记；实际 vivo HDR 显示与设备动画/触感仍待真机确认。
+- ARM64 Release 构建成功（227.0 秒）；核验 `com.review`、版本 `3.10.0`、versionCode 198、target SDK 36、仅 `arm64-v8a`，V2 签名和 16 KiB ZIP 对齐通过。签名证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975` 与前版一致。
+- 交付 [Review_v3.10.0.apk](../Review_v3.10.0.apk)，33,461,166 字节，SHA-256 `0C80CB8BF935F5A69F26CFA73363F7B97DD17F9F6E375729223D1345F2240D9C`。3.9.1 已校验归档至 `build/previous-deliveries/Review_v3.9.1-before-v3.10.0.apk`，根目录只保留本版。完整开发文档已同步至 `D:\App\开发文档\Review.md`。未连接真机复核 HDR 高光、消息图片转场观感、GIF 帧率或实际震动；没有提交或推送源码。
+
+
+## 3.9.1+197（2026-10-18）
+
+- 修复原图字段缺失时画廊可能沿用新浪图床预览规格，导致 HDR 数据在检测前已丢失；处理内存帧与临时文件生命周期不同步，并增加脱敏原生解码/绘制诊断。vivo X300 Pro / Android 17 的实际 HDR 效果待真机复核。
+- 修复私信/群聊图片和动态图固定大视口及“分享图片”协议占位文字；纯图片紧凑布局并保留点击画廊。
+- 按官方 WebIM 数据渲染链接卡片，缺失元数据的可见纯 URL 消息只补查一次完整消息，失败保留可点链接。
+- 修复 `[/ee90a0.png]` 等文件名型表情，兼容 HTML 源图与 470 条 SoftBank 历史表情映射。
+- 60 项定向回归通过，10 个相关 Dart 源码/测试文件分析无告警，差异检查通过（`core.whitespace=cr-at-eol`）。未重新运行全量测试。
+- 最终 ARM64 Release 增量构建成功（182.8 秒）；核验包名 `com.review`、版本 `3.9.1`、versionCode 197、target SDK 36、仅 `arm64-v8a`，testOnly 未启用，V2 签名和 16 KiB ZIP 对齐均通过；签名证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975` 与原包一致。最终包 DEX/AOT 已确认原生 HDR 诊断、历史文件名表情正则、卡片补全和聊天内容布局代码，编译后源码哈希未漂移。
+- 交付 [Review_v3.9.1.apk](../Review_v3.9.1.apk)，33,395,630 字节，SHA-256 `2E062A4C6BB803E86D80AA188775054DA0377BBA517BBFB0D0DC5B0316459664`。3.9.0 已校验复制后归档到 `build/previous-deliveries/Review_v3.9.0-before-v3.9.1.apk`，根目录保留新包。核验记录保存于忽略的 `build/hdr-chat-391-*`；官方 Web 静态代码参考在 `build/chat-render-audit/`。开发文档已同步到 `D:\App\开发文档\Review.md`。未在用户 vivo X300 Pro 上安装验证 HDR 高光、GIF 流畅度及真实账号消息；没有提交或推送源码。
+
+
+## 3.9.0+196（2026-10-18）
+
+- 新增 Android 14+ JPEG gain-map/Ultra HDR 原图查看；复用已下载的原图缓存，原生确认增益图后用硬件 ImageDecoder + Hybrid Composition 显示。普通图片和不支持设备自动保留原路径。
+- 主图与画廊缩略条增加 GreenNote 同款 HDR 角标；不根据文件名或宣传误标，不预下载全部信息流原图。
+- 限制原生解码、缓存和挂载范围；保持现有 Hero、分页、缩放和 Live Photo 行为，退出恢复窗口色彩模式。
+- 样本来自用户提供的微博 `5345552066939360`，实测原图有 gain-map/ISO 21496 元数据，缩略图没有。当前无 ADB 真机，不宣称实际高光亮度或流畅度已验收。
+
+
+- 36 项 HDR/画廊回归全部通过；相关 5 个 Dart 源码/测试文件定向分析无告警，差异检查通过（CRLF 文件按 `core.whitespace=cr-at-eol` 检查）。保留现有其他改动，未运行新的全量测试。
+- 最终 ARM64 Release 增量构建成功（155.7 秒）；包名 `com.review`、版本 `3.9.0`、versionCode 196、min SDK 24、target SDK 36、仅 `arm64-v8a`，V2 签名和 16 KiB ZIP 对齐通过。签名证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975` 与原项目签名一致。APK 的 DEX/AOT 中已确认 HDR 原生类、最终 `cacheBudget` 字段、通道与画廊角标代码；相关日志和样本结构报告保存在忽略的 `build/hdr-*`、`build/hdr-audit/`。
+- 交付 [Review_v3.9.0.apk](../Review_v3.9.0.apk)，33,395,630 字节，SHA-256 `E5FEE19FA66BF510820F616711A3FB2241330FB41E444AE8E56F35F4D5259E1C`。原根目录 3.8.0 APK 已校验哈希后归档至 `build/previous-deliveries/Review_v3.8.0-before-v3.9.0.apk`，保留回退。此包基于当前完整工作区，也包含同时存在的私信修复源码；并发消息修复的独立快照构建记录仍以其 3.8.1 条目为准。没有安装到设备，没有提交或推送源码。
+
+
+## 3.8.1+195（2026-10-18）
+
+- 修复“我的消息”页面“私信与群聊”标题后出现大段空白：嵌套会话列表显式关闭自动安全区 padding 和主滚动继承，外层继续负责顶栏与状态栏间距。
+- 修复聊天气泡只渲染文本、忽略图片附件的问题。依据[微博聊天网页版](https://api.weibo.com/chat/)当前加载的 `app.48f8ddda.js`，读取 `media_type=1` 的 `att_ids`/`fids` 与 `pic_infos.original_pic`，显示缓存图片并打开已有画廊查看/下载；聊天预览解码宽度最多 1024px。登录 Cookie 仅附加到精确 HTTPS `upload.api.weibo.com/2/mss/msget` 路径，不发送给公共图床或其他地址。
+- 私信和群聊在距离历史边缘 480dp 内自动预取旧消息，每次 40 条。分别使用 `max_id` / `max_mid` 和最早消息 ID 减 1 的游标；倒序懒列表在尾部追加历史，保持阅读位置。并发请求互斥、边界去重、空页/无新增时停止；失败保留消息与游标并提供重试，避免无限自动重试。发送后回读最新消息时保留已加载历史，优先复用接口自带发言人资料以减少补查。
+- 新增 8 项回归，连同既有消息测试共 25 项全部通过；修改前后对照及独立快照全量测试均确认 33 项既有失败完全相同，独立快照全量为 256 通过、33 失败（主要为旧画廊用例缺少 ProviderScope 和既有卡片断言）。7 个相关源码/测试文件定向分析无问题。未使用真实账号收发测试消息，构造样例与解码图片测试不代表线上私信媒体已完成账号/设备验收。
+- 本次开发中发现同目录有并发 HDR 原生/画廊修改；消息修复交付使用基于 `57a9d70` 并仅覆盖本次消息、媒体鉴权和版本文件的独立源码快照 `build/chat-release-source`。并发 HDR 文件与其他测试改动保留，不纳入本次消息修复 APK。
+
 ## 3.8.0+194（2026-10-18）
 
 - 设置新增独立“缓存管理”页，可查看并手动清理可再生成的图片磁盘缓存；自动清理阈值默认 **200 MB**，支持关闭或选择其他阈值。统计和删除严格限定于临时 `cacheimage` 目录下直接存放、文件名为 32 位小写 MD5 的图片缓存，并保留最近 1 分钟写入的文件；不影响相册媒体、账号数据或其他临时文件。达到阈值时在启动阶段清理，修改阈值时立即检查。

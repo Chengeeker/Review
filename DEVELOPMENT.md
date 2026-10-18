@@ -1,6 +1,6 @@
 # Review 开发与技术架构文档
 
-> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-10-18；当前应用版本：`3.8.0+194`。
+> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-10-18；当前应用版本：`3.10.5+203`。
 >
 > `README.md` 用于项目介绍；本文档维护当前实现，不记录登录 Cookie、Token、密码或其他凭据。
 
@@ -108,10 +108,12 @@ Review 是 Flutter 编写的微博网页端风格客户端。凡是涉及微博�
 - 回复面板中的头像、昵称、认证/博主标签、时间/IP、正文、图片和点赞数按回复数据渲染；右侧点赞数和图标使用固定操作列，避免昵称、认证标识或数字长度造成位置偏移。点击回复整行或正文都打开现有回复操作菜单，@、话题和链接仍保留各自的跳转行为。
 - 评论和楼中楼回复均使用微博返回的用户头像、昵称和认证信息；当评论/回复用户 UID 与当前微博作者 UID 一致时显示“博主”标签，不根据昵称本地猜测身份。评论、完整楼中楼和“收到的评论”列表还会读取评论用户的 `user.fansIcon.icon_url`（兼容 `fans_icon`）并显示微博返回的铁粉等级图标；直接复用带磁盘缓存的图片组件，不新增评论接口或补查用户资料。不同等级的底色/图案以微博提供的图标资源为准，不本地重绘；接口未返回铁粉图标时不推断等级。微博[官方铁粉等级说明](https://kefu.weibo.com/faqdetail?id=21662)确认标识可在博主正文页评论区显示，若评论本身已有超话等级标识则两者只显示其一，客户端以接口实际返回为准。
 - 点赞、取消点赞、收藏、取消收藏、转发入口和删除操作都以微博响应成功为准，界面中的即时变化属于乐观显示，失败时回滚或提示。
-- 消息中心的群聊按消息时间正序显示，较早消息在上、最新消息在下；首次打开定位到最新消息。群聊顶部下拉调用 `query_messages.json` 的 `max_mid` 读取更早历史，不再把固定首屏请求当成刷新，也不在上拉方向加载旧消息。私信维持原有独立会话路径。
+- 私信与群聊均按较早在上、最新在下显示，首次打开定位最新消息；内部使用倒序懒列表，让旧记录追加后保持阅读位置。距离旧消息边缘 480dp 内自动预取，每页 40 条，私信使用 `max_id`、群聊使用 `max_mid`，按最早已加载 ID 减 1 请求并去重；正在加载时不重复发起，空页/无新增后停止，失败保留原列表和游标并提供点击重试，不自动循环失败请求。发送后的最新记录回读与已加载历史合并，避免丢失旧消息。消息中心嵌套会话列表显式设置零 padding 与 `primary: false`，避免重复继承状态栏安全区造成标题后大块留白。
+- 聊天气泡读取 WebIM `media_type=1` 的 `att_ids`/`fids` 图片附件和 `pic_infos.original_pic` 动图图片；使用 `msget` 地址显示缓存预览，点击复用已有画廊查看和下载。仅 HTTPS `upload.api.weibo.com/2/mss/msget` 允许附带当前微博登录 Cookie，公共图床与其他地址不带该凭据。图片失败显示明确提示；预览使用固定有界尺寸并将解码宽度限制在 1024px 内，避免大图解码占用过多内存或改变气泡高度影响阅读位置。字段与分页参数依据 2026-10-18 微博聊天网页版公开加载的 `app.48f8ddda.js` 核对（https://api.weibo.com/chat/）；构造数据测试不等于真实账号图片访问验收。
 - 群聊列表、群信息和群成员页预热会话用户缓存，供聊天页首帧复用头像与昵称；完整群公告另由 `query_user_bulletin.json` 读取，不能仅依赖可能截断公告的 `query.json`。
 - 消息中心的未读清除基线持久化，避免重新拉取 contacts 后旧数恢复；打开某个私信/群聊会话时只将该会话标为本地已读，其他会话角标保留，新消息仍从 1 开始累计；打开 @、赞、收到的评论分类时只清除对应分类的本地计数，不会打开“我的消息”总览就一并清掉所有消息。会话未读数只显示在各自头像右上角，群免打扰气泡灰显，并排除于侧边栏聚合数与后台私信通知。“私信与群聊”标题不展示接口 `totalNumber`，以免清除后留下无法清理的误导总数。侧边栏聚合数来自 `/ajax/remind/unread` 与 WebIM contacts，前者是网页兼容接口且响应可能变化，解析失败时保留上次数值。Android 后台通知经 WorkManager 联网周期轮询（至少 15 分钟，实际可能更晚），首次轮询仅建立基线、不提示历史未读。
-- 聊天发送不再把任何 HTTP 2xx 都显示成已送达：检查业务响应并回读服务器会话；若无法确认，不显示合成气泡。`/webim/groupchat/send_message.json` 与 `/webim/2/direct_messages/new.json` 是未由微博公开接口契约/测试账号确认的兼容请求，本项目不使用用户账号发送测试消息。
+- 聊天发送按当前官方 Web `app.48f8ddda.js` 的表单请求实现：`/webim/2/direct_messages/new.json` 使用 `uid/text/is_encoded=0/decodetime=1/extensions`，群聊 `/webim/groupchat/send_message.json` 使用 `id/content/media_type=0/is_encoded=0/setTimeout=50/annotations`；统一 `application/x-www-form-urlencoded`、`source=209678993`、聊天 Referer 和 Origin，复用登录 Cookie/CSRF。未注册 Comet 会话时采用官方空 clientid 状态，群聊 annotations 带 `webchat=1`。旧 JSON body 与官方编码不匹配；群聊成功 `mid` 也必须识别。成功后按返回消息 ID 回读确认，不伪造气泡、不自动重发；没有 ID 的兼容确认须排除发送前已有记录，避免相同文本旧消息误认。失败保留草稿并显示服务端错误及错误码；接受请求后只清除未被继续编辑的原草稿。请求级回归使用模拟 HTTP adapter 验证实际编码字节，包括中文、换行、加号、& 和 emoji；尚无真实账号投递验收，本项目不使用用户账号发送测试消息。官方来源：https://h5.sinaimg.cn/m/pcweibochat/js/app.48f8ddda.js 。
+- 聊天列表已移除 EasyRefresh 及其上拉/下拉刷新提示；继续在接近历史边缘时自动分页，保留历史加载状态与失败点击重试。
 - 用户主页支持用户资料、背景图、认证/活动标识、微博列表、关注/取消关注、用户微博搜索和赞过的微博（按设置显示）。
 - 用户主页资料卡中的“关注”和“粉丝”数量是可点击入口：当前账号进入“关注列表/我的粉丝”，其他用户进入该用户的“关注列表/粉丝列表”。关注列表使用网页端实际的 `/ajax/friendships/friends?uid=<uid>&page=<page>`，粉丝列表使用同一接口的 `relate=fans&type=fans` 查询，不附加本地排序或数量参数，两种关系不会互相回退。解析不到目标列表时区分网络失败与隐私未公开，不使用本地数量拼出假列表。关注列表中的用户可以继续进入其主页。
 - 侧边栏包含浏览历史、收藏、关注话题、关注列表、群组成员、群微博、我的消息、收到的赞、发出的评论、收到的评论、提及、超话中心和聊天 WebView 等入口。关系列表页根据查看对象固定决定分栏：当前账号显示“关注列表 / 我的粉丝 / 我的超话”，其他博主只显示“关注列表 / 粉丝列表”，不为其他博主探测或展示超话。自己的超话仍使用独立的官方超话接口，不与关注/粉丝列表共用数据；栏数在页面初始化时确定，避免异步探测导致顶栏闪烁。
@@ -219,7 +221,7 @@ lib/
 | 投票/投票结果 | `/ajax/statuses/setVote`、`m.weibo.cn/api/statuses/show`，网页结果读取回退 `/ajax/statuses/show` |
 | 关注关系/关系列表 | 按已验证会话选择接口：桌面会话使用 `/ajax/friendships/create`、`/ajax/friendships/destory`；只有移动会话时使用 `m.weibo.cn/api/friendships/create`、`/api/friendships/destory`，并带移动端 `st`。微博取关路径沿用上游历史拼写 `destory`，不可改成标准拼法 `destroy`（会返回地址不存在；[公开网页端接口记录，非官方](https://github.com/imoonkey/openweb/blob/main/src/sites/weibo/DOC.md)也记录了该上游拼写）。失败保留微博业务提示，不乐观改资料状态。关系列表使用 `/ajax/friendships/friends?uid=<uid>&page=<page>`；粉丝列表额外使用 `relate=fans` 和 `type=fans`，不附加 `fansSortType` 或本地数量参数，禁止把默认关注响应当成粉丝响应 |
 | 关注的超话 | `/ajax/profile/topicContent?tabid=231093_-_chaohua&page=<page>`；请求通过关注页 Referer 指定目标 UID，列表必须来自 `data.list` 等真实列表字段 |
-| 私信/群聊 | `/webim/2/direct_messages/conversation.json`、`/webim/groupchat/query_messages.json`；群聊首屏使用 `max_mid=0`，顶部历史使用当前最早消息的 `max_mid`，本地按消息时间统一升序渲染 |
+| 私信/群聊 | `/webim/2/direct_messages/conversation.json`、`/webim/groupchat/query_messages.json`；群聊首屏使用 `max_mid=0`，接近顶部时分别通过私信 `max_id` / 群聊 `max_mid` 自动预取历史，游标为当前最早消息 ID 减 1，显示较早在上、最新在下 |
 | 热搜/建议/搜索 | `/ajax/side/hotSearch`、`/ajax/statuses/hot_band`、`/ajax/side/search`（联想）、`/ajax/statuses/search`（微博）、`s.weibo.com/user`（用户，网页优先）、`m.weibo.cn/api/container/getIndex` 的 `100103type=3`（用户兼容回退） |
 | 地点/超话/电影 | `/ajax/statuses/place`、`/ajax/stopic/list`、`/ajax/movie/hot_top` 或 `/ajax/movie/hot_search` |
 | 发布配置/内容声明 | `/ajax/getSpaConfig`、`/ajax/statuses/config` |
@@ -239,6 +241,7 @@ lib/
 - 公共头像点击区域至少为 48dp，并声明头像按钮语义；头像占位符按 Unicode code point 取首字符。Toast 根据安全区和键盘高度调整位置，并通过 live region 向读屏器公布内容。
 - 搜索页与热搜榜共用 `HotSearchBadge`；搜索页嵌套的热搜 ListView/GridView 显式使用零 padding，避免默认继承顶部安全区而在榜单卡片内产生空白；设置首页使用私有 `_SettingsSectionCard`，设置子页及其他分组页面继续使用 `AppSectionCard`。统一使用 `showAppDialog` 的确认弹窗，设置/存储路径底部菜单使用主题的圆角、背景和拖动条。
 - 时间线底栏单击支持回顶/返回上次位置，双击回顶并刷新；时间线顶栏双击支持回顶和二次刷新。
+- 主 Tab 的 260ms 平移在每个页面外、`SlideTransition` 内增加独立 `RepaintBoundary`，使页面内容的绘制与位移动画分离；标准悬浮底栏指示条采用固定尺寸 `AnimatedSlide`，不再用 `AnimatedPositioned` 每帧重新布局。保留页面状态、双页同步平移、快速反向切换、RTL、减少动画设置及液态玻璃采样。真实主框架测试以 8,333 微秒步长推进动画，确认静态页面在连续六步内没有重复 paint、平移持续变化且快速切换不重建页面。Android 刷新率选择和 Flutter ticker 没有发现固定 60fps 的此处代码；上述测试不代表真机 UI/raster 阶段均低于 120Hz 的 8.33ms 预算，液态玻璃 GPU 合成仍需设备 profile。时间线滚动 notifier 在 initState 保存引用，退出时不再使用已销毁的 WidgetRef，首帧延迟挂载也检查 mounted。
 - 热搜底栏再次单击回到当前分类顶部，双击回顶并刷新当前分类；热搜顶栏双击不在顶部时回顶、已在顶部时刷新当前分类。手势使用现有的 300ms 单/双击判定，不新增依赖。
 - 用户主页顶栏也使用相同的双击判定：不在顶部时双击平滑回顶，已经在顶部时再次双击刷新当前用户微博；单击不改变原有标题、搜索和分享操作。
 - 文章详情顶栏支持双击平滑回到文章顶部，单击不改变返回键和更多操作。
@@ -270,6 +273,64 @@ lib/
 - 图片页的双击缩放由 `ExtendedImage` 内部识别；外层区域点击使用原始 `Listener` 指针事件，不得恢复会与图片双击竞争的父级 `GestureDetector.onTapUp`。单击/退出在 `kDoubleTapTimeout` 后确认，双击在 `kDoubleTapSlop` 范围内会取消待执行单击；移动超过 `kTouchSlop` 或多指操作不算单击。确认图片双击缩放时通过 `HapticFeedbackUtil.light()` 触发遵循全局设置的轻震动。视频页原有播放器双击行为保持独立。
 - 清屏时隐藏返回键、页码/Live 状态、下载按钮和 Android 顶部状态栏；再次点击中间区域恢复。系统底部导航栏保持可用。
 - 退出时恢复 edge-to-edge 状态。由于目标 SDK 为 36，顶部状态栏通过 `MainActivity` 的 `WindowInsetsController` 原生通道控制，不能只依赖 Flutter 的 `SystemUiMode.manual`。
+
+### 7.2.1 Android Ultra HDR 原图（3.9.0）
+
+- 依据用户提供的微博 https://weibo.com/3807294039/5345552066939360 实测第一张图片：`large`/`original` 均为 10,372,291 字节，SHA-256 `EEB0918432B217318EB4F9BE6D5725EAF3F4EC9996EE299307340BDC741B324A`，含 Adobe gain-map XMP、MPF 与 ISO 21496 APP2；MPF 中底图和附图均为 7170×4033，附图 2,494,164 字节；`middle` 为 82,334 字节，无这些标记。这里证明的是这张微博原图保留 HDR 数据，不能推广到所有微博图片或缩略图。未采用厂商推广文章作为验收证据。
+- 旧画廊仅有 Flutter/ExtendedImage SDR 绘制链路。新实现仍由 ExtendedImage 加载与鉴权、写入原图缓存，`HdrGalleryImage` 仅读取既有缓存前 256 KiB 的 JPEG gain-map 元数据提示；仅候选文件交给 Android 14+ `ImageDecoder` 硬件解码，最终以 `Bitmap.hasGainmap()` 确认，不能用网址、图片标题或普通 HDR 字样设置角标。不支持 API、缺失缓存或解码失败都保留 Flutter 图片。
+- `HdrImageSupport` 注册 `com.review/hdr_image` 与 `com.review/hdrImage`；只读应用 `cacheimage` 目录中的 MD5 缓存文件，不增加网络请求或传递账号凭据。原生解码为单工作线程，文件上限 64 MiB，目标像素按底图与增益图最坏合计 16 字节/像素预算（64 MiB 缓存时约 419 万像素），位图 LRU 最多 64 MiB（计入 gain map）；缓存无法容纳时继续 Flutter 显示。这是原生层内存上限控制，Flutter 既有全分辨率解码仍单独占用内存；超大图的原生放大细节可能低于原图。
+- HDR 设备开启窗口 HDR 模式并保存原先模式；画廊内第一次确认 HDR 后保持模式稳定，退出恢复。启用 HCPP；采用 Hybrid Composition 而非 texture layer，原生层只挂载停稳后的当前静态图，翻页、Live Photo 播放及 Hero 转场继续显示 Flutter 图。原生层在 Hero 外，手势由现有 ExtendedImage 处理，原生层同步其完整图片矩形并等比变换，不改变 PageView 视口或图片缩放配置。
+- 主图右下角与画廊缩略条角标沿用 GreenNote 的黑底、白色细边框和粗体 HDR 样式；主图角标位于滚轮上方并跟随清屏状态。不预下载信息流所有原图来判断 HDR。当前范围是 JPEG gain-map/Ultra HDR，不包含 AI SDR 增亮、AVIF/PQ 或 iOS 原生 HDR 适配；API 34 以下保持原查看器。
+- 验收边界：文件元数据、单元/widget 回归和 APK 编译/静态核验不等于目标屏幕 HDR 亮度、厂商合成兼容性或帧时间验收。必须在支持 HDR 的 Android 14+ 真机上，用上述原图测试亮度、切图、双击/捏合、平移、返回和退出后的窗口恢复。
+
+### 7.2.2 原图入口和聊天媒体修正（3.9.1）
+
+- 用户在 vivo X300 Pro / Android 17 反馈 3.9.0 原图既无 HDR 效果，也无 HDR 角标。源码确认一个可导致漏检的入口问题：`WeiboPicModel.fromJson` 在没有独立原图字段时会退回 `orj960`/`mw2000` 等预览版本，先前验证过的同图缩略版本已剥离增益图。`originalUrl` 现在仅对 `*.sinaimg.cn` 的已知两段预览路径升级到 `/large/`，保留域名、文件名和查询参数；列表 `previewUrl` 不变，私信签名地址及第三方 URL 不改写。回归覆盖真实接口缺少原图字段、不同预览规格、相似恶意域名及私信地址。这是已确认的源码问题修复，不等于已确认该 vivo 的实际亮度恢复。
+- 内存解码帧仍在、Android 临时原图文件却已被清理时，HDR 检测允许借助原下载器补取一次编码原图并写回缓存，继续复用既有鉴权规则；缓存存在时不重复下载。Android 15+ 显式采用系统 HDR headroom，并增加不含 URL/凭据的 `ReviewHDR` 解码增益图、尺寸、硬件 Canvas、HDR/SDR 比值和窗口模式诊断；不能把首次绘制日志或文件标记当作最终屏幕 HDR 验收。
+- 私信/群聊纯图片改用自身比例约束（最大宽为屏宽 60% 且不超过 240dp，最大高 300dp），取消固定 220×170 图片视口。纯图片消息只保留 4dp 边距，背景透明，不再显示“分享图片”“发送图片”等占位文字；实际用户附言仍显示，图片点击继续进入共享画廊。`pic_infos`、`pic_gifs` 和带 GIF URL 的对象均可解析；已有有效附件优先，避免同一图片通过附件和元数据重复显示。
+- 依据官方聊天 Web 当前 `app.48f8ddda.js` 的 `url_objects` 读取微博、用户及通用对象卡片：标题、摘要、图片和真实点击地址。仅完整卡片替换纯链接正文；带真实附言仍保留。可见的纯 URL 消息缺少卡片时，按官方固定 API 补查一次（私信 `show_batch.json?is_complete=1&is_encoded=0`，群聊 `query_message.json`）；不预取整页/全部历史链接，不抓取任意外部网页，不自动重试，失败仍保留原链接。卡片摘要 2 行、标题 1 行，图片 52dp 且最多解码 256px，无封面时使用通用链接图标。固定 API 补查和卡片字段形状已做构造样例回归，仍需真实账号对应消息验证。
+- 共享表情解析允许含 `/`、`.` 的 HTML 表情标签，不再只识别中文/字母名字。若只有 `[/ee90a0.png]` 等历史文件名而没有 HTML 图片地址，按 UTF-8 解码 SoftBank PUA，并用 Google emoji4unicode 官方兼容数据的 470 条映射回退到 Unicode；该例为 👌，同类旧表情共用映射，不仅硬编码这个文件。HTML 有实际 CDN 源时仍优先官方图片。非法编码、未知文件名保留可读文字，不执行文件路径。数据来源：https://github.com/google/emoji4unicode/blob/master/data/emoji4unicode.xml 。
+- 定向 60 项消息/表情/HDR/画廊测试通过，相关 Dart 分析无告警；包括竖图实际解码后的长宽比、4dp 纯图片边距、无占位文字、私信和群聊卡片补查只请求一次、文件名表情、原图 URL 规则以及原 Hero/分页/Live Photo 回归。没有连接 ADB 真机，不能宣称 vivo HDR 亮度、厂商合成路径、实际聊天账号数据或 GIF 的设备帧率已验收。
+
+### 7.2.3 信息流 HDR 角标和聊天图片 Hero（3.10.0）
+
+- 信息流单图与九宫格在右下角异步显示 HDR 候选角标。只对 `*.sinaimg.cn/large/<文件名>` 发起 `Range: bytes=0-262143` 请求，流式读取最多 256 KiB，与画廊的增益图元数据头部检查范围一致；专用 Dio 不注入微博 Cookie，单个 URL 的进行中请求合并，结果最多缓存 256 个 URL。普通非 HDR 头部结果会缓存，网络失败不会缓存以允许后续重新尝试。没有整图预下载或原生解码。
+- 角标表示原 JPEG 头部发现 Adobe/ISO gain-map 元数据提示，不代表 Android 当前屏幕已确认显示 HDR；打开画廊后仍以 `Bitmap.hasGainmap()` 作为最终确认。若服务器忽略 Range，会在收到头部 256 KiB 后停止读取。当前用户样本 Range 响应为 HTTP 206，gain-map 标记位于头部约 1.2 KiB；因此可以在未打开图片时识别。其他新浪图片的标记位置可能不同，设备上的 HDR 亮度仍须真机验收。
+- 私信/群聊消息中的多图共享稳定的消息 Hero scope 和同一画廊媒体列表，打开复用现有 `PhysicsSpringGalleryRoute` 与方向感知 Hero shuttle，关闭时缩回对应消息图片；点击时通过 `HapticFeedbackUtil.light()` 触发一次遵循全局开关与节流的轻震动。不要改成普通页面切屏转场或为每个相册项重新生成 Hero scope。聊天图片不属于新浪图床时跳过信息流的 Range 探测，原有消息鉴权头继续只用于实际图片读取。
+
+### 7.2.4 HDR 角标首次完成通知（3.10.1）
+
+- 用户反馈 3.10.0 仍需点开图片再返回九宫格才有角标；扩展 Range 到 256 KiB 没有解决此现象。已用正常 HTTP 206 响应、不点击图片的九宫格 widget 测试复现：`cachedSinaHdrGainMapProbe` 的 `whenComplete(() => _hdrProbePending.remove(url))` 返回了请求表内正在等待自身完成的 Future。结果虽然已写入缓存，首次等待者却永远不完成；Hero 返回重建后才走已缓存结果，符合用户反馈。
+- 清理回调改为无返回值的语句块，只移除表项，不返回被移除的 Future。不新增轮询、自动重试或额外下载；维持原来的请求合并、256 条结果上限、Range 字节上限和无账号 Cookie 请求。
+- 回归涵盖全新 URL 的九宫格首次加载、不经过画廊直接出现 9 个 HDR 角标、普通 SDR 不显示、同 URL 的 9 个首次等待者合并单请求，以及失败请求正常完成且允许下一次重新请求。HTTP 范围解析单测不能替代首次等待者和真实九宫格的异步回归。
+
+### 7.2.5 聊天视频与卡片目标（3.10.2）
+
+- 官方聊天 Web 静态源码 `https://h5.sinaimg.cn/m/pcweibochat/js/app.48f8ddda.js` 的附件视频使用 `media_type=10`；普通文件 `media_type=5` 经元数据确认 MP4 后也进入视频路径。消息 `att_ids/fids/fid` 是附件标识，不是公开视频详情 ID。可见消息按 fid 合并一次 metadata Future，调用固定官方 `upload.api.weibo.com/2/mss/meta_query.json`，MP4 按官方先 `replace=false` 再 `replace=true` 获取播放 fid；只按指定 callback 解 JSONP，不执行脚本。不预下载视频、不在列表创建播放器，普通非 MP4 文件保留原正文。
+- 封面优先 `ext_text_video_pic_fid`，其次服务端 screenshot/thumbnail；宽不超过 240dp、高不超过 300dp，缺封面仍可用播放入口。隐藏协议占位“分享视频”，保留真实附言。点击轻震动并沿用 `PhysicsSpringGalleryRoute`、稳定消息 Hero scope 和 `ImageGalleryPage` 内已有 `WeiboVideoPlayerPage`。聊天传空 statusId，禁止播放失败后拿消息 ID 查询公开微博详情。
+- 视频 Hero 只能飞封面，不能将播放器作为 overlay shuttle；有 Hero 的视频等路由进入动画完成再创建播放器，退出动画先停止。否则 Flutter Hero 默认占位/overlay 会销毁重建播放器、额外启动解码器。定向测试必须验证列表零播放器、打开只创建一次、关闭不重开；原混合媒体生命周期回归需一起运行。
+- 播放、保存使用按实际媒体 URL 生成的 headers；私聊 Cookie 仅用于既有精确 HTTPS `upload.api.weibo.com/2/mss/msget` 路径。播放器封面单独按封面 URL 计算 headers，禁止把私有视频 Cookie 直接交给任意外站封面。
+- 卡片优先已有 status 的数字 idstr/id/mid 或用户 idstr/id/uid，生成可原生路由的详情/主页地址；否则逐个验证并优先 url_long、对象 url，最后回退短链。不要让无效的首个字段遮蔽可用后续地址。官方 `http://t.cn/…` 升级 HTTPS，避免 Android WebView 明文拦截；相似恶意域名不升级。已删除、审核失败、权限不足内容仍受微博服务端限制，不承诺绕过。
+
+### 7.2.6 HDR 网格角标与画廊首帧（3.10.3）
+
+- 对照 `D:\App\GreenNote\lib\features\feed\nine_grid_view.dart` 的当前实现，信息流 HDR 标签统一为 10sp / w900 / 0.4 字距、水平5dp/垂直2dp内边距、4dp圆角、72%黑底、0.8dp白色45%细边、不加阴影。画廊主图11sp和缩略条7.5sp仍各自保持。
+- 用户反馈点击原图后 HDR 映射约延迟1秒。旧链路等 ExtendedImage 完成全尺寸 Flutter 解码后才创建 HdrGalleryImage，Android ImageDecoder 因此串行晚启动。当前对画廊首张图片，在初始化后合并/读取已存在的 Sina `/large/` HDR Range 结果，直接按 MD5 查 ExtendedImage `cacheimage` 文件，并尽早启动 `HdrImageSupport.decode`；与 Hero/Flutter 大图解码并行。这里不执行同步磁盘 I/O，不重新下载图片，不为候选元数据提前伪造 HDR 成功；平台叠层仍等待 Flutter 图片完成、画廊路由完成和 Android gain-map/displaySupported 确认。HDR 检测和缩略角标不使用线性枚举整个缓存目录的慢速 helper。
+- Android 原生解码的 pending Future 按缓存路径合并；首次预热与之后 HdrGalleryImage 的正式检测共同等待同一次解码。本优化主要消除串行等待；HDR GPU 映射仍由厂商系统/面板完成，没有本机 Android 设备，不能声称目标机实际时延或视觉效果已经测量。网格 badge 通过代码样式回归比对 GreenNote 源码参数。
+
+### 7.2.7 HDR 映射零时延与硬件管线对齐（3.10.4）
+
+- 对照同开发环境 `GreenNote`（`D:\App\GreenNote`）的画廊架构，彻底解决用户反馈的“点击打开 HDR 照片时等待约 1 秒才开始 HDR 映射流程”的严重延迟问题。
+- 根因诊断与对齐改造：
+  1. **解除 Flutter 下载与解码的串行门禁**：彻底移除 `image_gallery_page.dart` 中阻断挂载的 `if (_loadedImageUrls.contains(imageUrl))`。旧版要求 ExtendedImage 必须先完整将数兆到十几兆的原图下载并解码进内存后才挂载 HDR 视图，造成 500ms~1000ms 的硬性时延。现改为首帧立即挂载 `HdrGalleryImage`。
+  2. **消除 Hero 转场动画阻断**：将 `active` 属性由 `activeIndex == index && _chromeRouteVisible && !_isPlayingLive` 改为 `activeIndex == index && !_isPlayingLive`。Native PlatformView 在 320ms 的转场飞行动画期间即可立即在后台线程池并行启动解码，不再等待转场结束。
+  3. **平滑渐变与转场无缝切换**：引入 `visible: activeIndex == index && _chromeRouteVisible && !_isPlayingLive`，配合 `Opacity(opacity: widget.visible ? 1.0 : 0.0)` 包装 Native PlatformView。在转场飞行期间保持 `opacity: 0.0`，让下层的 Flutter Hero 预览图自然过渡，转场一完成无缝切换为 1.0，完全避免画面跳闪与卡顿。
+  4. **屏幕 HDR 窗口色彩模式首帧即开**：对齐 GreenNote 在 `ImageGalleryPage.initState()` 首帧调用 `_checkHdrDisplaySupport()` 与 `_updateWindowHdr()`，只要当前图集包含已知或候选 HDR 图片，第 0 帧立即向底层调用 `setWindowHdr(true)`，让 SurfaceFlinger / HWUI 底层色彩模式在转场期间就重构就绪；并移除关闭窗口 HDR 时粗暴的全局 `bitmaps.evictAll()`，避免在图集中横向翻页时来回反复重新解码。
+  5. **增强 Android 原生 `HdrImageSupport.kt` 并行下载与硬件解码**：
+     - 线程池升为 `Executors.newFixedThreadPool(2)`；
+     - 增加 `isHdrDisplaySupported` Channel 查询分支；
+     - `create` 支持读取 `url`、`headers` 与 `path`；
+     - 解码时优先命中内存缓存（0ms）；磁盘缓存命中直接通过 `ImageDecoder.ALLOCATOR_HARDWARE` 解码；若本地磁盘未命中，则使用带有微博图床鉴权头的 `HttpURLConnection` 边下边解边缓存至 `cacheimage/<md5>`，与 Flutter 缓存互通，解码成功后以硬件 GraphicBuffer 呈现并通过 Channel 触发 `hdrImageDecoded`。
 
 ### 7.3 Android MethodChannel
 

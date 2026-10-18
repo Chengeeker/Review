@@ -1,11 +1,13 @@
 import 'package:extended_image/extended_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../../core/constants/api_constants.dart';
 import '../../../../core/services/link_routing_service.dart';
 import '../../../../core/theme/weibo_style_provider.dart';
 import '../../../../core/utils/haptic_feedback_util.dart';
 import '../../../../core/utils/spring_page_route.dart';
+import '../../../detail/presentation/widgets/hdr_gallery_image.dart';
 import '../../../detail/presentation/widgets/image_gallery_page.dart';
 import '../../data/models/weibo_status_model.dart';
 import 'weibo_video_player_page.dart';
@@ -91,10 +93,7 @@ class _NineGridViewState extends ConsumerState<NineGridView> {
     final radius = BorderRadius.circular(style.roundedImageCorners ? 16 : 0);
 
     final image = Container(
-      constraints: BoxConstraints(
-        maxWidth: maxWidth,
-        maxHeight: maxHeight,
-      ),
+      constraints: BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight),
       child: AspectRatio(
         aspectRatio: aspectRatio,
         child: Stack(
@@ -120,25 +119,8 @@ class _NineGridViewState extends ConsumerState<NineGridView> {
                   ),
                 ),
               ),
-              Positioned(
-                bottom: 6,
-                right: 6,
-                child: _buildBadge(pic.videoDuration?.isNotEmpty == true
-                    ? pic.videoDuration!
-                    : '视频'),
-              ),
-            ] else if (pic.isLivePhoto)
-              Positioned(
-                bottom: 6,
-                right: 6,
-                child: _buildLiveBadge(),
-              )
-            else if (pic.isGif || pic.isLong)
-              Positioned(
-                bottom: 6,
-                right: 6,
-                child: _buildBadge(pic.isGif ? 'GIF' : '长图'),
-              ),
+            ],
+            _buildCornerBadges(pic, 6),
             if (pic.isWebpageCard && caption?.trim().isNotEmpty == true)
               Positioned.fill(
                 child: LayoutBuilder(
@@ -155,8 +137,10 @@ class _NineGridViewState extends ConsumerState<NineGridView> {
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: const Color(0xFFFF8200),
-                            fontSize: (constraints.maxWidth * 0.045)
-                                .clamp(11.0, 16.0),
+                            fontSize: (constraints.maxWidth * 0.045).clamp(
+                              11.0,
+                              16.0,
+                            ),
                             height: 1.35,
                           ),
                         ),
@@ -183,8 +167,11 @@ class _NineGridViewState extends ConsumerState<NineGridView> {
     );
   }
 
-  Widget _buildGrid(BuildContext context,
-      {required int crossAxisCount, required WeiboStyleSettings style}) {
+  Widget _buildGrid(
+    BuildContext context, {
+    required int crossAxisCount,
+    required WeiboStyleSettings style,
+  }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final spacing = style.largeImageMode ? 7.0 : 5.0;
@@ -226,25 +213,8 @@ class _NineGridViewState extends ConsumerState<NineGridView> {
                   ),
                 ),
               ),
-              Positioned(
-                bottom: 4,
-                right: 4,
-                child: _buildBadge(pic.videoDuration?.isNotEmpty == true
-                    ? pic.videoDuration!
-                    : '视频'),
-              ),
-            ] else if (pic.isLivePhoto)
-              Positioned(
-                bottom: 4,
-                right: 4,
-                child: _buildLiveBadge(),
-              )
-            else if (pic.isGif || pic.isLong)
-              Positioned(
-                bottom: 4,
-                right: 4,
-                child: _buildBadge(pic.isGif ? 'GIF' : '长图'),
-              ),
+            ],
+            _buildCornerBadges(pic, 4),
             if (!isDetail && pics.length > 9 && index == 8)
               Positioned.fill(
                 child: IgnorePointer(
@@ -255,11 +225,14 @@ class _NineGridViewState extends ConsumerState<NineGridView> {
                       color: Colors.black.withValues(alpha: 0.45),
                       borderRadius: radius,
                     ),
-                    child: Text('+${pics.length - 9}',
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontWeight: FontWeight.w600)),
+                    child: Text(
+                      '+${pics.length - 9}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -301,7 +274,8 @@ class _NineGridViewState extends ConsumerState<NineGridView> {
     }
 
     final backgroundUrl = pic.webpageCardBackgroundUrl?.trim();
-    final hasBackground = backgroundUrl != null &&
+    final hasBackground =
+        backgroundUrl != null &&
         backgroundUrl.isNotEmpty &&
         backgroundUrl != pic.previewUrl &&
         backgroundUrl != pic.originalUrl;
@@ -367,13 +341,48 @@ class _NineGridViewState extends ConsumerState<NineGridView> {
     );
   }
 
+  Widget _buildCornerBadges(WeiboPicModel pic, double inset) => Positioned(
+    bottom: inset,
+    right: inset,
+    child: IgnorePointer(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (!pic.isVideo &&
+              !pic.isLivePhoto &&
+              !pic.isGif &&
+              !pic.isWebpageCard)
+            HdrThumbnailBadge(url: pic.originalUrl),
+          if (!pic.isVideo &&
+              !pic.isLivePhoto &&
+              !pic.isGif &&
+              !pic.isWebpageCard &&
+              pic.isLong)
+            const SizedBox(height: 2),
+          if (pic.isVideo)
+            _buildBadge(
+              pic.videoDuration?.isNotEmpty == true ? pic.videoDuration! : '视频',
+            )
+          else if (pic.isLivePhoto)
+            _buildLiveBadge()
+          else if (pic.isGif || pic.isLong)
+            _buildBadge(pic.isGif ? 'GIF' : '长图'),
+        ],
+      ),
+    ),
+  );
+
   void _openMedia(BuildContext context, int index) {
     final pic = pics[index];
     if (pic.articleUrl != null) {
-      LinkRoutingService.openUrl(context, pic.articleUrl!,
-          title: pic.articleTitle,
-          sourceAuthorId: widget.authorId,
-          sourceAuthorAvatar: widget.authorAvatar);
+      LinkRoutingService.openUrl(
+        context,
+        pic.articleUrl!,
+        title: pic.articleTitle,
+        sourceAuthorId: widget.authorId,
+        sourceAuthorAvatar: widget.authorAvatar,
+      );
       return;
     }
     if (pic.isVideo && pic.videoUrl != null && pic.videoUrl!.isNotEmpty) {

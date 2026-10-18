@@ -411,8 +411,22 @@ class WeiboPicModel {
   String get largeUrl => large.isNotEmpty ? large : bmiddleUrl;
 
   /// Original lossless URL
-  String get originalUrl =>
-      original.isNotEmpty ? original : (large.isNotEmpty ? large : bmiddleUrl);
+  String get originalUrl {
+    final value = original.isNotEmpty
+        ? original
+        : (large.isNotEmpty ? large : bmiddleUrl);
+    final uri = Uri.tryParse(value);
+    if (uri != null &&
+        uri.host.endsWith('.sinaimg.cn') &&
+        uri.pathSegments.length == 2 &&
+        RegExp(r'^(thumbnail|middle|bmiddle|orj\d+|mw\d+|cmw\d+)$')
+            .hasMatch(uri.pathSegments.first)) {
+      // Preview variants can strip the gain map; only the gallery requests large.
+      return uri.replace(path: '/large/${uri.pathSegments.last}').toString();
+    }
+    return value;
+  }
+
   bool get isLive => isLivePhoto;
   bool get isLong => isLongPic;
 

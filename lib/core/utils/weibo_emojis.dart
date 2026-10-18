@@ -1,9 +1,34 @@
+import 'dart:convert';
+import 'softbank_emoji.dart';
+
 /// Weibo Emotion phrases to Unicode Emoji & Authentic CDN image mapping
 class WeiboEmojis {
   WeiboEmojis._();
 
   /// Get Unicode emoji fallback for a phrase (e.g. "[微笑]" -> "😊")
-  static String? getEmoji(String phrase) => emojiMap[phrase];
+  static String? getEmoji(String phrase) {
+    if (emojiMap.containsKey(phrase)) return emojiMap[phrase];
+    final match = RegExp(
+      r'^\[/?([a-fA-F0-9]{6,32})\.(?:png|gif)\]$',
+      caseSensitive: false,
+    ).firstMatch(phrase);
+    if (match == null || match[1]!.length.isOdd) return null;
+    try {
+      final hex = match[1]!;
+      final value = utf8.decode([
+        for (var i = 0; i < hex.length; i += 2)
+          int.parse(hex.substring(i, i + 2), radix: 16),
+      ]);
+      final converted = value.runes
+          .map((r) => softBankEmoji[r] ?? String.fromCharCode(r))
+          .join();
+      return converted != value || converted.runes.any((r) => r >= 0x1f000)
+          ? converted
+          : null;
+    } on FormatException {
+      return null;
+    }
+  }
 
   /// Get authentic official Weibo CDN image URL for a phrase (e.g. "[努力]" -> "https://face.t.sinajs.cn/...")
   static String? getEmojiUrl(String phrase) => emojiUrlMap[phrase];

@@ -11,6 +11,30 @@ class WeiboDioClient {
   final StorageService storageService;
   late final VisitorTokenEngine tokenEngine;
 
+  Map<String, String> imageHeadersForUrl(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri?.scheme != 'https' ||
+        uri?.host != 'upload.api.weibo.com' ||
+        uri?.path != '/2/mss/msget') {
+      return ApiConstants.imageHeaders;
+    }
+    final cookies = [
+      storageService.getDesktopCookie(),
+      storageService.getFullCookie(),
+      if ((storageService.getSubCookie() ?? '').isNotEmpty)
+        'SUB=${storageService.getSubCookie()}; SUBP=${storageService.getSubpCookie() ?? ''}',
+    ];
+    final cookie = cookies
+        .whereType<String>()
+        .where((c) => c.isNotEmpty)
+        .firstOrNull;
+    return {
+      ...ApiConstants.imageHeaders,
+      'Referer': 'https://api.weibo.com/chat/',
+      if (cookie != null) 'Cookie': cookie,
+    };
+  }
+
   WeiboDioClient(this.storageService) {
     dio = Dio(
       BaseOptions(

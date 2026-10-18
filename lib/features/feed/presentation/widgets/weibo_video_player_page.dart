@@ -1,10 +1,13 @@
 import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
+
 import '../../../../core/constants/api_constants.dart';
+import '../../../../core/network/weibo_dio_client.dart';
 import '../../../../core/storage/storage_service.dart';
 import '../../../../core/utils/app_toast.dart';
 import '../../../../core/utils/haptic_feedback_util.dart';
@@ -59,8 +62,9 @@ class WeiboVideoPlayerPage extends ConsumerStatefulWidget {
 }
 
 class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
-  static const MethodChannel _mediaChannel =
-      MethodChannel('com.sharelite/cookies');
+  static const MethodChannel _mediaChannel = MethodChannel(
+    'com.sharelite/cookies',
+  );
 
   VideoPlayerController? _controller;
   bool _isInitialized = false;
@@ -82,7 +86,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
     1.25,
     1.5,
     2.0,
-    3.0
+    3.0,
   ];
 
   // 清晰度控制
@@ -284,7 +288,8 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
             _currentQuality = _qualityMap.keys.first;
           });
         }
-        final streamUrl = detail.videoStreamUrl ??
+        final streamUrl =
+            detail.videoStreamUrl ??
             (detail.videoQualityUrls?.values.firstOrNull);
         if (streamUrl != null &&
             streamUrl.isNotEmpty &&
@@ -329,12 +334,8 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
   }
 
   void _restorePortraitAndSystemUI() {
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-    ]);
-    SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.edgeToEdge,
-    );
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
   void _toggleOrientation() {
@@ -456,15 +457,17 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
   // 滑动调节亮度
   void _setBrightness(double value) {
     _currentBrightness = value;
-    _mediaChannel.invokeMethod(
-        'setBrightness', {'brightness': value}).catchError((_) {});
+    _mediaChannel
+        .invokeMethod('setBrightness', {'brightness': value})
+        .catchError((_) {});
   }
 
   // 滑动调节音量
   void _setVolume(double value) {
     _currentVolume = value;
     _mediaChannel
-        .invokeMethod('setVolume', {'volume': value}).catchError((_) {});
+        .invokeMethod('setVolume', {'volume': value})
+        .catchError((_) {});
     _controller?.setVolume(value);
   }
 
@@ -569,7 +572,8 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
         ? 'https://weibo.com/detail/${widget.statusId}'
         : (_qualityMap[_currentQuality] ?? widget.videoUrl);
 
-    final title = widget.title ??
+    final title =
+        widget.title ??
         (widget.authorName != null ? '${widget.authorName}的微博视频' : '微博视频');
     final shareText = '$title\n$shareUrl';
 
@@ -613,9 +617,10 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                   child: Text(
                     '播放倍速',
                     style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold),
+                      color: Colors.white70,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 ..._availableSpeeds.reversed.map((speed) {
@@ -628,15 +633,18 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                         color: isSelected
                             ? Theme.of(context).colorScheme.primary
                             : Colors.white,
-                        fontWeight:
-                            isSelected ? FontWeight.bold : FontWeight.normal,
+                        fontWeight: isSelected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                         fontSize: 15,
                       ),
                     ),
                     trailing: isSelected
-                        ? Icon(Icons.check_rounded,
+                        ? Icon(
+                            Icons.check_rounded,
                             color: Theme.of(context).colorScheme.primary,
-                            size: 20)
+                            size: 20,
+                          )
                         : null,
                     onTap: () {
                       setState(() {
@@ -682,9 +690,10 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                   child: Text(
                     '清晰度选择',
                     style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 13,
-                        fontWeight: FontWeight.bold),
+                      color: Colors.white70,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 ..._qualityMap.entries.map((entry) {
@@ -700,15 +709,18 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                         color: isSelected
                             ? Theme.of(context).colorScheme.primary
                             : Colors.white,
-                        fontWeight:
-                            isSelected ? FontWeight.bold : FontWeight.normal,
+                        fontWeight: isSelected
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                         fontSize: 15,
                       ),
                     ),
                     trailing: isSelected
-                        ? Icon(Icons.check_rounded,
+                        ? Icon(
+                            Icons.check_rounded,
                             color: Theme.of(context).colorScheme.primary,
-                            size: 20)
+                            size: 20,
+                          )
                         : null,
                     onTap: () {
                       Navigator.pop(ctx);
@@ -774,8 +786,11 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.live_tv_rounded,
-                            color: Colors.white70, size: 48),
+                        const Icon(
+                          Icons.live_tv_rounded,
+                          color: Colors.white70,
+                          size: 48,
+                        ),
                         const SizedBox(height: 12),
                         Text(
                           _liveMessageForStatus(_liveStatus)!,
@@ -789,11 +804,16 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.error_outline_rounded,
-                            color: Colors.white70, size: 48),
+                        const Icon(
+                          Icons.error_outline_rounded,
+                          color: Colors.white70,
+                          size: 48,
+                        ),
                         const SizedBox(height: 12),
-                        const Text('视频加载失败或链接已失效',
-                            style: TextStyle(color: Colors.white70)),
+                        const Text(
+                          '视频加载失败或链接已失效',
+                          style: TextStyle(color: Colors.white70),
+                        ),
                         const SizedBox(height: 16),
                         FilledButton.tonal(
                           onPressed: () {
@@ -815,15 +835,19 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                             children: [
                               CachedNetworkImage(
                                 widget.coverUrl!,
-                                headers: ApiConstants.imageHeaders,
+                                headers: ref
+                                    .read(weiboDioClientProvider)
+                                    .imageHeadersForUrl(widget.coverUrl!),
                                 fit: BoxFit.contain,
                               ),
                               const CircularProgressIndicator(
-                                  color: Colors.white70),
+                                color: Colors.white70,
+                              ),
                             ],
                           )
                         : const CircularProgressIndicator(
-                            color: Colors.white70),
+                            color: Colors.white70,
+                          ),
                   ),
 
                 // 2. 专属全屏视频触控手势层（位于视频上方、操作栏下方，完全不干扰/延迟控制栏按钮响应）
@@ -889,31 +913,36 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
 
                       if (_dragMode == _DragMode.brightness) {
                         final delta = -dy / (screenHeight * 0.65);
-                        final nextVal =
-                            (_startBrightness + delta).clamp(0.01, 1.0);
+                        final nextVal = (_startBrightness + delta).clamp(
+                          0.01,
+                          1.0,
+                        );
                         _setBrightness(nextVal);
                         _showHud(
-                            type: _HudType.brightness,
-                            value: nextVal,
-                            autoDismissMs: 0);
+                          type: _HudType.brightness,
+                          value: nextVal,
+                          autoDismissMs: 0,
+                        );
                       } else if (_dragMode == _DragMode.volume) {
                         final delta = -dy / (screenHeight * 0.65);
                         final nextVal = (_startVolume + delta).clamp(0.0, 1.0);
                         _setVolume(nextVal);
                         _showHud(
-                            type: _HudType.volume,
-                            value: nextVal,
-                            autoDismissMs: 0);
+                          type: _HudType.volume,
+                          value: nextVal,
+                          autoDismissMs: 0,
+                        );
                       } else if (_dragMode == _DragMode.seek) {
                         final totalDuration =
                             _controller?.value.duration ?? Duration.zero;
                         if (totalDuration > Duration.zero) {
                           final maxSec = totalDuration.inSeconds;
                           // 滑动满半屏跨度约为 90 秒或全片长度
-                          final span =
-                              maxSec > 180 ? 90 : (maxSec > 30 ? 60 : maxSec);
-                          final diffSec =
-                              ((dx / (screenWidth * 0.5)) * span).toInt();
+                          final span = maxSec > 180
+                              ? 90
+                              : (maxSec > 30 ? 60 : maxSec);
+                          final diffSec = ((dx / (screenWidth * 0.5)) * span)
+                              .toInt();
                           final targetSec = (_startPosition.inSeconds + diffSec)
                               .clamp(0, maxSec);
                           final target = Duration(seconds: targetSec);
@@ -951,7 +980,9 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                       ignoring: true,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.black87,
                           borderRadius: BorderRadius.circular(20),
@@ -966,8 +997,11 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                         child: const Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.fast_forward_rounded,
-                                color: Colors.amberAccent, size: 20),
+                            Icon(
+                              Icons.fast_forward_rounded,
+                              color: Colors.amberAccent,
+                              size: 20,
+                            ),
                             SizedBox(width: 8),
                             Text(
                               '2.0X 倍速快进中',
@@ -985,10 +1019,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                   ),
 
                 // 4. 全局手势指示器浮层 (亮度 / 音量 / 滑动进度 / 双击快进退)
-                IgnorePointer(
-                  ignoring: true,
-                  child: _buildGestureHudOverlay(),
-                ),
+                IgnorePointer(ignoring: true, child: _buildGestureHudOverlay()),
 
                 // 4. 顶部导航栏 (返回键、标题、下载按钮、分享按钮)
                 if (_showControls && !widget.embedded)
@@ -1013,8 +1044,10 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                       child: Row(
                         children: [
                           IconButton(
-                            icon: const Icon(Icons.arrow_back_rounded,
-                                color: Colors.white),
+                            icon: const Icon(
+                              Icons.arrow_back_rounded,
+                              color: Colors.white,
+                            ),
                             onPressed: () {
                               if (_isLandscape) {
                                 _toggleOrientation();
@@ -1034,8 +1067,8 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                                           widget.title!.isNotEmpty
                                       ? widget.title!
                                       : (widget.authorName != null
-                                          ? '${widget.authorName}的微博视频'
-                                          : '微博视频'),
+                                            ? '${widget.authorName}的微博视频'
+                                            : '微博视频'),
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 15,
@@ -1048,7 +1081,9 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                                   Text(
                                     '@${widget.authorName}',
                                     style: const TextStyle(
-                                        color: Colors.white70, fontSize: 12),
+                                      color: Colors.white70,
+                                      fontSize: 12,
+                                    ),
                                   ),
                               ],
                             ),
@@ -1065,15 +1100,19 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                                       color: Colors.white,
                                     ),
                                   )
-                                : const Icon(Icons.download_rounded,
-                                    color: Colors.white),
+                                : const Icon(
+                                    Icons.download_rounded,
+                                    color: Colors.white,
+                                  ),
                             onPressed: _performDownloadVideo,
                           ),
                           // 下载右边：分享按钮
                           IconButton(
                             tooltip: '分享视频',
-                            icon: const Icon(Icons.share_rounded,
-                                color: Colors.white),
+                            icon: const Icon(
+                              Icons.share_rounded,
+                              color: Colors.white,
+                            ),
                             onPressed: _performShareVideo,
                           ),
                         ],
@@ -1105,129 +1144,150 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                     bottom: 0,
                     left: 0,
                     right: 0,
-                    child: _measureBottomControls(Container(
-                      padding: EdgeInsets.fromLTRB(
-                        _isLandscape ? 28 : 16,
-                        12,
-                        _isLandscape ? 28 : 16,
-                        MediaQuery.of(context).padding.bottom + 12,
-                      ),
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                          colors: [Colors.black87, Colors.transparent],
+                    child: _measureBottomControls(
+                      Container(
+                        padding: EdgeInsets.fromLTRB(
+                          _isLandscape ? 28 : 16,
+                          12,
+                          _isLandscape ? 28 : 16,
+                          MediaQuery.of(context).padding.bottom + 12,
+                        ),
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.bottomCenter,
+                            end: Alignment.topCenter,
+                            colors: [Colors.black87, Colors.transparent],
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // 进度滑块
+                            VideoProgressIndicator(
+                              _controller!,
+                              allowScrubbing: true,
+                              padding: const EdgeInsets.symmetric(vertical: 6),
+                              colors: VideoProgressColors(
+                                playedColor: Theme.of(context)
+                                    .colorScheme
+                                    .primary,
+                                bufferedColor: Colors.white30,
+                                backgroundColor: Colors.white12,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            // 进度条下方行：时间、倍速、画质、最右侧横屏开关
+                            Row(
+                              children: [
+                                Text(
+                                  _formatDuration(_controller!.value.position),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const Text(
+                                  ' / ',
+                                  style: TextStyle(
+                                    color: Colors.white38,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                Text(
+                                  _formatDuration(_controller!.value.duration),
+                                  style: const TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const Spacer(),
+                                // 倍速选择按钮
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: _showSpeedMenu,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white12,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: Colors.white24,
+                                        width: 0.6,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      _playbackSpeed == 1.0
+                                          ? '倍速'
+                                          : '${_playbackSpeed}X',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                // 画质选择按钮
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: _showQualityMenu,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white12,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: Colors.white24,
+                                        width: 0.6,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      _currentQuality,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                // 画质右侧最右边：横屏显示开关 (全屏切换)
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: _toggleOrientation,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white12,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: Colors.white24,
+                                        width: 0.6,
+                                      ),
+                                    ),
+                                    child: Icon(
+                                      _isLandscape
+                                          ? Icons.fullscreen_exit_rounded
+                                          : Icons.fullscreen_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ),
                       ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // 进度滑块
-                          VideoProgressIndicator(
-                            _controller!,
-                            allowScrubbing: true,
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            colors: VideoProgressColors(
-                              playedColor:
-                                  Theme.of(context).colorScheme.primary,
-                              bufferedColor: Colors.white30,
-                              backgroundColor: Colors.white12,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          // 进度条下方行：时间、倍速、画质、最右侧横屏开关
-                          Row(
-                            children: [
-                              Text(
-                                _formatDuration(_controller!.value.position),
-                                style: const TextStyle(
-                                    color: Colors.white, fontSize: 12),
-                              ),
-                              const Text(' / ',
-                                  style: TextStyle(
-                                      color: Colors.white38, fontSize: 12)),
-                              Text(
-                                _formatDuration(_controller!.value.duration),
-                                style: const TextStyle(
-                                    color: Colors.white70, fontSize: 12),
-                              ),
-                              const Spacer(),
-                              // 倍速选择按钮
-                              InkWell(
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: _showSpeedMenu,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white12,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                        color: Colors.white24, width: 0.6),
-                                  ),
-                                  child: Text(
-                                    _playbackSpeed == 1.0
-                                        ? '倍速'
-                                        : '${_playbackSpeed}X',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              // 画质选择按钮
-                              InkWell(
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: _showQualityMenu,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white12,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                        color: Colors.white24, width: 0.6),
-                                  ),
-                                  child: Text(
-                                    _currentQuality,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              // 画质右侧最右边：横屏显示开关 (全屏切换)
-                              InkWell(
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: _toggleOrientation,
-                                child: Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white12,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                        color: Colors.white24, width: 0.6),
-                                  ),
-                                  child: Icon(
-                                    _isLandscape
-                                        ? Icons.fullscreen_exit_rounded
-                                        : Icons.fullscreen_rounded,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    )),
+                    ),
                   ),
               ],
             );
@@ -1263,8 +1323,9 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                 child: LinearProgressIndicator(
                   value: _hudValue,
                   backgroundColor: Colors.white24,
-                  valueColor:
-                      const AlwaysStoppedAnimation<Color>(Colors.amberAccent),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    Colors.amberAccent,
+                  ),
                   minHeight: 6,
                 ),
               ),
@@ -1273,9 +1334,10 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
             Text(
               '$pct%',
               style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13),
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
             ),
           ],
         );
@@ -1290,8 +1352,8 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
               pct == 0
                   ? Icons.volume_off_rounded
                   : (pct > 50
-                      ? Icons.volume_up_rounded
-                      : Icons.volume_down_rounded),
+                        ? Icons.volume_up_rounded
+                        : Icons.volume_down_rounded),
               color: Colors.cyanAccent,
               size: 26,
             ),
@@ -1303,8 +1365,9 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                 child: LinearProgressIndicator(
                   value: _hudValue,
                   backgroundColor: Colors.white24,
-                  valueColor:
-                      const AlwaysStoppedAnimation<Color>(Colors.cyanAccent),
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    Colors.cyanAccent,
+                  ),
                   minHeight: 6,
                 ),
               ),
@@ -1313,17 +1376,19 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
             Text(
               '$pct%',
               style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 13),
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
             ),
           ],
         );
         break;
 
       case _HudType.seek:
-        final diffStr =
-            _hudSeekDiff >= 0 ? '+${_hudSeekDiff}s' : '${_hudSeekDiff}s';
+        final diffStr = _hudSeekDiff >= 0
+            ? '+${_hudSeekDiff}s'
+            : '${_hudSeekDiff}s';
         final totalDur = _controller?.value.duration ?? Duration.zero;
         content = Column(
           mainAxisSize: MainAxisSize.min,
@@ -1339,9 +1404,10 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
             Text(
               '${_formatDuration(_targetSeekPosition)} / ${_formatDuration(totalDur)}',
               style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15),
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 15,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
@@ -1374,9 +1440,10 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
             Text(
               diffStr,
               style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16),
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
             ),
           ],
         );

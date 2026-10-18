@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,10 +9,23 @@ import 'package:review/core/network/weibo_dio_client.dart';
 import 'package:review/core/storage/storage_service.dart';
 import 'package:review/features/detail/data/detail_repository.dart';
 import 'package:review/features/detail/presentation/widgets/image_gallery_page.dart';
+import 'package:review/features/detail/presentation/widgets/hdr_gallery_image.dart';
 import 'package:review/features/feed/data/feed_repository.dart';
 import 'package:review/features/feed/data/models/weibo_status_model.dart';
 import 'package:review/features/feed/presentation/widgets/tweet_card.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+class _SdrProbeAdapter implements HttpClientAdapter {
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async => ResponseBody.fromBytes([0xff, 0xd8, 0xff, 0xd9], 206);
+
+  @override
+  void close({bool force = false}) {}
+}
 
 Map<String, dynamic> _photoStatus({int count = 18, int? metadataCount}) => {
       'id': '5350504051770130',
@@ -60,9 +75,18 @@ Future<void> _pumpCard(
       ),
     ),
   ));
+  await tester.pumpAndSettle();
 }
 
 void main() {
+  late HttpClientAdapter previousProbeAdapter;
+  setUp(() {
+    previousProbeAdapter = hdrThumbnailProbeClient.httpClientAdapter;
+    hdrThumbnailProbeClient.httpClientAdapter = _SdrProbeAdapter();
+  });
+  tearDown(() {
+    hdrThumbnailProbeClient.httpClientAdapter = previousProbeAdapter;
+  });
   test('media continuation is not long text and all official PIDs survive', () {
     final status = WeiboStatusModel.fromJson(_photoStatus(metadataCount: 9));
     expect(status.isLongText, isFalse);

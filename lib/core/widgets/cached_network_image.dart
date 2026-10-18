@@ -10,6 +10,7 @@ class CachedNetworkImage extends StatelessWidget {
     this.width,
     this.height,
     this.fit,
+    this.cacheWidth,
     this.errorBuilder,
   });
 
@@ -18,6 +19,7 @@ class CachedNetworkImage extends StatelessWidget {
   final double? width;
   final double? height;
   final BoxFit? fit;
+  final int? cacheWidth;
   final ImageErrorWidgetBuilder? errorBuilder;
 
   @override
@@ -28,6 +30,7 @@ class CachedNetworkImage extends StatelessWidget {
       width: width,
       height: height,
       fit: fit,
+      cacheWidth: cacheWidth,
       cache: true,
       loadStateChanged: errorBuilder == null
           ? null

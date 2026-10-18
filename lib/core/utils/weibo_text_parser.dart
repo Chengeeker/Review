@@ -16,7 +16,7 @@ class WeiboTextParser {
   WeiboTextParser._();
 
   static final RegExp _weiboRegex = RegExp(
-    r'(@[\w\u4e00-\u9fa5-]+)|(#([^#]+)#)|(https?:\/\/[^\s]+)|(\[[a-zA-Z0-9\u4e00-\u9fa5]+\])',
+    r'(@[\w\u4e00-\u9fa5-]+)|(#([^#]+)#)|(https?:\/\/[^\s]+)|(\[[^\[\]\r\n]{1,80}\])',
   );
   static final RegExp _imageTagRegex =
       RegExp(r'<img\b[^>]*>', caseSensitive: false);

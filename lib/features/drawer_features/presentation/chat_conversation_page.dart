@@ -1,15 +1,25 @@
-import 'package:easy_refresh/easy_refresh.dart';
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../../core/auth/auth_provider.dart';
+import '../../../core/constants/api_constants.dart';
 import '../../../core/network/weibo_dio_client.dart';
+import '../../../core/services/link_routing_service.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
+import '../../../core/utils/spring_page_route.dart';
 import '../../../core/utils/weibo_text_parser.dart';
 import '../../../core/utils/weibo_time_formatter.dart';
 import '../../../core/utils/app_toast.dart';
 import '../../../core/widgets/app_avatar.dart';
+import '../../../core/widgets/cached_network_image.dart';
+import '../../detail/presentation/widgets/image_gallery_page.dart';
+import '../../feed/data/models/weibo_status_model.dart';
+import '../data/chat_message_media.dart';
 import '../../profile/presentation/user_profile_page.dart';
 import 'group_info_page.dart';
 
@@ -40,6 +50,10 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
 
   final List<Map<String, dynamic>> _messages = [];
   final Map<String, Map<String, dynamic>> _userCache = {};
+  final Map<String, Map<String, dynamic>> _completeLinkMessages = {};
+  final Map<String, Object> _imageHeroScopes = {};
+  final Set<String> _requestedLinkMessages = {};
+  final Map<String, Future<Map<String, dynamic>>> _videoMetadata = {};
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
 
@@ -48,11 +62,16 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
   bool _hasOlder = true;
   String? _oldestMessageId;
   bool _isSending = false;
+  bool _isRefreshing = false;
+  bool _olderLoadFailed = false;
+  String? _loadError;
+  int _historyGeneration = 0;
 
   @override
   void initState() {
     super.initState();
     _userCache.addAll(ChatConversationPage.globalUserCache);
+    _scrollController.addListener(_maybeLoadOlder);
     _fetchMessages();
   }
 
@@ -63,179 +82,181 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
     super.dispose();
   }
 
-  Future<void> _fetchMessages({bool showLoading = true}) async {
-    if (showLoading) setState(() => _isLoading = true);
+  Future<List<Map<String, dynamic>>> _requestMessages({String? before}) async {
     final client = ref.read(weiboDioClientProvider);
-    final extracted = <Map<String, dynamic>>[];
-
-    try {
-      if (widget.isGroup) {
-        // 1. 群聊消息接口
-        final res = await client.dio.get(
-          'https://api.weibo.com/webim/groupchat/query_messages.json',
-          queryParameters: {
-            'id': widget.targetId,
-            'count': _messagePageSize,
-            'convert_emoji': 1,
-            'query_sender': 1,
-            'max_mid': 0,
-            'source': '209678993',
-          },
-          options: Options(
-            headers: {'Referer': 'https://api.weibo.com/chat'},
-          ),
-        );
-        if (res.data is Map<String, dynamic>) {
-          final data = res.data as Map<String, dynamic>;
-          final rawList = data['messages'] as List? ?? [];
-          for (final item in rawList) {
-            if (item is Map<String, dynamic>) {
-              extracted.add(item);
-            }
-          }
-        }
-      } else {
-        // 2. 单聊私信接口
-        final res = await client.dio.get(
-          'https://api.weibo.com/webim/2/direct_messages/conversation.json',
-          queryParameters: {
-            'uid': widget.targetId,
-            'count': 40,
-            'source': '209678993',
-          },
-        );
-        if (res.data is Map<String, dynamic>) {
-          final data = res.data as Map<String, dynamic>;
-          final rawList = data['direct_messages'] as List? ?? [];
-          for (final item in rawList) {
-            if (item is Map<String, dynamic>) {
-              extracted.add(item);
-            }
-          }
-        }
-      }
-    } catch (_) {}
-
-    if (widget.isGroup) {
-      _sortMessagesChronologically(extracted);
+    final response = await client.dio.get(
+      widget.isGroup
+          ? 'https://api.weibo.com/webim/groupchat/query_messages.json'
+          : 'https://api.weibo.com/webim/2/direct_messages/conversation.json',
+      queryParameters: {
+        if (widget.isGroup) 'id': widget.targetId else 'uid': widget.targetId,
+        'count': _messagePageSize,
+        'convert_emoji': 1,
+        'source': '209678993',
+        if (widget.isGroup) ...{
+          'query_sender': 1,
+          'max_mid': before ?? '0',
+        } else if (before != null)
+          'max_id': before,
+      },
+      options: Options(headers: {'Referer': 'https://api.weibo.com/chat/'}),
+    );
+    final data = _asMessageMap(response.data);
+    final raw = data?[widget.isGroup ? 'messages' : 'direct_messages'];
+    if (data == null ||
+        raw is! List ||
+        (data['error'] != null && data['error'].toString().isNotEmpty) ||
+        (data.containsKey('error_code') &&
+            data['error_code'].toString() != '0') ||
+        data['ok'] == 0 ||
+        data['result'] == false) {
+      throw const FormatException('聊天记录响应无效');
     }
+    return raw
+        .whereType<Map>()
+        .map((m) => Map<String, dynamic>.from(m))
+        .toList();
+  }
 
-    if (mounted) {
+  Future<void> _fetchMessages({bool showLoading = true}) async {
+    if (_isRefreshing) return;
+    _isRefreshing = true;
+    final generation = ++_historyGeneration;
+    setState(() {
+      if (showLoading) _isLoading = true;
+      _loadError = null;
+      _isLoadingOlder = false;
+    });
+    try {
+      final extracted = await _requestMessages();
+      if (!mounted || generation != _historyGeneration) return;
+      final seen = <String>{};
+      final messages = [
+        ...extracted,
+        if (!showLoading) ..._messages,
+      ].where((m) => seen.add(_messageKey(m))).toList();
+      _sortMessagesNewestFirst(messages);
       setState(() {
-        _messages.clear();
-        _messages.addAll(extracted);
-        if (widget.isGroup) {
-          _oldestMessageId =
-              _messageId(extracted.isEmpty ? null : extracted.first);
-          _hasOlder = extracted.length >= _messagePageSize;
-        }
+        _messages
+          ..clear()
+          ..addAll(messages);
+        _oldestMessageId = _messageId(_messages.lastOrNull);
+        if (showLoading) _hasOlder = extracted.isNotEmpty;
+        _olderLoadFailed = false;
         _isLoading = false;
       });
-      if (widget.isGroup) _scrollToLatest();
-      // 深度异步解析发言人头像与昵称
-      _resolveMessageSenders(extracted);
+      if (showLoading) _scrollToLatest();
+      unawaited(_resolveMessageSenders(extracted));
+      _queueOlderPrefetch();
+    } catch (_) {
+      if (mounted && generation == _historyGeneration) {
+        setState(() {
+          _isLoading = false;
+          _loadError = '聊天记录加载失败，请重试';
+        });
+      }
+    } finally {
+      _isRefreshing = false;
     }
   }
 
+  void _maybeLoadOlder() {
+    if (!_scrollController.hasClients || _olderLoadFailed || _isRefreshing) {
+      return;
+    }
+    if (_scrollController.position.extentAfter <= 480) {
+      unawaited(_fetchOlderMessages());
+    }
+  }
+
+  void _queueOlderPrefetch() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _maybeLoadOlder();
+    });
+  }
+
   Future<void> _fetchOlderMessages() async {
-    if (!widget.isGroup ||
-        _isLoading ||
+    if (_isLoading ||
+        _isRefreshing ||
         _isLoadingOlder ||
         !_hasOlder ||
         _messages.isEmpty) {
       return;
     }
-
-    final maxMid = _oldestMessageId;
-    if (maxMid == null || maxMid.isEmpty) {
-      if (mounted) setState(() => _hasOlder = false);
+    final oldestId = _oldestMessageId;
+    final numericId = BigInt.tryParse(oldestId ?? '');
+    if (numericId == null || numericId <= BigInt.zero) {
+      setState(() => _hasOlder = false);
       return;
     }
-
-    setState(() => _isLoadingOlder = true);
-    final client = ref.read(weiboDioClientProvider);
-    final previousOldest = _messages.first;
-    final extracted = <Map<String, dynamic>>[];
-    var requestSucceeded = false;
-
-    try {
-      final res = await client.dio.get(
-        'https://api.weibo.com/webim/groupchat/query_messages.json',
-        queryParameters: {
-          'id': widget.targetId,
-          'count': _messagePageSize,
-          'convert_emoji': 1,
-          'query_sender': 1,
-          'max_mid': maxMid,
-          'source': '209678993',
-        },
-        options: Options(
-          headers: {'Referer': 'https://api.weibo.com/chat'},
-        ),
-      );
-      requestSucceeded = true;
-      if (res.data is Map<String, dynamic>) {
-        final data = res.data as Map<String, dynamic>;
-        final rawList = data['messages'] as List? ?? [];
-        for (final item in rawList) {
-          if (item is Map<String, dynamic>) extracted.add(item);
-        }
-      }
-    } catch (_) {}
-
-    if (!mounted) return;
-
-    if (!requestSucceeded) {
-      setState(() => _isLoadingOlder = false);
-      return;
-    }
-
-    _sortMessagesChronologically(extracted);
-    final existingKeys = _messages.map(_messageKey).toSet();
-    final newMessages = extracted
-        .where((message) => existingKeys.add(_messageKey(message)))
-        .toList();
-    final pageAdvanced = extracted.isNotEmpty &&
-        _compareMessages(extracted.first, previousOldest) < 0;
-
+    final generation = _historyGeneration;
     setState(() {
-      _messages.insertAll(0, newMessages);
-      _oldestMessageId = _messageId(_messages.first);
-      _hasOlder = pageAdvanced && extracted.length >= _messagePageSize;
-      _isLoadingOlder = false;
+      _isLoadingOlder = true;
+      _olderLoadFailed = false;
     });
-    _resolveMessageSenders(newMessages);
+    try {
+      // WebIM cursors are inclusive; request before the oldest loaded ID.
+      final extracted = await _requestMessages(
+        before: (numericId - BigInt.one).toString(),
+      );
+      if (!mounted || generation != _historyGeneration) return;
+      final existing = _messages.map(_messageKey).toSet();
+      final older = extracted.where((message) {
+        final id = BigInt.tryParse(_messageId(message));
+        return id != null &&
+            id < numericId &&
+            existing.add(_messageKey(message));
+      }).toList();
+      _sortMessagesNewestFirst(older);
+      setState(() {
+        // Reverse layout keeps existing bubbles fixed when old messages append.
+        _messages.addAll(older);
+        _oldestMessageId = _messageId(_messages.last);
+        _hasOlder = older.isNotEmpty;
+        _isLoadingOlder = false;
+      });
+      unawaited(_resolveMessageSenders(older));
+      _queueOlderPrefetch();
+    } catch (_) {
+      if (mounted && generation == _historyGeneration) {
+        setState(() {
+          _isLoadingOlder = false;
+          _olderLoadFailed = true;
+        });
+      }
+    }
   }
 
-  void _sortMessagesChronologically(List<Map<String, dynamic>> messages) {
-    messages.sort(_compareMessages);
-  }
-
-  int _compareMessages(Map<String, dynamic> a, Map<String, dynamic> b) {
-    final timeCompare = _messageTime(a).compareTo(_messageTime(b));
-    if (timeCompare != 0) return timeCompare;
-    return _numericMessageId(a).compareTo(_numericMessageId(b));
+  void _sortMessagesNewestFirst(List<Map<String, dynamic>> messages) {
+    messages.sort((a, b) {
+      final aTime = _messageTime(a);
+      final bTime = _messageTime(b);
+      if (aTime > 0 && bTime > 0 && aTime != bTime) {
+        return bTime.compareTo(aTime);
+      }
+      final aId = BigInt.tryParse(_messageId(a)) ?? BigInt.zero;
+      final bId = BigInt.tryParse(_messageId(b)) ?? BigInt.zero;
+      return bId.compareTo(aId);
+    });
   }
 
   int _messageTime(Map<String, dynamic>? message) {
     if (message == null) return 0;
     for (final key in const ['time', 'timestamp', 'created_at', 'createdAt']) {
       final value = message[key];
-      if (value is num) {
-        final number = value.toInt();
-        return number < 100000000000 ? number * 1000 : number;
-      }
-      final parsed = DateTime.tryParse(value?.toString() ?? '');
+      final number = int.tryParse(value?.toString() ?? '');
+      if (number != null) return number < 100000000000 ? number * 1000 : number;
+      final parsed = WeiboTimeFormatter.parseWeiboDate(value?.toString() ?? '');
       if (parsed != null) return parsed.millisecondsSinceEpoch;
     }
-    return _numericMessageId(message);
+    return 0;
   }
 
-  int _numericMessageId(Map<String, dynamic>? message) =>
-      int.tryParse(message?['id']?.toString() ?? '') ?? 0;
-
   String _messageId(Map<String, dynamic>? message) =>
-      message?['id']?.toString().trim() ?? '';
+      (message?['idstr'] ?? message?['id'] ?? message?['mid'])
+          ?.toString()
+          .trim() ??
+      '';
 
   String _messageKey(Map<String, dynamic> message) {
     final id = _messageId(message);
@@ -250,7 +271,7 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
   void _scrollToLatest({bool animated = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
-      final target = _scrollController.position.maxScrollExtent;
+      final target = _scrollController.position.minScrollExtent;
       if (animated) {
         _scrollController.animateTo(
           target,
@@ -268,15 +289,25 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
     final uids = <String>{};
 
     for (final m in msgs) {
-      final uid = widget.isGroup
-          ? m['from_uid']?.toString()
-          : m['sender_id']?.toString();
-      if (uid != null && uid.isNotEmpty) {
-        if (ChatConversationPage.globalUserCache.containsKey(uid)) {
-          _userCache[uid] = ChatConversationPage.globalUserCache[uid]!;
-        } else if (!_userCache.containsKey(uid)) {
-          uids.add(uid);
-        }
+      final sender = _asMessageMap(m[widget.isGroup ? 'from_user' : 'sender']);
+      final uid =
+          (m[widget.isGroup ? 'from_uid' : 'sender_id'] ??
+                  sender?['idstr'] ??
+                  sender?['id'])
+              ?.toString();
+      if (uid == null || uid.isEmpty) continue;
+      final nick = sender?['screen_name'] ?? sender?['name'];
+      if (nick != null) {
+        ChatConversationPage.globalUserCache[uid] = {
+          'nick': nick,
+          'avatar':
+              sender?['avatar_large'] ?? sender?['profile_image_url'] ?? '',
+        };
+      }
+      if (ChatConversationPage.globalUserCache.containsKey(uid)) {
+        _userCache[uid] = ChatConversationPage.globalUserCache[uid]!;
+      } else if (!_userCache.containsKey(uid)) {
+        uids.add(uid);
       }
     }
 
@@ -309,7 +340,8 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
   }
 
   Future<void> _sendMessage() async {
-    final text = _inputController.text.trim();
+    final draft = _inputController.text;
+    final text = draft.trim();
     if (text.isEmpty || _isSending) return;
 
     setState(() => _isSending = true);
@@ -317,54 +349,81 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
     final authState = ref.read(authProvider);
     final myUid = authState.uid ?? 'me';
     final sentAt = DateTime.now();
-    _inputController.clear();
+    final previousMessageKeys = _messages.map(_messageKey).toSet();
 
     // A successful HTTP status alone is not proof that Weibo accepted the
     // message. Do not render a synthetic outgoing bubble; verify the API
     // business response and then read the conversation back from the server.
     var requestAccepted = false;
+    var sentMessageId = '';
+    var failureMessage = '微博服务器未确认消息发送成功，内容已保留';
     try {
-      if (widget.isGroup) {
-        final response = await client.dio.post(
-          'https://api.weibo.com/webim/groupchat/send_message.json',
-          data: {
+      final response = await client.dio.post(
+        widget.isGroup
+            ? 'https://api.weibo.com/webim/groupchat/send_message.json'
+            : 'https://api.weibo.com/webim/2/direct_messages/new.json',
+        data: {
+          'source': '209678993',
+          'is_encoded': 0,
+          if (widget.isGroup) ...{
             'id': widget.targetId,
             'content': text,
-            'source': '209678993',
-          },
-        );
-        requestAccepted = _isSuccessfulMessageResponse(response.data) &&
-            response.statusCode != null &&
-            response.statusCode! >= 200 &&
-            response.statusCode! < 300;
-      } else {
-        final response = await client.dio.post(
-          'https://api.weibo.com/webim/2/direct_messages/new.json',
-          data: {
+            'media_type': 0,
+            'setTimeout': 50,
+            'annotations': jsonEncode({'webchat': 1, 'clientid': ''}),
+          } else ...{
             'uid': widget.targetId,
             'text': text,
-            'source': '209678993',
+            'decodetime': 1,
+            // No Comet connection is registered, as in the Web client's empty-id state.
+            'extensions': jsonEncode({'clientid': ''}),
           },
-        );
-        requestAccepted = _isSuccessfulMessageResponse(response.data) &&
-            response.statusCode != null &&
-            response.statusCode! >= 200 &&
-            response.statusCode! < 300;
-      }
-    } catch (_) {}
+        },
+        options: Options(
+          contentType: Headers.formUrlEncodedContentType,
+          headers: {
+            'Referer': 'https://api.weibo.com/chat/',
+            'Origin': 'https://api.weibo.com',
+          },
+        ),
+      );
+      requestAccepted =
+          _isSuccessfulMessageResponse(response.data) &&
+          response.statusCode != null &&
+          response.statusCode! >= 200 &&
+          response.statusCode! < 300;
+      sentMessageId = _messageId(_asMessageMap(response.data));
+      failureMessage = _messageSendFailure(response.data, response.statusCode);
+    } on DioException catch (error) {
+      failureMessage = error.response == null
+          ? '发送结果未确认，内容已保留；请先核实会话，避免重复发送'
+          : _messageSendFailure(
+              error.response?.data,
+              error.response?.statusCode,
+            );
+    } catch (_) {
+      failureMessage = '发送结果未确认，内容已保留；请先核实会话，避免重复发送';
+    }
 
+    if (!mounted) return;
     var confirmed = false;
     if (requestAccepted) {
+      if (_inputController.text == draft) _inputController.clear();
       await _fetchMessages(showLoading: false);
       confirmed = _messages.any((message) {
+        if (sentMessageId.isNotEmpty) {
+          return _messageId(message) == sentMessageId;
+        }
         final body = (message['content'] ?? message['text'] ?? '').toString();
-        final sender = (message['from_uid'] ??
-                message['sender_id'] ??
-                message['user_id'] ??
-                _asMessageMap(message['sender'])?['id'] ??
-                '')
-            .toString();
-        return body == text &&
+        final sender =
+            (message['from_uid'] ??
+                    message['sender_id'] ??
+                    message['user_id'] ??
+                    _asMessageMap(message['sender'])?['id'] ??
+                    '')
+                .toString();
+        return !previousMessageKeys.contains(_messageKey(message)) &&
+            body == text &&
             sender == myUid &&
             _messageTime(message) >=
                 sentAt
@@ -376,13 +435,25 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
     if (mounted) {
       setState(() => _isSending = false);
       if (confirmed) {
-        if (widget.isGroup) _scrollToLatest(animated: true);
+        _scrollToLatest(animated: true);
       } else if (requestAccepted) {
-        AppToast.show(context, '接口已接受请求，但服务器暂未回读到消息；请先刷新核实，避免重复发送');
+        AppToast.show(context, '服务器暂未回读到消息；请重新打开会话核实，避免重复发送');
       } else {
-        AppToast.show(context, '微博服务器未确认消息发送成功');
+        AppToast.show(context, failureMessage);
       }
     }
+  }
+
+  String _messageSendFailure(dynamic response, int? statusCode) {
+    final data = _asMessageMap(response);
+    final error = data?['error']?.toString().trim() ?? '';
+    if (error.isEmpty) {
+      return statusCode != null && statusCode >= 400
+          ? '发送请求失败（HTTP $statusCode），内容已保留'
+          : '微博服务器未确认消息发送成功，内容已保留';
+    }
+    final code = data?['error_code']?.toString() ?? '';
+    return code.isEmpty ? '发送失败：$error' : '发送失败：$error（$code）';
   }
 
   bool _isSuccessfulMessageResponse(dynamic response) {
@@ -404,7 +475,7 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
       if (code != '0' && code != '100000') return false;
       return true;
     }
-    for (final key in const ['id', 'idstr', 'msg_id', 'message_id']) {
+    for (final key in const ['id', 'idstr', 'mid', 'msg_id', 'message_id']) {
       if (data[key] != null) return true;
     }
     for (final key in const ['message', 'direct_message', 'data']) {
@@ -419,7 +490,7 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
         if (nested['ok'] == 1 || nested['ok'] == '1' || nested['ok'] == true) {
           return true;
         }
-        if (nested['id'] != null || nested['idstr'] != null) return true;
+        if (_messageId(nested).isNotEmpty) return true;
       }
     }
     return false;
@@ -444,7 +515,10 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
         title: Row(
           children: [
             AppAvatar(
-                url: widget.targetAvatar, size: 36, name: widget.targetName),
+              url: widget.targetAvatar,
+              size: 36,
+              name: widget.targetName,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -454,15 +528,19 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
                   Text(
                     widget.targetName,
                     style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 16),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   if (widget.isGroup)
                     Text(
                       '群聊会话',
-                      style:
-                          TextStyle(fontSize: 11, color: colorScheme.outline),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: colorScheme.outline,
+                      ),
                     ),
                 ],
               ),
@@ -509,43 +587,57 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
           Expanded(
             child: _isLoading
                 ? Center(
-                    child:
-                        CircularProgressIndicator(color: colorScheme.primary))
+                    child: CircularProgressIndicator(
+                      color: colorScheme.primary,
+                    ),
+                  )
                 : _messages.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.chat_bubble_outline_rounded,
-                                size: 54,
-                                color: colorScheme.onSurfaceVariant
-                                    .withValues(alpha: 0.35)),
-                            const SizedBox(height: 12),
-                            Text(
-                              '暂无聊天消息，打个招呼吧',
-                              style: TextStyle(
-                                  color: colorScheme.onSurfaceVariant,
-                                  fontSize: 14),
-                            ),
-                          ],
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.chat_bubble_outline_rounded,
+                          size: 54,
+                          color: colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.35,
+                          ),
                         ),
-                      )
-                    : EasyRefresh(
-                        onRefresh: () => HapticFeedbackUtil.refresh(
-                          widget.isGroup ? _fetchOlderMessages : _fetchMessages,
+                        const SizedBox(height: 12),
+                        Text(
+                          _loadError ?? '暂无聊天消息，打个招呼吧',
+                          style: TextStyle(
+                            color: colorScheme.onSurfaceVariant,
+                            fontSize: 14,
+                          ),
                         ),
-                        child: ListView.builder(
-                          controller: _scrollController,
-                          reverse: !widget.isGroup,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 12),
-                          itemCount: _messages.length,
-                          itemBuilder: (context, index) {
-                            final msg = _messages[index];
-                            return _buildMessageItem(context, msg, myUid);
-                          },
-                        ),
-                      ),
+                        if (_loadError != null)
+                          TextButton(
+                            onPressed: _fetchMessages,
+                            child: const Text('重试'),
+                          ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    reverse: true,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    itemCount: _messages.length + 1,
+                    itemBuilder: (context, index) {
+                      if (index == _messages.length) {
+                        return _buildHistoryStatus();
+                      }
+                      final msg = _messages[index];
+                      return KeyedSubtree(
+                        key: ValueKey(_messageKey(msg)),
+                        child: _buildMessageItem(context, msg, myUid),
+                      );
+                    },
+                  ),
           ),
 
           const Divider(height: 1, thickness: 0.5),
@@ -561,8 +653,9 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
-                        color: colorScheme.surfaceContainerHighest
-                            .withValues(alpha: 0.55),
+                        color: colorScheme.surfaceContainerHighest.withValues(
+                          alpha: 0.55,
+                        ),
                         borderRadius: BorderRadius.circular(22),
                       ),
                       padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -584,13 +677,15 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
                   ),
                   const SizedBox(width: 8),
                   IconButton.filled(
-                    onPressed: _sendMessage,
+                    onPressed: _isSending ? null : _sendMessage,
                     icon: _isSending
                         ? const SizedBox(
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white),
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           )
                         : const Icon(Icons.send_rounded, size: 20),
                   ),
@@ -603,8 +698,338 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
     );
   }
 
+  Widget _buildHistoryStatus() => SizedBox(
+    height: 48,
+    child: Center(
+      child: _isLoadingOlder
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : _olderLoadFailed
+          ? TextButton(
+              onPressed: _fetchOlderMessages,
+              child: const Text('历史消息加载失败，点击重试'),
+            )
+          : !_hasOlder
+          ? const Text('已到最早消息')
+          : const SizedBox.shrink(),
+    ),
+  );
+
+  Future<void> _completeLinkMessage(Map<String, dynamic> message) async {
+    final id = _messageKey(message);
+    if (!mounted) return;
+    try {
+      final response = await ref
+          .read(weiboDioClientProvider)
+          .dio
+          .get(
+            widget.isGroup
+                ? 'https://api.weibo.com/webim/groupchat/query_message.json'
+                : 'https://api.weibo.com/webim/2/direct_messages/show_batch.json',
+            queryParameters: widget.isGroup
+                ? {'id': widget.targetId, 'mid': id}
+                : {'dmids': id, 'is_complete': 1, 'is_encoded': 0},
+            options: Options(
+              headers: {'Referer': 'https://api.weibo.com/chat/'},
+            ),
+          );
+      final raw = response.data;
+      final complete = widget.isGroup && raw is Map
+          ? raw['message']
+          : raw is List && raw.isNotEmpty
+          ? raw.first
+          : null;
+      if (complete is! Map || !mounted) return;
+      final merged = {...message, ...Map<String, dynamic>.from(complete)};
+      if (ChatLinkPreview.fromMessage(merged) == null &&
+          chatMessageImageUrls(merged).isEmpty) {
+        return;
+      }
+      setState(() => _completeLinkMessages[id] = merged);
+    } catch (_) {
+      // Keep the original clickable URL if Weibo has no complete card response.
+    }
+  }
+
+  Widget _buildLinkPreview(ChatLinkPreview card) {
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      label: '链接卡片：${card.title}',
+      button: true,
+      child: InkWell(
+        onTap: () =>
+            LinkRoutingService.openUrl(context, card.url, title: card.title),
+        child: SizedBox(
+          width: 260,
+          child: Row(
+            children: [
+              if (card.imageUrl != null)
+                CachedNetworkImage(
+                  card.imageUrl!,
+                  width: 52,
+                  height: 52,
+                  cacheWidth: (52 * MediaQuery.devicePixelRatioOf(context))
+                      .round()
+                      .clamp(1, 256),
+                  fit: BoxFit.cover,
+                  headers: ApiConstants.imageHeaders,
+                  errorBuilder: (_, _, _) => const SizedBox(
+                    width: 52,
+                    height: 52,
+                    child: Icon(Icons.link_rounded),
+                  ),
+                )
+              else
+                const SizedBox(
+                  width: 52,
+                  height: 52,
+                  child: Icon(Icons.link_rounded),
+                ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      card.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: colors.onSurface,
+                      ),
+                    ),
+                    if (card.description.isNotEmpty)
+                      Text(
+                        card.description.replaceAll(RegExp(r'<[^>]*>'), ''),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<Map<String, dynamic>> _loadVideoMetadata(String fid) async {
+    try {
+      Future<Map<String, dynamic>> query(bool replace) async {
+        final response = await ref
+            .read(weiboDioClientProvider)
+            .dio
+            .get(
+              'https://upload.api.weibo.com/2/mss/meta_query.json',
+              queryParameters: {
+                'source': '209678993',
+                'fid': fid,
+                'replace': '$replace',
+                'callback': '__review_video_meta',
+              },
+              options: Options(
+                responseType: ResponseType.plain,
+                headers: {'Referer': 'https://api.weibo.com/chat/'},
+              ),
+            );
+        return chatAttachmentMetadata(response.data);
+      }
+
+      final original = await query(false);
+      if (original['extension']?.toString().toLowerCase() != 'mp4') {
+        return original;
+      }
+      // WebIM resolves MP4 again with replace=true to obtain the playable fid.
+      if (!mounted) return original;
+      try {
+        final playable = await query(true);
+        return {...original, ...playable};
+      } catch (_) {
+        return original;
+      }
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Widget _buildMessageVideo(Map<String, dynamic> message, String fid) {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _videoMetadata.putIfAbsent(fid, () => _loadVideoMetadata(fid)),
+      builder: (context, snapshot) {
+        final pic = chatMessageVideo(message, fid, snapshot.data ?? {});
+        if (pic == null) {
+          if (message['media_type']?.toString() == '5' &&
+              snapshot.data?['extension']?.toString().toLowerCase() != 'mp4') {
+            return const SizedBox.shrink();
+          }
+          return Text(
+            snapshot.data?['is_delete']?.toString() == '1' ||
+                    snapshot.data?['is_delete'] == true
+                ? '视频已失效或未通过审核'
+                : snapshot.connectionState == ConnectionState.done
+                ? '附件暂不可播放'
+                : '正在加载附件…',
+          );
+        }
+        final scope = _imageHeroScopes.putIfAbsent(
+          '${_messageKey(message)}-video-$fid',
+          Object.new,
+        );
+        final width = (MediaQuery.sizeOf(context).width * .6).clamp(1.0, 240.0);
+        final height = pic.width > 0 && pic.height > 0
+            ? (width * pic.height / pic.width).clamp(100.0, 300.0)
+            : 160.0;
+        return Semantics(
+          label: '播放聊天视频',
+          button: true,
+          child: GestureDetector(
+            onTap: snapshot.connectionState != ConnectionState.done
+                ? null
+                : () {
+                    HapticFeedbackUtil.light();
+                    Navigator.of(context).push(
+                      PhysicsSpringGalleryRoute(
+                        child: ImageGalleryPage(
+                          pics: [pic],
+                          initialIndex: 0,
+                          statusId: '',
+                          heroScope: scope,
+                        ),
+                      ),
+                    );
+                  },
+            child: ImageGalleryHeroThumbnail(
+              scope: scope,
+              index: 0,
+              pic: pic,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: width,
+                  height: height,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    alignment: Alignment.center,
+                    children: [
+                      const ColoredBox(color: Colors.black87),
+                      if (pic.previewUrl.isNotEmpty)
+                        CachedNetworkImage(
+                          pic.previewUrl,
+                          fit: BoxFit.contain,
+                          cacheWidth:
+                              (width * MediaQuery.devicePixelRatioOf(context))
+                                  .round()
+                                  .clamp(1, 1024),
+                          headers: ref
+                              .read(weiboDioClientProvider)
+                              .imageHeadersForUrl(pic.previewUrl),
+                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                        ),
+                      const Center(
+                        child: Icon(
+                          Icons.play_circle_fill_rounded,
+                          color: Colors.white,
+                          size: 48,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMessageImage(
+    String url,
+    Map<String, dynamic> message,
+    List<String> imageUrls,
+    int index,
+  ) {
+    final messageId = _messageKey(message);
+    final heroScope = _imageHeroScopes.putIfAbsent(messageId, Object.new);
+    final pics = [
+      for (var picIndex = 0; picIndex < imageUrls.length; picIndex++)
+        WeiboPicModel(
+          pid: '$messageId-$picIndex',
+          thumbnail: imageUrls[picIndex],
+          large: imageUrls[picIndex],
+          original: imageUrls[picIndex],
+        ),
+    ];
+    return Semantics(
+      label: '查看聊天图片',
+      button: true,
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedbackUtil.light();
+          Navigator.of(context).push(
+            PhysicsSpringGalleryRoute(
+              child: ImageGalleryPage(
+                pics: pics,
+                initialIndex: index,
+                statusId: 'chat-${widget.targetId}-$messageId',
+                heroScope: heroScope,
+              ),
+            ),
+          );
+        },
+        child: ImageGalleryHeroThumbnail(
+          scope: heroScope,
+          index: index,
+          pic: pics[index],
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: (MediaQuery.sizeOf(context).width * .6).clamp(
+                  1.0,
+                  240.0,
+                ),
+                maxHeight: 300,
+              ),
+              child: CachedNetworkImage(
+                url,
+                fit: BoxFit.contain,
+                cacheWidth: (220 * MediaQuery.devicePixelRatioOf(context))
+                    .round()
+                    .clamp(1, 1024),
+                headers: ref
+                    .read(weiboDioClientProvider)
+                    .imageHeadersForUrl(url),
+                errorBuilder: (_, _, _) => const SizedBox(
+                  width: 180,
+                  height: 100,
+                  child: Center(child: Text('图片加载失败，点击重试')),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildMessageItem(
-      BuildContext context, Map<String, dynamic> msg, String myUid) {
+    BuildContext context,
+    Map<String, dynamic> msg,
+    String myUid,
+  ) {
+    final id = _messageKey(msg);
+    msg = _completeLinkMessages[id] ?? msg;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -616,6 +1041,36 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
     final text = isGroup
         ? (msg['content']?.toString() ?? '')
         : (msg['text']?.toString() ?? '');
+
+    final imageUrls = chatMessageImageUrls(msg);
+    final videoIds = chatMessageVideoIds(msg);
+    final card = imageUrls.isEmpty && videoIds.isEmpty
+        ? ChatLinkPreview.fromMessage(msg)
+        : null;
+    if (card == null &&
+        imageUrls.isEmpty &&
+        id.isNotEmpty &&
+        RegExp(r'^https?://\S+$').hasMatch(text.trim()) &&
+        _requestedLinkMessages.add(id)) {
+      final message = msg;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_completeLinkMessage(message));
+      });
+    }
+    final caption = chatMessageCaption(
+      text,
+      hasImages: imageUrls.isNotEmpty,
+      hasVideo: videoIds.isNotEmpty,
+    );
+    final displayText =
+        card != null &&
+            (text.trim() == card.url ||
+                text.trim() == msg['url_short'] ||
+                RegExp(r'^https?://\S+$').hasMatch(text.trim()))
+        ? ''
+        : caption;
+    final mediaOnly =
+        (imageUrls.isNotEmpty || videoIds.isNotEmpty) && displayText.isEmpty;
 
     final isMe =
         senderUid == myUid || (senderUid.isNotEmpty && senderUid == 'me');
@@ -646,12 +1101,12 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
     final senderNick = isMe
         ? '我'
         : (memberCache?['nick']?.toString() ??
-            msg['sender_screen_name']?.toString() ??
-            (isGroup ? '群友 $senderUid' : widget.targetName));
+              msg['sender_screen_name']?.toString() ??
+              (isGroup ? '群友 $senderUid' : widget.targetName));
     final senderAvatar = isMe
         ? ''
         : (memberCache?['avatar']?.toString() ??
-            (isGroup ? '' : widget.targetAvatar));
+              (isGroup ? '' : widget.targetAvatar));
 
     // 时间显示
     final rawTime =
@@ -659,8 +1114,9 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
     String timeStr = '';
     if (rawTime.isNotEmpty) {
       if (int.tryParse(rawTime) != null) {
-        final dt =
-            DateTime.fromMillisecondsSinceEpoch(int.parse(rawTime) * 1000);
+        final dt = DateTime.fromMillisecondsSinceEpoch(
+          int.parse(rawTime) * 1000,
+        );
         timeStr =
             '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
       } else {
@@ -672,8 +1128,9 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment:
-            isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isMe
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         children: [
           if (!isMe) ...[
             GestureDetector(
@@ -682,7 +1139,9 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (ctx) => UserProfilePage(
-                          uid: senderUid, screenName: senderNick),
+                        uid: senderUid,
+                        screenName: senderNick,
+                      ),
                     ),
                   );
                 }
@@ -693,8 +1152,9 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
           ],
           Flexible(
             child: Column(
-              crossAxisAlignment:
-                  isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              crossAxisAlignment: isMe
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.start,
               children: [
                 if (isGroup && !isMe) ...[
                   Padding(
@@ -712,13 +1172,23 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
                   ),
                 ],
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  key: ValueKey('chat-message-content-${_messageKey(msg)}'),
+                  padding: mediaOnly
+                      ? const EdgeInsets.all(4)
+                      : const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
                   decoration: BoxDecoration(
-                    color: isMe
+                    color: mediaOnly
+                        ? Colors.transparent
+                        : card != null
+                        ? colorScheme.surfaceContainerLow
+                        : isMe
                         ? colorScheme.primary
-                        : colorScheme.surfaceContainerHighest
-                            .withValues(alpha: 0.7),
+                        : colorScheme.surfaceContainerHighest.withValues(
+                            alpha: 0.7,
+                          ),
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(16),
                       topRight: const Radius.circular(16),
@@ -726,18 +1196,44 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
                       bottomRight: Radius.circular(isMe ? 4 : 16),
                     ),
                   ),
-                  child: Text.rich(
-                    TextSpan(
-                      children: WeiboTextParser.parse(
-                        rawText: text,
-                        context: context,
-                        defaultStyle: TextStyle(
-                          fontSize: 14.5,
-                          color: isMe ? Colors.white : colorScheme.onSurface,
-                          height: 1.35,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (var index = 0; index < imageUrls.length; index++)
+                        Padding(
+                          padding: EdgeInsets.only(
+                            bottom: displayText.isNotEmpty ? 8 : 0,
+                          ),
+                          child: _buildMessageImage(
+                            imageUrls[index],
+                            msg,
+                            imageUrls,
+                            index,
+                          ),
                         ),
-                      ),
-                    ),
+                      if (card != null) _buildLinkPreview(card),
+                      for (final fid in videoIds) _buildMessageVideo(msg, fid),
+                      if (displayText.isNotEmpty ||
+                          (imageUrls.isEmpty &&
+                              videoIds.isEmpty &&
+                              card == null))
+                        Text.rich(
+                          TextSpan(
+                            children: WeiboTextParser.parse(
+                              rawText: displayText,
+                              context: context,
+                              defaultStyle: TextStyle(
+                                fontSize: 14.5,
+                                color: isMe
+                                    ? Colors.white
+                                    : colorScheme.onSurface,
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 if (timeStr.isNotEmpty) ...[
@@ -746,8 +1242,10 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Text(
                       timeStr,
-                      style:
-                          TextStyle(fontSize: 10, color: colorScheme.outline),
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: colorScheme.outline,
+                      ),
                     ),
                   ),
                 ],

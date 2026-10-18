@@ -24,6 +24,13 @@ import java.util.concurrent.Executors
 import com.review.weiboauth.WeiboAuthManager
 
 class MainActivity : FlutterActivity() {
+    private var hdrImageSupport: HdrImageSupport? = null
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        hdrImageSupport?.close()
+        hdrImageSupport = null
+        super.cleanUpFlutterEngine(flutterEngine)
+    }
     private val CHANNEL = "com.sharelite/cookies"
     private val WEIBO_AUTH_CHANNEL = "com.review/weibo_auth"
     private val MESSAGE_NOTIFICATIONS_CHANNEL = "com.review/message_notifications"
@@ -280,6 +287,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        hdrImageSupport = HdrImageSupport(this, flutterEngine)
         val mChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         methodChannel = mChannel
         mChannel.setMethodCallHandler { call, result ->

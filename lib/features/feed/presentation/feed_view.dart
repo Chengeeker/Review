@@ -32,6 +32,7 @@ class _FeedViewState extends ConsumerState<FeedView>
   late final AnimationController _animationController;
   late final Animation<double> _expandAnimation;
   late final ScrollController _scrollController;
+  late final TimelineScrollNotifier _timelineScrollNotifier;
   DateTime? _lastTopBarTapTime;
   Timer? _topBarSingleTapTimer;
 
@@ -39,6 +40,7 @@ class _FeedViewState extends ConsumerState<FeedView>
   void initState() {
     super.initState();
     _scrollController = ScrollController();
+    _timelineScrollNotifier = ref.read(timelineScrollProvider.notifier);
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 250),
@@ -48,16 +50,14 @@ class _FeedViewState extends ConsumerState<FeedView>
       curve: Curves.easeInOutCubic,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref
-          .read(timelineScrollProvider.notifier)
-          .attachController(_scrollController);
+      if (mounted) _timelineScrollNotifier.attachController(_scrollController);
     });
   }
 
   @override
   void dispose() {
     _topBarSingleTapTimer?.cancel();
-    ref.read(timelineScrollProvider.notifier).detachController();
+    _timelineScrollNotifier.detachController();
     _scrollController.dispose();
     _animationController.dispose();
     super.dispose();
@@ -203,9 +203,11 @@ class _FeedViewState extends ConsumerState<FeedView>
               onPressed: () {
                 HapticFeedbackUtil.light();
                 _closeDropdown();
-                Navigator.of(
-                  context,
-                ).push(MaterialPageRoute(builder: (ctx) => const FollowingSearchPage()));
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (ctx) => const FollowingSearchPage(),
+                  ),
+                );
               },
             ),
             const SizedBox(width: 4),
@@ -415,7 +417,7 @@ class _FeedViewState extends ConsumerState<FeedView>
           right: 0,
           child: SizeTransition(
             sizeFactor: _expandAnimation,
-            axisAlignment: -1.0,
+            alignment: Alignment.topCenter,
             child: GroupDropdownPanel(
               currentCategoryId: feedState.currentCategory,
               customDefaultGroups: feedState.customDefaultGroups,

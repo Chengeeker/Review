@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:review/core/storage/storage_service.dart';
 import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:review/core/utils/spring_page_route.dart';
@@ -138,7 +141,20 @@ Future<List<_GalleryImageStream>> _cacheDecodedGalleryPics(
   return streams;
 }
 
+late StorageService galleryTestStorage;
+
+Future<void> _pumpGallery(WidgetTester tester, Widget child) => tester.pumpWidget(
+  ProviderScope(
+    overrides: [storageServiceProvider.overrideWithValue(galleryTestStorage)],
+    child: child,
+  ),
+);
+
 void main() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    galleryTestStorage = StorageService(await SharedPreferences.getInstance());
+  });
   testWidgets(
     'decoded gallery paints through actual Hero push, swipe and pop',
     (tester) async {
@@ -178,7 +194,7 @@ void main() {
       final scope = Object();
       final navigator = GlobalKey<NavigatorState>();
       final screen = GlobalKey();
-      await tester.pumpWidget(
+      await _pumpGallery(tester,
         RepaintBoundary(
           key: screen,
           child: MaterialApp(
@@ -326,7 +342,7 @@ void main() {
     );
     final sourceThumbnail = find.byKey(const ValueKey('hero-source-thumbnail'));
 
-    await tester.pumpWidget(
+    await _pumpGallery(tester,
       MaterialApp(
         home: Builder(
           builder: (context) => Scaffold(
@@ -383,7 +399,7 @@ void main() {
     tester,
   ) async {
     final navigatorKey = GlobalKey<NavigatorState>();
-    await tester.pumpWidget(
+    await _pumpGallery(tester,
       MaterialApp(
         navigatorKey: navigatorKey,
         home: const Scaffold(body: Text('host page')),
@@ -469,7 +485,7 @@ void main() {
       pic: galleryTestPic,
     );
 
-    await tester.pumpWidget(
+    await _pumpGallery(tester,
       MaterialApp(
         home: Builder(
           builder: (context) => Scaffold(
@@ -590,7 +606,7 @@ void main() {
             index: 0,
             pic: galleryTestPic,
           );
-          await tester.pumpWidget(
+          await _pumpGallery(tester,
             MaterialApp(
               navigatorKey: navigatorKey,
               home: Scaffold(
@@ -687,7 +703,7 @@ void main() {
             findsOneWidget,
           );
           await tester.pumpAndSettle();
-          await tester.pumpWidget(
+          await _pumpGallery(tester,
             MaterialApp(
               home: Center(
                 child: RepaintBoundary(
@@ -703,7 +719,7 @@ void main() {
             expectedStart,
             reason: 'first flight pixels must keep current zoom/pan and paint offset',
           );
-          await tester.pumpWidget(
+          await _pumpGallery(tester,
             MaterialApp(
               home: Center(
                 child: RepaintBoundary(
@@ -719,7 +735,7 @@ void main() {
             expected,
             reason: 'last flight pixels must equal the rounded cover thumbnail',
           );
-          await tester.pumpWidget(const SizedBox());
+          await _pumpGallery(tester, const SizedBox());
           image.dispose();
           expect(tester.takeException(), isNull);
         },
@@ -736,7 +752,7 @@ void main() {
       index: 0,
       pic: portraitGalleryTestPic,
     );
-    await tester.pumpWidget(
+    await _pumpGallery(tester,
       MaterialApp(
         navigatorKey: nav,
         home: Center(
@@ -775,7 +791,7 @@ void main() {
   testWidgets('thumbnail decoding preserves aspect ratio before cover crop', (
     tester,
   ) async {
-    await tester.pumpWidget(
+    await _pumpGallery(tester,
       const MaterialApp(
         home: ImageGalleryPage(
           pics: [galleryTestPic, galleryTestPic],
@@ -804,7 +820,7 @@ void main() {
       testWidgets(
         'fast thumbnail fling keeps main image synchronized without rewind: $platform $direction',
         (tester) async {
-          await tester.pumpWidget(
+          await _pumpGallery(tester,
             MaterialApp(
               theme: ThemeData(platform: platform),
               home: ImageGalleryPage(
@@ -869,7 +885,7 @@ void main() {
         ),
       );
       final streams = await _cacheDecodedGalleryPics(tester, pics);
-      await tester.pumpWidget(
+      await _pumpGallery(tester,
         MaterialApp(
           home: Listener(
             onPointerDown: (_) => pointerDowns++,
@@ -1013,7 +1029,7 @@ void main() {
     (tester) async {
       var pointerDowns = 0;
       final dragScrollStarts = <ScrollStartNotification>[];
-      await tester.pumpWidget(
+      await _pumpGallery(tester,
         MaterialApp(
           home: Listener(
             onPointerDown: (_) => pointerDowns++,
@@ -1113,7 +1129,7 @@ void main() {
         );
       });
 
-      await tester.pumpWidget(
+      await _pumpGallery(tester,
         MaterialApp(
           home: ImageGalleryPage(
             pics: List.generate(
@@ -1174,7 +1190,7 @@ void main() {
   testWidgets('main image follows thumbnail position throughout a drag', (
     tester,
   ) async {
-    await tester.pumpWidget(
+    await _pumpGallery(tester,
       MaterialApp(
         home: ImageGalleryPage(
           pics: List.filled(18, galleryTestPic),
@@ -1214,7 +1230,7 @@ void main() {
   testWidgets('thumbnail and main image stay still while drag is held', (
     tester,
   ) async {
-    await tester.pumpWidget(
+    await _pumpGallery(tester,
       MaterialApp(
         home: ImageGalleryPage(
           pics: List.filled(18, galleryTestPic),
@@ -1298,7 +1314,7 @@ void main() {
   });
 
   testWidgets('main navigation cancels old thumbnail inertia', (tester) async {
-    await tester.pumpWidget(
+    await _pumpGallery(tester,
       MaterialApp(
         home: ImageGalleryPage(
           pics: List.filled(18, galleryTestPic),
@@ -1346,7 +1362,7 @@ void main() {
     testWidgets(
       'thumbnail roller synchronizes tap and main swipe for $count photos',
       (tester) async {
-        await tester.pumpWidget(
+        await _pumpGallery(tester,
           MaterialApp(
             home: ImageGalleryPage(
               pics: List.filled(count, galleryTestPic),
@@ -1405,7 +1421,7 @@ void main() {
   }
 
   testWidgets('center tap toggles image gallery top controls', (tester) async {
-    await tester.pumpWidget(
+    await _pumpGallery(tester,
       const MaterialApp(
         home: ImageGalleryPage(
           pics: [galleryTestPic],
@@ -1436,7 +1452,7 @@ void main() {
   testWidgets('double tap does not toggle image gallery chrome', (
     tester,
   ) async {
-    await tester.pumpWidget(
+    await _pumpGallery(tester,
       const MaterialApp(
         home: ImageGalleryPage(
           pics: [galleryTestPic],
@@ -1463,7 +1479,7 @@ void main() {
     final navigatorKey = GlobalKey<NavigatorState>();
     final observer = RecordingNavigatorObserver();
 
-    await tester.pumpWidget(
+    await _pumpGallery(tester,
       MaterialApp(
         navigatorKey: navigatorKey,
         navigatorObservers: [observer],

@@ -427,6 +427,8 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
                     )
                   else
                     ListView.separated(
+                      padding: EdgeInsets.zero,
+                      primary: false,
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: _contacts.length,

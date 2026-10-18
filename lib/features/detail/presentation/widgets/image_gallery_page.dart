@@ -4,6 +4,8 @@ import 'dart:ui' as ui;
 
 import 'package:dio/dio.dart';
 import 'package:extended_image/extended_image.dart';
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform, kIsWeb;
 import 'package:flutter/gestures.dart'
     show
         PointerCancelEvent,
@@ -22,12 +24,14 @@ import 'package:video_player/video_player.dart';
 
 import '../../../../core/auth/auth_provider.dart';
 import '../../../../core/constants/api_constants.dart';
+import '../../../../core/network/weibo_dio_client.dart';
 import '../../../../core/storage/storage_service.dart';
 import '../../../../core/theme/theme_provider.dart';
 import '../../../../core/utils/app_toast.dart';
 import '../../../../core/utils/haptic_feedback_util.dart';
 import '../../../feed/data/models/weibo_status_model.dart';
 import '../../../feed/presentation/widgets/weibo_video_player_page.dart';
+import 'hdr_gallery_image.dart';
 
 /// Stable matching identity for a thumbnail and its fullscreen gallery image.
 /// The scope is unique to the originating gallery widget, so two copies of the
@@ -90,6 +94,19 @@ Widget imageGalleryHeroFlightShuttleBuilder(
 ) {
   final fromHero = fromHeroContext.widget as Hero;
   final toHero = toHeroContext.widget as Hero;
+  final flightTag = fromHero.tag;
+  final videoGallery =
+      toHeroContext.findAncestorStateOfType<_ImageGalleryPageState>() ??
+      fromHeroContext.findAncestorStateOfType<_ImageGalleryPageState>();
+  if (flightTag is ImageGalleryHeroTag &&
+      videoGallery != null &&
+      flightTag.index < videoGallery.widget.pics.length &&
+      videoGallery.widget.pics[flightTag.index].isVideo) {
+    // Fly the poster; mounting a player in the overlay opens another decoder.
+    return flightDirection == HeroFlightDirection.pop
+        ? toHero.child
+        : fromHero.child;
+  }
   if (flightDirection != HeroFlightDirection.pop) {
     final tag = fromHero.tag;
     final source = _HeroImageGeometry.capture(fromHeroContext);
@@ -324,6 +341,11 @@ class ImageGalleryPage extends ConsumerStatefulWidget {
 
 class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
     with TickerProviderStateMixin {
+  Map<String, String> _imageHeadersForUrl(String url) =>
+      Uri.tryParse(url)?.host == 'upload.api.weibo.com'
+      ? ref.read(weiboDioClientProvider).imageHeadersForUrl(url)
+      : ApiConstants.imageHeaders;
+
   static const MethodChannel _mediaChannel = MethodChannel(
     'com.sharelite/cookies',
   );
@@ -351,6 +373,83 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
   double? _thumbnailScrollBottom;
   bool _mainUserScrolling = false;
   final Expando<ExtendedImageGesture> _pagingImages = Expando();
+  final Map<String, ValueNotifier<Rect?>> _hdrRects = {};
+  final Set<String> _hdrUrls = {};
+  bool _hdrWindowEnabled = false;
+  bool _hdrDisplaySupported = false;
+  bool? _windowHdrEnabled;
+
+  ValueNotifier<Rect?> _hdrRectFor(String url) =>
+      _hdrRects.putIfAbsent(url, () => ValueNotifier<Rect?>(null));
+
+  void _onHdrDetected(String url, bool supported) {
+    if (!mounted) return;
+    if (_hdrUrls.add(url)) setState(() {});
+    if (supported && !_hdrWindowEnabled) {
+      _hdrWindowEnabled = true;
+      _updateWindowHdr();
+    }
+  }
+
+  Future<void> _checkHdrDisplaySupport() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    try {
+      final supported = await hdrGalleryChannel.invokeMethod<bool>(
+        'isHdrDisplaySupported',
+      );
+      if (!mounted) return;
+      setState(() {
+        _hdrDisplaySupported = supported ?? false;
+      });
+      _updateWindowHdr();
+    } catch (_) {}
+  }
+
+  Future<void> _handleNativeHdrCall(MethodCall call) async {
+    if (call.method != 'hdrImageDecoded') return;
+    final args = call.arguments;
+    if (args is! Map || args['hasGainMap'] != true) return;
+    final url = args['url']?.toString() ?? '';
+    if (url.isEmpty || !mounted) return;
+    _onHdrDetected(url, true);
+  }
+
+  void _updateWindowHdr() {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
+    final isCandidate = widget.pics.any((pic) {
+      final url = pic.originalUrl;
+      return _hdrUrls.contains(url) ||
+          isKnownSinaHdrGainMap(url) ||
+          url.toLowerCase().contains('gainmap') ||
+          url.toLowerCase().contains('hdr');
+    });
+    final shouldEnable = _hdrDisplaySupported && isCandidate;
+    if (_windowHdrEnabled == shouldEnable) return;
+    _windowHdrEnabled = shouldEnable;
+    unawaited(
+      hdrGalleryChannel
+          .invokeMethod<void>('setWindowHdr', {'enabled': shouldEnable})
+          .catchError((_) {}),
+    );
+  }
+
+  Future<void> _primeInitialHdrImage() async {
+    if (kIsWeb ||
+        defaultTargetPlatform != TargetPlatform.android ||
+        widget.initialIndex < 0 ||
+        widget.initialIndex >= widget.pics.length) {
+      return;
+    }
+    final pic = widget.pics[widget.initialIndex];
+    if (pic.isVideo || pic.isGif || pic.isWebpageCard) return;
+    final url = pic.originalUrl;
+    final isHdr = await cachedSinaHdrGainMapProbe(url);
+    if (isHdr && mounted) {
+      _onHdrDetected(url, _hdrDisplaySupported);
+      _updateWindowHdr();
+    }
+  }
+
   ui.Image? _openingPreview;
 
   // Live Photo Controller Cache
@@ -383,6 +482,10 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
       vsync: this,
     );
     _initLiveControllerForIndex(_currentIndex);
+    hdrGalleryChannel.setMethodCallHandler(_handleNativeHdrCall);
+    unawaited(_checkHdrDisplaySupport());
+    _updateWindowHdr();
+    unawaited(_primeInitialHdrImage());
   }
 
   @override
@@ -422,6 +525,15 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
 
   @override
   void dispose() {
+    hdrGalleryChannel.setMethodCallHandler(null);
+    unawaited(
+      hdrGalleryChannel
+          .invokeMethod<void>('setWindowHdr', {'enabled': false})
+          .catchError((_) {}),
+    );
+    for (final rect in _hdrRects.values) {
+      rect.dispose();
+    }
     _openingPreview?.dispose();
     _openingPreview = null;
     _routeAnimation?.removeStatusListener(_handleRouteAnimationStatus);
@@ -622,7 +734,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
         url,
         options: Options(
           responseType: ResponseType.bytes,
-          headers: ApiConstants.imageHeaders,
+          headers: _imageHeadersForUrl(url),
         ),
       );
 
@@ -856,7 +968,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
     // PageView keeps neighboring pages alive. If each retained page has a
     // Hero, popping the route can launch multiple flights back to the grid.
     // Disable neighboring flights without replacing the image gesture subtree.
-    if (scope == null || pic.isVideo) return child;
+    if (scope == null) return child;
     return HeroMode(
       enabled: index == _currentIndex,
       child: Hero(
@@ -989,7 +1101,9 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                         children: [
                           ExtendedImage.network(
                             widget.pics[index].previewUrl,
-                            headers: ApiConstants.imageHeaders,
+                            headers: _imageHeadersForUrl(
+                              widget.pics[index].previewUrl,
+                            ),
                             fit: BoxFit.cover,
                             cacheWidth: 160,
                             cache: true,
@@ -1005,6 +1119,12 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                                 color: Colors.white,
                                 size: 20,
                               ),
+                            ),
+                          if (_hdrUrls.contains(widget.pics[index].originalUrl))
+                            const Positioned(
+                              right: 2,
+                              bottom: 2,
+                              child: GalleryHdrBadge(thumbnail: true),
                             ),
                         ],
                       ),
@@ -1045,10 +1165,8 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
           children: [
             // Gesture PageView with Physics-based Spring Morphing
             // Raw pointer tracking avoids competing with ExtendedImage double taps.
-            GlassBackgroundSource(
-              enabled: useLiquidGlass,
-              child: Listener(
-                onPointerDown: _handleGalleryPointerDown,
+            Listener(
+              onPointerDown: _handleGalleryPointerDown,
                 onPointerMove: _handleGalleryPointerMove,
                 onPointerUp: _handleGalleryPointerUp,
                 onPointerCancel: _handleGalleryPointerCancel,
@@ -1098,30 +1216,45 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                       if (pic.isVideo) {
                         // PageView may retain offscreen children. An explicit
                         // active-index signal tears down hidden players too.
-                        return ValueListenableBuilder<int>(
-                          valueListenable: _activeMediaIndex,
-                          builder: (context, activeIndex, _) =>
-                              activeIndex == index
-                              ? WeiboVideoPlayerPage(
-                                  key: ValueKey('gallery-video-$index'),
-                                  videoUrl: pic.videoUrl ?? '',
-                                  statusId: widget.statusId,
-                                  coverUrl: pic.previewUrl,
-                                  title: pic.videoTitle,
-                                  authorName: widget.authorName,
-                                  embedded: true,
-                                  onToggleChrome: _toggleChrome,
-                                  onFullscreenChanged: (isFullscreen) =>
-                                      _setChromeVisible(!isFullscreen),
-                                  onBottomControlsHeightChanged:
-                                      _setVideoBottomControlsHeight,
-                                )
-                              : ExtendedImage.network(
-                                  pic.previewUrl,
-                                  headers: ApiConstants.imageHeaders,
-                                  fit: BoxFit.contain,
-                                  cache: true,
-                                ),
+                        return _withGalleryHero(
+                          index,
+                          pic,
+                          ValueListenableBuilder<int>(
+                            valueListenable: _activeMediaIndex,
+                            builder: (context, activeIndex, _) =>
+                                activeIndex == index &&
+                                    (widget.heroScope == null ||
+                                        _chromeRouteVisible)
+                                ? WeiboVideoPlayerPage(
+                                    key: ValueKey('gallery-video-$index'),
+                                    videoUrl: pic.videoUrl ?? '',
+                                    mediaHeaders: _imageHeadersForUrl(
+                                      pic.videoUrl ?? '',
+                                    ),
+                                    statusId: widget.statusId,
+                                    coverUrl: pic.previewUrl.isEmpty
+                                        ? null
+                                        : pic.previewUrl,
+                                    title: pic.videoTitle,
+                                    authorName: widget.authorName,
+                                    embedded: true,
+                                    onToggleChrome: _toggleChrome,
+                                    onFullscreenChanged: (isFullscreen) =>
+                                        _setChromeVisible(!isFullscreen),
+                                    onBottomControlsHeightChanged:
+                                        _setVideoBottomControlsHeight,
+                                  )
+                                : pic.previewUrl.isEmpty
+                                ? const ColoredBox(color: Colors.black)
+                                : ExtendedImage.network(
+                                    pic.previewUrl,
+                                    headers: _imageHeadersForUrl(
+                                      pic.previewUrl,
+                                    ),
+                                    fit: BoxFit.contain,
+                                    cache: true,
+                                  ),
+                          ),
                         );
                       }
                       final controller = _liveControllers[index];
@@ -1132,15 +1265,16 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                               pic.width > 0 &&
                               pic.height / pic.width > 2.0);
 
+                      final imageUrl = pic.originalUrl.isNotEmpty
+                          ? pic.originalUrl
+                          : (pic.largeUrl.isNotEmpty
+                                ? pic.largeUrl
+                                : pic.bmiddleUrl);
                       final foregroundImage = ExtendedImage.network(
-                        pic.originalUrl.isNotEmpty
-                            ? pic.originalUrl
-                            : (pic.largeUrl.isNotEmpty
-                                  ? pic.largeUrl
-                                  : pic.bmiddleUrl),
+                        imageUrl,
                         width: double.infinity,
                         height: double.infinity,
-                        headers: ApiConstants.imageHeaders,
+                        headers: _imageHeadersForUrl(imageUrl),
                         cache: true,
                         fit: BoxFit.contain,
                         mode: ExtendedImageMode.gesture,
@@ -1288,6 +1422,13 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                             initialScale: 1.0,
                             inPageView: true,
                             initialAlignment: InitialAlignment.center,
+                            gestureDetailsIsChanged: (details) {
+                              final rect = details?.destinationRect;
+                              final layout = details?.layoutRect;
+                              _hdrRectFor(imageUrl).value = rect?.shift(
+                                -(layout?.topLeft ?? Offset.zero),
+                              );
+                            },
                           );
                         },
                       );
@@ -1312,7 +1453,9 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                                       backgroundUrl,
                                       width: double.infinity,
                                       height: double.infinity,
-                                      headers: ApiConstants.imageHeaders,
+                                      headers: _imageHeadersForUrl(
+                                        backgroundUrl,
+                                      ),
                                       fit: BoxFit.contain,
                                       cache: true,
                                     ),
@@ -1323,7 +1466,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                             : foregroundImage,
                       );
 
-                      return _withGalleryHero(
+                      final heroImage = _withGalleryHero(
                         index,
                         pic,
                         Stack(
@@ -1350,12 +1493,53 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                           ],
                         ),
                       );
+                      if (pic.isGif || pic.isWebpageCard) return heroImage;
+                      return Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          heroImage,
+                          if (!pic.isVideo)
+                            ValueListenableBuilder<int>(
+                              valueListenable: _activeMediaIndex,
+                              builder: (context, activeIndex, _) =>
+                                  HdrGalleryImage(
+                                    key: ValueKey('hdr-$imageUrl'),
+                                    url: imageUrl,
+                                    headers: _imageHeadersForUrl(imageUrl),
+                                    active:
+                                        activeIndex == index &&
+                                        !_isPlayingLive,
+                                    visible:
+                                        activeIndex == index &&
+                                        _chromeRouteVisible &&
+                                        !_isPlayingLive,
+                                    displaySupported: _hdrDisplaySupported,
+                                    isCandidate:
+                                        _hdrUrls.contains(imageUrl) ||
+                                        isKnownSinaHdrGainMap(imageUrl),
+                                    imageRect: _hdrRectFor(imageUrl),
+                                    onDetected: (supported) =>
+                                        _onHdrDetected(imageUrl, supported),
+                                  ),
+                            ),
+                        ],
+                      );
                     },
                   ),
                 ),
               ),
-            ),
 
+            if (_showChrome &&
+                _chromeRouteVisible &&
+                currentPic != null &&
+                _hdrUrls.contains(currentPic.originalUrl))
+              Positioned(
+                bottom: widget.pics.length > 1
+                    ? _thumbnailBottom + 64 + 14
+                    : MediaQuery.paddingOf(context).bottom + 24,
+                right: 16,
+                child: const GalleryHdrBadge(),
+              ),
             if (widget.pics.length > 1)
               Positioned(
                 left: 12,
@@ -1527,15 +1711,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
         ),
       ),
     );
-    return useLiquidGlass
-        ? GlassAdaptiveScope(
-            minQuality: GlassQuality.standard,
-            child: GlassPage(
-              enableBackgroundSampling: true,
-              child: galleryPage,
-            ),
-          )
-        : galleryPage;
+    return galleryPage;
   }
 }
 

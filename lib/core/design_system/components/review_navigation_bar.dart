@@ -17,11 +17,13 @@ class ReviewNavigationBar extends ConsumerWidget {
     required this.selectedIndex,
     required this.onSelected,
     required this.hasBottomInset,
+    this.isTransitioning = false,
   });
 
   final int selectedIndex;
   final ValueChanged<int> onSelected;
   final bool hasBottomInset;
+  final bool isTransitioning;
 
   static const _destinations = <_NavigationDestination>[
     _NavigationDestination(
@@ -77,6 +79,8 @@ class ReviewNavigationBar extends ConsumerWidget {
       return _LiquidGlassNavigationBar(
         selectedIndex: selectedIndex,
         onSelected: onSelected,
+        hasBottomInset: hasBottomInset,
+        isTransitioning: isTransitioning,
       );
     }
 
@@ -111,17 +115,20 @@ class ReviewNavigationBar extends ConsumerWidget {
                   borderRadius: BorderRadius.circular(28),
                   child: Stack(
                     children: [
-                      AnimatedPositioned(
-                        duration: const Duration(milliseconds: 240),
-                        curve: Curves.easeOutCubic,
-                        left: itemWidth * selectedIndex,
+                      Positioned(
+                        left: 0,
                         top: 0,
                         bottom: 0,
                         width: itemWidth,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: colorScheme.secondaryContainer,
-                            borderRadius: BorderRadius.circular(28),
+                        child: AnimatedSlide(
+                          duration: const Duration(milliseconds: 240),
+                          curve: Curves.easeOutCubic,
+                          offset: Offset(selectedIndex.toDouble(), 0),
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: colorScheme.secondaryContainer,
+                              borderRadius: BorderRadius.circular(28),
+                            ),
                           ),
                         ),
                       ),
@@ -222,10 +229,14 @@ class _LiquidGlassNavigationBar extends StatefulWidget {
   const _LiquidGlassNavigationBar({
     required this.selectedIndex,
     required this.onSelected,
+    required this.hasBottomInset,
+    this.isTransitioning = false,
   });
 
   final int selectedIndex;
   final ValueChanged<int> onSelected;
+  final bool hasBottomInset;
+  final bool isTransitioning;
 
   @override
   State<_LiquidGlassNavigationBar> createState() =>
@@ -233,19 +244,27 @@ class _LiquidGlassNavigationBar extends StatefulWidget {
 }
 
 class _LiquidGlassNavigationBarState extends State<_LiquidGlassNavigationBar> {
-  static const _longPressThreshold = Duration(milliseconds: 500);
+  static const _longPressThreshold = Duration(milliseconds: 220);
   static const _flickVelocityThreshold = 1000.0;
 
   int? _activePointer;
   VelocityTracker? _velocityTracker;
   Duration? _pointerDownAt;
   Offset? _pointerDownPosition;
+  Timer? _longPressTimer;
+  bool _isJellyDragging = false;
   int _selectedIndexAtPointerDown = 0;
   int? _pendingIndex;
   bool _movedBeyondSlop = false;
   bool _draggedHorizontally = false;
   bool _cancelled = false;
   int _gestureId = 0;
+
+  @override
+  void dispose() {
+    _longPressTimer?.cancel();
+    super.dispose();
+  }
 
   void _onPointerDown(PointerDownEvent event) {
     if (_activePointer != null) return;
@@ -260,6 +279,15 @@ class _LiquidGlassNavigationBarState extends State<_LiquidGlassNavigationBar> {
     _draggedHorizontally = false;
     _cancelled = false;
     _gestureId++;
+
+    _longPressTimer?.cancel();
+    _longPressTimer = Timer(_longPressThreshold, () {
+      if (!mounted || _activePointer != event.pointer) return;
+      setState(() {
+        _isJellyDragging = true;
+      });
+      HapticFeedbackUtil.light();
+    });
   }
 
   void _onPointerMove(PointerMoveEvent event) {
@@ -268,7 +296,15 @@ class _LiquidGlassNavigationBarState extends State<_LiquidGlassNavigationBar> {
     final delta = event.position - _pointerDownPosition!;
     if (delta.distance > kTouchSlop) {
       _movedBeyondSlop = true;
-      if (delta.dx.abs() > delta.dy.abs()) _draggedHorizontally = true;
+      if (delta.dx.abs() > delta.dy.abs()) {
+        _draggedHorizontally = true;
+        if (!_isJellyDragging) {
+          _longPressTimer?.cancel();
+          setState(() {
+            _isJellyDragging = true;
+          });
+        }
+      }
     }
   }
 
@@ -288,8 +324,11 @@ class _LiquidGlassNavigationBarState extends State<_LiquidGlassNavigationBar> {
     double horizontalVelocity = 0,
   }) {
     if (pointer != _activePointer) return;
+    _longPressTimer?.cancel();
     _cancelled |= cancelled;
     final gestureId = _gestureId;
+    final wasJelly = _isJellyDragging;
+
     scheduleMicrotask(() {
       if (!mounted || gestureId != _gestureId) return;
 
@@ -309,9 +348,16 @@ class _LiquidGlassNavigationBarState extends State<_LiquidGlassNavigationBar> {
       _draggedHorizontally = false;
       _cancelled = false;
 
+      if (wasJelly) {
+        Future.delayed(const Duration(milliseconds: 250), () {
+          if (mounted) {
+            setState(() => _isJellyDragging = false);
+          }
+        });
+      }
+
       if (wasCancelled || movedVertically || target == null) return;
 
-      // Only a fast release is capped; a deliberate drag follows its final tab.
       final isFastFlick =
           wasDrag && horizontalVelocity.abs() >= _flickVelocityThreshold;
       final selectedTarget = isFastFlick
@@ -326,71 +372,82 @@ class _LiquidGlassNavigationBarState extends State<_LiquidGlassNavigationBar> {
     if (_activePointer != null) {
       _pendingIndex = index;
     } else {
-      // Keep keyboard and screen-reader activation immediate.
       _select(index);
     }
   }
 
   void _select(int index) {
-    HapticFeedbackUtil.light();
-    widget.onSelected(index);
+    if (widget.selectedIndex != index) {
+      HapticFeedbackUtil.light();
+      widget.onSelected(index);
+    }
   }
 
   @override
   Widget build(BuildContext context) => SafeArea(
-    minimum: const EdgeInsets.only(bottom: 21),
+    bottom: false,
     child: Align(
       alignment: Alignment.bottomCenter,
-      child: SizedBox(
-        width: ReviewNavigationBar._floatingBarWidth(context),
-        height: 56,
-        child: Listener(
-          onPointerDown: _onPointerDown,
-          onPointerMove: _onPointerMove,
-          onPointerUp: _onPointerUp,
-          onPointerCancel: _onPointerCancel,
-          child: GlassTabBar.bottom(
-            tabs: [
-              for (final destination in ReviewNavigationBar._destinations)
-                GlassTab(
-                  icon: Icon(destination.icon),
-                  activeIcon: Icon(destination.selectedIcon),
-                  label: destination.label,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: widget.hasBottomInset ? 6 : 14),
+        child: RepaintBoundary(
+          child: SizedBox(
+            width: ReviewNavigationBar._floatingBarWidth(context),
+            height: 56,
+            child: Listener(
+              onPointerDown: _onPointerDown,
+              onPointerMove: _onPointerMove,
+              onPointerUp: _onPointerUp,
+              onPointerCancel: _onPointerCancel,
+              child: GlassTabBar.bottom(
+                tabs: [
+                  for (final destination in ReviewNavigationBar._destinations)
+                    GlassTab(
+                      icon: Icon(destination.icon),
+                      activeIcon: Icon(destination.selectedIcon),
+                      label: destination.label,
+                    ),
+                ],
+                selectedIndex: widget.selectedIndex,
+                onTabSelected: _onTabSelected,
+                barHeight: 56,
+                horizontalPadding: 0,
+                verticalPadding: 0,
+                barBorderRadius: 9999,
+                indicatorBorderRadius: 9999,
+                settings: const LiquidGlassSettings(
+                  glassColor: Color(0x66000000),
+                  bodyMode: GlassBodyMode.clear,
+                  thickness: 10,
+                  blur: 2.0,
+                  lightIntensity: 0.25,
+                  ambientStrength: 0,
+                  refractiveIndex: 1.19,
+                  chromaticAberration: 0.008,
+                  shadowElevation: 0,
                 ),
-            ],
-            selectedIndex: widget.selectedIndex,
-            onTabSelected: _onTabSelected,
-            barHeight: 56,
-            horizontalPadding: 0,
-            verticalPadding: 0,
-            barBorderRadius: 9999,
-            indicatorBorderRadius: 9999,
-            settings: const LiquidGlassSettings(
-              glassColor: Color(0x66000000),
-              bodyMode: GlassBodyMode.clear,
-              thickness: 10,
-              blur: 2.0,
-              lightIntensity: 0.25,
-              ambientStrength: 0,
-              refractiveIndex: 1.19,
-              chromaticAberration: 0.008,
-              shadowElevation: 0,
+                indicatorSettings: const LiquidGlassSettings(
+                  refractiveIndex: 1.18,
+                  chromaticAberration: 0.025,
+                ),
+                quality: GlassQuality.premium,
+                backgroundQuality: GlassQuality.premium,
+                maskingQuality: MaskingQuality.high,
+                enableBlend: true,
+                indicatorColor: const Color(0x66000000),
+                interactionGlowColor: const Color(0x20FFFFFF),
+                indicatorPinchStrength: _isJellyDragging ? 0.7 : 0.0,
+                indicatorExpansion: _isJellyDragging
+                    ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
+                    : EdgeInsets.zero,
+                innerBlur: 6,
+                pressScale: 1.06,
+                selectedIconColor: Colors.white,
+                selectedLabelColor: Colors.white,
+                unselectedIconColor: Colors.white,
+                unselectedLabelColor: Colors.white,
+              ),
             ),
-            indicatorSettings: const LiquidGlassSettings(
-              refractiveIndex: 1.18,
-              chromaticAberration: 0.025,
-            ),
-            quality: GlassQuality.premium,
-            backgroundQuality: GlassQuality.premium,
-            indicatorColor: const Color(0x66000000),
-            interactionGlowColor: const Color(0x20FFFFFF),
-            indicatorPinchStrength: 0.7,
-            innerBlur: 6,
-            pressScale: 1.06,
-            selectedIconColor: Colors.white,
-            selectedLabelColor: Colors.white,
-            unselectedIconColor: Colors.white,
-            unselectedLabelColor: Colors.white,
           ),
         ),
       ),

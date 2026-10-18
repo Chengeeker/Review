@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:review/core/storage/storage_service.dart';
 import 'dart:ui' as ui;
 import 'dart:io';
 import 'dart:typed_data';
@@ -138,7 +140,20 @@ Future<void> _flushPlayerDisposal(WidgetTester tester) async {
   });
 }
 
+late StorageService galleryTestStorage;
+
+Future<void> _pumpGallery(WidgetTester tester, Widget child) => tester.pumpWidget(
+  ProviderScope(
+    overrides: [storageServiceProvider.overrideWithValue(galleryTestStorage)],
+    child: child,
+  ),
+);
+
 void main() {
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({});
+    galleryTestStorage = StorageService(await SharedPreferences.getInstance());
+  });
   late _FakeVideoPlatform backend;
   setUp(() async {
     final recorder = ui.PictureRecorder();
@@ -169,7 +184,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(420, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     for (final scale in [1.0, 1.4]) {
-      await tester.pumpWidget(ProviderScope(
+      await _pumpGallery(tester, ProviderScope(
         child: MaterialApp(
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context).copyWith(
@@ -206,7 +221,7 @@ void main() {
     expect(tester.getRect(reelFinder).top, reel.top);
     await gesture.up();
     await tester.pump(const Duration(milliseconds: 500));
-    await tester.pumpWidget(const SizedBox());
+    await _pumpGallery(tester, const SizedBox());
     await tester.pump();
     await _flushPlayerDisposal(tester);
     await tester.pump(const Duration(seconds: 1));
@@ -217,7 +232,7 @@ void main() {
   testWidgets(
       'mixed gallery plays only selected video and horizontal swipe changes media, not seek',
       (tester) async {
-    await tester.pumpWidget(const ProviderScope(
+    await _pumpGallery(tester, const ProviderScope(
         child: MaterialApp(
             home: ImageGalleryPage(
       pics: [_photo, _video, _photo, _video],
@@ -256,7 +271,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(backend.played, [1, 2]);
-    await tester.pumpWidget(const SizedBox());
+    await _pumpGallery(tester, const SizedBox());
     await tester.pump();
     await _flushPlayerDisposal(tester);
     expect(backend.disposed, contains(2));
@@ -340,7 +355,7 @@ void main() {
     expect(livePhoto.isLivePhoto, isTrue);
     expect(livePhoto.isVideo, isFalse);
 
-    await tester.pumpWidget(ProviderScope(
+    await _pumpGallery(tester, ProviderScope(
         child: MaterialApp(
             home: ImageGalleryPage(
       pics: [_photo, livePhoto, _photo],
@@ -369,7 +384,7 @@ void main() {
     expect(backend.paused, hasLength(pauseCountBeforeTap + 1));
     expect(find.text('播放 Live 图'), findsOneWidget);
 
-    await tester.pumpWidget(const SizedBox());
+    await _pumpGallery(tester, const SizedBox());
     await tester.pump();
     await _flushPlayerDisposal(tester);
     await tester.pump(const Duration(seconds: 1));
@@ -395,7 +410,7 @@ void main() {
         ),
       ),
     ];
-    await tester.pumpWidget(
+    await _pumpGallery(tester,
       MaterialApp(
         home: ImageGalleryPage(
           pics: pics,
@@ -429,7 +444,7 @@ void main() {
     await tester.tap(find.text('播放 Live 图'));
     await tester.pump();
     expect(backend.played, hasLength(1));
-    await tester.pumpWidget(const SizedBox());
+    await _pumpGallery(tester, const SizedBox());
     await tester.pump();
     await _flushPlayerDisposal(tester);
     debugNetworkImageHttpClientProvider = null;
@@ -440,7 +455,7 @@ void main() {
       'leaving video while initialization is pending never starts hidden playback',
       (tester) async {
     backend.delayInitialization = true;
-    await tester.pumpWidget(const ProviderScope(
+    await _pumpGallery(tester, const ProviderScope(
         child: MaterialApp(
             home: ImageGalleryPage(
                 pics: [_photo, _video, _photo],
@@ -456,7 +471,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     expect(backend.played, isEmpty);
     expect(find.byType(WeiboVideoPlayerPage), findsNothing);
-    await tester.pumpWidget(const SizedBox());
+    await _pumpGallery(tester, const SizedBox());
     await tester.pump();
     await _flushPlayerDisposal(tester);
     await tester.pump(const Duration(seconds: 1));
