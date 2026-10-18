@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../services/image_cache_maintenance.dart';
 import '../storage/storage_service.dart';
 
 class ThemeState {
@@ -17,6 +20,7 @@ class ThemeState {
   final int systemFontWeightAdjustment;
   final int screenRefreshRateMode;
   final double appTextScale;
+  final int autoClearImageCacheThresholdMb;
 
   const ThemeState({
     this.themeMode = ThemeMode.system,
@@ -31,6 +35,8 @@ class ThemeState {
     this.systemFontWeightAdjustment = 0,
     this.screenRefreshRateMode = 0,
     this.appTextScale = 1.0,
+    this.autoClearImageCacheThresholdMb =
+        ImageCacheMaintenance.defaultAutoClearThresholdMb,
   });
 
   /// 有效字重偏移：若开启自定义则完全不受系统全局设置影响，否则跟随系统全局字重
@@ -50,6 +56,7 @@ class ThemeState {
     int? systemFontWeightAdjustment,
     int? screenRefreshRateMode,
     double? appTextScale,
+    int? autoClearImageCacheThresholdMb,
   }) {
     return ThemeState(
       themeMode: themeMode ?? this.themeMode,
@@ -67,6 +74,8 @@ class ThemeState {
       screenRefreshRateMode:
           screenRefreshRateMode ?? this.screenRefreshRateMode,
       appTextScale: appTextScale ?? this.appTextScale,
+      autoClearImageCacheThresholdMb:
+          autoClearImageCacheThresholdMb ?? this.autoClearImageCacheThresholdMb,
     );
   }
 }
@@ -128,6 +137,8 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
     final customFontDelta = _storage.getCustomFontWeightDelta();
     final refreshMode = _storage.getScreenRefreshRateMode();
     final appTextScale = _storage.getAppTextScale().clamp(0.8, 1.4).toDouble();
+    final autoClearImageCacheThresholdMb = _storage
+        .getAutoClearImageCacheThresholdMb();
 
     ThemeMode mode = ThemeMode.system;
     if (modeIndex == 1) mode = ThemeMode.light;
@@ -145,6 +156,7 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
       customFontWeightDelta: customFontDelta,
       screenRefreshRateMode: refreshMode,
       appTextScale: appTextScale,
+      autoClearImageCacheThresholdMb: autoClearImageCacheThresholdMb,
     );
     _applyScreenRefreshRateMode(refreshMode);
   }
@@ -198,6 +210,17 @@ class ThemeNotifier extends StateNotifier<ThemeState> {
   Future<void> setUseLiquidGlass(bool enabled) async {
     await _storage.setUseLiquidGlass(enabled);
     state = state.copyWith(useLiquidGlass: enabled);
+  }
+
+  Future<void> setAutoClearImageCacheThresholdMb(int value) async {
+    if (!ImageCacheMaintenance.autoClearThresholdOptions.contains(value)) {
+      throw const FormatException('缓存清理阈值无效');
+    }
+    await _storage.setAutoClearImageCacheThresholdMb(value);
+    state = state.copyWith(autoClearImageCacheThresholdMb: value);
+    if (value > 0) {
+      unawaited(ImageCacheMaintenance.checkAndAutoClearCache(value));
+    }
   }
 
   Future<void> setUseCustomFontWeight(bool enabled) async {

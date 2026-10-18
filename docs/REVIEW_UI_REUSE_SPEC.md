@@ -1,6 +1,6 @@
 # Review M3 UI 复用规范与提示词
 
-> 提炼日期：2026-10-18。基线为本地 `D:\App\Review` 当前工作区源码，`pubspec.yaml` 为 `3.7.0+193`，基础提交为 `e1724ef6ef3bc7f26f671d6f3e73392357ba6831`；工作区存在未提交修改，版本号或提交不能唯一标识这份源码。本文是源码提炼，未核对当前手机上的配置、截图或根目录 APK 与源码是否完全一致。
+> 提炼日期：2026-10-18。基线为本地 `D:\App\Review` 当前工作区源码，`pubspec.yaml` 为 `3.8.0+194`，基础提交为 `e1724ef6ef3bc7f26f671d6f3e73392357ba6831`；工作区存在未提交修改，版本号或提交不能唯一标识这份源码。本文是源码提炼，未核对当前手机上的配置、截图或根目录 APK 与源码是否完全一致。
 
 ## 1. 复用目标与常见偏差
 
@@ -57,7 +57,7 @@ Review 当前默认采用 Flutter Material 3，并在主题之上增加局部磨
 | 几何 | 响应式宽度 `min(440, 屏幕宽 - 40) × 2/3`，高 56，外圆角 32、内部 padding 4；三个入口均分 | 高 68，系统底部安全区另由组件处理 | 与标准悬浮样式相同的响应式宽度和 56dp 高，圆角 9999；SafeArea 最小 bottom 21 |
 | 放置 | SafeArea 内，bottom padding 有系统底 inset 时 6，否则 14 | 页面底部，全宽 | `GlassPage`/`GlassBackgroundSource` 作用域内；仅开关启用时采样 body |
 | 背景 | surfaceContainerHigh；阴影黑色 alpha 浅色 0.12 / 深色 0.35，blur 16，offset (0,4) | 浅色 surfaceContainer；深色/纯黑见配色段；无 elevation/tint | `#66000000`，clear body，厚度 10、blur 2.0、折射 1.19、色散 0.008；主体与背景 premium |
-| 选中 | secondaryContainer / onSecondaryContainer，选中块圆角 28，160ms easeOutCubic 淡入 | primaryContainer 指示胶囊，图标 onPrimaryContainer、标签 primary | 指示器折射 1.18、色散 0.025、inner blur 6、pinch 0.7、press scale 1.06 |
+| 选中 | secondaryContainer / onSecondaryContainer，选中块圆角 28；共享胶囊以 `AnimatedPositioned` 在等宽槽位间 240ms `easeOutCubic` 滑动，图标与文字另做 150ms 状态过渡 | primaryContainer 指示胶囊，图标 onPrimaryContainer、标签 primary | 指示器折射 1.18、色散 0.025、inner blur 6、pinch 0.7、press scale 1.06 |
 | 图文 | 图标 22，图文间隔 2，文字 11.5sp，选中 w600 / 未选 w400 | 标签一直显示，12sp，选中 bold / 未选 w500 | 选中/未选图文均为白色；选中胶囊使用 `#66000000` 深色填充并保留液态折射，以胶囊和图标状态区分；仍由库提供 tab 语义 |
 
 主 Scaffold 仅在悬浮分支 `extendBody: true`；玻璃背景源只包 body，不能把栏本身再次采入背景。三个入口图标采用 outlined/rounded 状态切换。当前应用只有三个主路由，因此不增加未实现的消息/个人页或中间发布槽；入口数变化时重新设计宽度、语义和动作回调。玻璃开启时根页面列表底部 inset 为系统 `viewPadding.bottom + 76dp`，避免把 `extendBody` 注入的底栏高度重复计入；标准悬浮/贴底分别为 72/16dp。
@@ -73,6 +73,7 @@ Review 当前默认采用 Flutter Material 3，并在主题之上增加局部磨
 - 设置分组：圆角 **24**，margin **0**，elevation **0**，无描边、无阴影、无 tint；通常 surfaceContainerLow，纯黑改 surfaceContainer。外层已加左右 **16**，不能再加 CardTheme 默认 margin。
 - 设置首页：没有仅标题的独立 AppBar，列表 top 为安全区 + **20**；分组标题与卡片间 **12**，大分组间 **32**；悬浮底栏时 bottom padding **72**，贴底时 **16**。
 - 个性化子页：ReviewPageScaffold 返回顶栏，列表 horizontal **16** / vertical **12** 再加 contentInsets；多个分组卡片间通常 **16**。首页分组间距不能直接套到子页。
+- 存储与备份：提供图片/视频保存路径和独立缓存管理页；缓存页只统计、清理 `cacheimage` 中可再生成的 MD5 图片文件，200 MB 为自动清理默认阈值，已保存媒体与账号资料不在清理范围。
 - ReviewPreferenceTile：左右 padding **16**，leading 最小宽 **24**、title gap **16**、minVerticalPadding **8**；默认右箭头 **24**。有 leading 的首页分割线卡片内 indent **56**，对应屏幕文字起点 72；不能误用 72 作为卡片内 indent。其他单选行的 divider 按真实布局保留，不能全局改成 56。
 - 通用 CardTheme：圆角 **22**、margin 横 **10** / 纵 **5**、0.8dp 轻描边、elevation **0**。它不是设置分组卡片的规范。
 - 信息流默认 `card_rounded`：圆角 **22**、margin 横 **8** / 纵 **4**、elevation **1**、shape 无描边、内 padding **(14,14,14,10)**；正文默认 **16sp / 行高 1.3**。`floating_rounded` 等选项、详情零 margin/零 elevation 分支不能丢失。不能把所有卡片统一改成设置分组样式。

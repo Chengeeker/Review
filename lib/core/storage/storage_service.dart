@@ -24,6 +24,8 @@ class StorageService {
   static const String keyUseDynamicColor = 'use_dynamic_color';
   static const String keyUseFloatingNavBar = 'use_floating_nav_bar';
   static const String keyUseLiquidGlass = 'use_liquid_glass_effect';
+  static const String keyAutoClearImageCacheThresholdMb =
+      'auto_clear_image_cache_threshold_mb';
   static const String keySavedDefaultGroups = 'saved_default_groups_json';
   static const String keySavedPersonalGroups = 'saved_personal_groups_json';
   static const String keySavedHotGroups = 'saved_hot_groups_json';
@@ -188,6 +190,16 @@ class StorageService {
   bool getUseLiquidGlass() => _prefs.getBool(keyUseLiquidGlass) ?? false;
   Future<bool> setUseLiquidGlass(bool val) =>
       _prefs.setBool(keyUseLiquidGlass, val);
+
+  int getAutoClearImageCacheThresholdMb() {
+    final value = _prefs.getInt(keyAutoClearImageCacheThresholdMb) ?? 200;
+    return const [0, 50, 100, 200, 500, 1024, 2048].contains(value)
+        ? value
+        : 200;
+  }
+
+  Future<bool> setAutoClearImageCacheThresholdMb(int value) =>
+      _prefs.setInt(keyAutoClearImageCacheThresholdMb, value);
 
   int getImageSavePathType() => getInt(keyImageSavePathType, defaultValue: 0);
   Future<bool> setImageSavePathType(int value) =>
@@ -453,6 +465,7 @@ class StorageService {
     keyUseDynamicColor,
     keyUseFloatingNavBar,
     keyUseLiquidGlass,
+    keyAutoClearImageCacheThresholdMb,
     keySavedDefaultGroups,
     keySavedPersonalGroups,
     keySavedHotGroups,

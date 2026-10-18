@@ -335,6 +335,8 @@
 - **现象**：模态弹窗出现慢、背景水波纹拖尾。**历史误区**：旧手册 8.6 节建议人为等待 80ms 并使用 `InkRipple`，8.10 节随后撤销了这套做法。**当前代码**：`HapticSplashFactory` 默认委托 `InkSplash.splashFactory`；修改弹窗交互时以当前源码和真机效果为准，不恢复旧延迟。
 - **现象**：点击微博正文中的 `@用户` 打开主页时没有触感。**根因**：提及文字由 `TextSpan` 的 `TapGestureRecognizer` 单独处理导航，不经过 Material 水波纹的全局按下反馈。**修复与回归点**：在提及点击回调中调用 `HapticFeedbackUtil.light()`，复用触感开关、冷却与同手势去重；针对正文提及点击验证主页回调和单次轻触，话题、链接及普通文本不改变。
 
+- **缓存管理不得扩展到整个临时目录（3.8.0）**：GreenNote 的原生实现会清除 Android cache/code-cache/external-cache，Dart 回退路径还会递归删除整个 temporary directory；Review 已有明确边界，只允许清理 `cacheimage` 下直接存放且名称符合 32 位小写 MD5 的 ExtendedImage 文件。手动和自动阈值清理沿用最近 1 分钟文件保护；统计范围必须与实际可删范围一致，不能显示或宣称清理其他临时、账号或相册数据。普通悬浮底栏的选中背景由单个定位胶囊跨等宽 Tab 动画移动，不要恢复每个槽位独立淡入的实现。
+
 ## 文档维护
 
 修复完成后，将当前行为写入 `DEVELOPMENT.md`，版本和当次验证写入 `CHANGELOG.md`，可复用的根因及回归点写在本文件；顶栏规范变更还要维护 `FROSTED_TOP_BAR_DESIGN_SPEC.md`。运行同步脚本，将这些当前文档的完整正文汇入 `D:\App\开发文档\Review.md`，不能只保留索引链接。旧版综合手册原件留在仓库归档目录、不再拼进现行主文档；签名口令、Cookie、Token 等凭据不进入任何开发文档。

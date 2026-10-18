@@ -15,6 +15,7 @@ import '../../auth/presentation/login_page.dart';
 import '../../profile/presentation/theme_settings_page.dart';
 import '../../profile/presentation/weibo_style_settings_page.dart';
 import 'storage_settings_page.dart';
+import 'cache_management_page.dart';
 import 'webdav_backup_page.dart';
 import 'message_notification_settings_page.dart';
 import '../../../core/theme/custom_app_icon_provider.dart';
@@ -128,6 +129,24 @@ class SettingsView extends ConsumerWidget {
                     Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (ctx) => const StorageSettingsPage(),
+                      ),
+                    );
+                  },
+                ),
+                const Divider(height: 1, indent: 56),
+
+                ReviewPreferenceTile(
+                  leading: Icon(
+                    Icons.cleaning_services_outlined,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  title: '缓存管理',
+                  subtitle: '查看与清理图片缓存',
+                  onTap: () {
+                    HapticFeedbackUtil.light();
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (ctx) => const CacheManagementPage(),
                       ),
                     );
                   },

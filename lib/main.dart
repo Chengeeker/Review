@@ -64,7 +64,11 @@ void main() async {
   );
 
   // Cache maintenance runs off the startup path and never touches saved media.
-  unawaited(ImageCacheMaintenance.trimOnStartup());
+  unawaited(
+    ImageCacheMaintenance.trimOnStartup(
+      autoClearThresholdMb: storageService.getAutoClearImageCacheThresholdMb(),
+    ),
+  );
 }
 
 class WBTestApp extends ConsumerWidget {

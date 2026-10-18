@@ -104,13 +104,43 @@ class ReviewNavigationBar extends ConsumerWidget {
                 ),
               ],
             ),
-            child: Row(
-              children: List.generate(
-                _destinations.length,
-                (index) => Expanded(
-                  child: _buildFloatingItem(context, index, colorScheme),
-                ),
-              ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final itemWidth = constraints.maxWidth / _destinations.length;
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(28),
+                  child: Stack(
+                    children: [
+                      AnimatedPositioned(
+                        duration: const Duration(milliseconds: 240),
+                        curve: Curves.easeOutCubic,
+                        left: itemWidth * selectedIndex,
+                        top: 0,
+                        bottom: 0,
+                        width: itemWidth,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: colorScheme.secondaryContainer,
+                            borderRadius: BorderRadius.circular(28),
+                          ),
+                        ),
+                      ),
+                      Row(
+                        children: List.generate(
+                          _destinations.length,
+                          (index) => Expanded(
+                            child: _buildFloatingItem(
+                              context,
+                              index,
+                              colorScheme,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
           ),
         ),
@@ -125,7 +155,6 @@ class ReviewNavigationBar extends ConsumerWidget {
   ) {
     final selected = selectedIndex == index;
     final destination = _destinations[index];
-    final activeBackground = colorScheme.secondaryContainer;
     final activeContent = colorScheme.onSecondaryContainer;
     final inactiveContent = colorScheme.onSurfaceVariant;
 
@@ -141,33 +170,24 @@ class ReviewNavigationBar extends ConsumerWidget {
           fit: StackFit.expand,
           alignment: Alignment.center,
           children: [
-            if (selected)
-              TweenAnimationBuilder<double>(
-                key: ValueKey(index),
-                tween: Tween<double>(begin: 0, end: 1),
-                duration: const Duration(milliseconds: 160),
-                curve: Curves.easeOutCubic,
-                builder: (context, value, child) => Opacity(
-                  opacity: value,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: activeBackground,
-                      borderRadius: BorderRadius.circular(28),
-                    ),
-                  ),
-                ),
-              ),
             Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  selected ? destination.selectedIcon : destination.icon,
-                  size: 22,
-                  color: selected ? activeContent : inactiveContent,
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 150),
+                  switchInCurve: Curves.easeOut,
+                  switchOutCurve: Curves.easeIn,
+                  child: Icon(
+                    selected ? destination.selectedIcon : destination.icon,
+                    key: ValueKey(selected),
+                    size: 22,
+                    color: selected ? activeContent : inactiveContent,
+                  ),
                 ),
                 const SizedBox(height: 2),
-                Text(
-                  destination.label,
+                AnimatedDefaultTextStyle(
+                  duration: const Duration(milliseconds: 150),
+                  curve: Curves.easeOut,
                   style: TextStyle(
                     fontSize: 11.5,
                     fontWeight: context.adjustWeight(
@@ -175,6 +195,7 @@ class ReviewNavigationBar extends ConsumerWidget {
                     ),
                     color: selected ? activeContent : inactiveContent,
                   ),
+                  child: Text(destination.label),
                 ),
               ],
             ),
