@@ -10,15 +10,20 @@ import 'package:review/core/design_system/components/review_navigation_bar.dart'
 import 'package:review/core/utils/haptic_feedback_util.dart';
 import 'package:review/core/network/weibo_dio_client.dart';
 import 'package:review/core/storage/storage_service.dart';
+import 'package:review/features/feed/presentation/feed_controller.dart';
 import 'package:review/features/feed/data/feed_repository.dart';
 import 'package:review/features/feed/data/models/weibo_status_model.dart';
+import 'package:review/features/feed/presentation/widgets/group_dropdown_panel.dart';
 import 'package:review/features/home/presentation/main_scaffold.dart';
 import 'package:review/features/search/data/search_repository.dart';
 import 'package:review/features/search/presentation/hot_trends_view.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _Feed extends FeedRepository {
-  _Feed(super.client, super.storage);
+  _Feed(super.client, super.storage, {this.statusCount = 1});
+
+  final int statusCount;
+  int timelineRequests = 0;
 
   @override
   Future<UserGroupsResult> getUserGroups() async => const UserGroupsResult();
@@ -30,16 +35,20 @@ class _Feed extends FeedRepository {
     int page = 1,
     String maxId = '0',
     String sinceId = '0',
-  }) async => TimelineResult(
-    statuses: [
-      WeiboStatusModel.fromJson({
-        'id': '1',
-        'text': '静态时间线',
-        'user': {'id': '1', 'screen_name': '作者'},
-      }),
-    ],
-    hasMore: false,
-  );
+  }) async {
+    timelineRequests++;
+    return TimelineResult(
+      statuses: List.generate(
+        statusCount,
+        (index) => WeiboStatusModel.fromJson({
+          'id': '${index + 1}',
+          'text': '静态时间线 $index',
+          'user': {'id': '1', 'screen_name': '作者'},
+        }),
+      ),
+      hasMore: false,
+    );
+  }
 }
 
 class _Search extends SearchRepository {
@@ -50,17 +59,18 @@ class _Search extends SearchRepository {
       [];
 }
 
-Future<void> _mount(WidgetTester tester, {bool reduceMotion = false}) async {
+Future<_Feed> _mount(WidgetTester tester, {bool reduceMotion = false, int statusCount = 1}) async {
   SharedPreferences.setMockInitialValues({});
   final storage = StorageService(await SharedPreferences.getInstance());
   final client = WeiboDioClient(storage);
+  final feed = _Feed(client, storage, statusCount: statusCount);
   addTearDown(() => client.dio.close(force: true));
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         storageServiceProvider.overrideWithValue(storage),
         weiboDioClientProvider.overrideWithValue(client),
-        feedRepositoryProvider.overrideWithValue(_Feed(client, storage)),
+        feedRepositoryProvider.overrideWithValue(feed),
         searchRepositoryProvider.overrideWithValue(_Search(client)),
       ],
       child: MaterialApp(
@@ -74,9 +84,48 @@ Future<void> _mount(WidgetTester tester, {bool reduceMotion = false}) async {
     ),
   );
   await tester.pumpAndSettle();
+  return feed;
 }
 
 void main() {
+  testWidgets('timeline app bar title single tap scrolls to top and double tap refreshes', (tester) async {
+    final feed = await _mount(tester, statusCount: 50);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(MainScaffold)),
+    );
+    await container
+        .read(feedControllerProvider.notifier)
+        .setCategory('recommend', '推荐');
+    await tester.pumpAndSettle();
+    final scrollController = container
+        .read(timelineScrollProvider.notifier)
+        .scrollController!;
+
+    await tester.drag(find.byType(CustomScrollView).first, const Offset(0, -1200));
+    await tester.pumpAndSettle();
+    expect(scrollController.offset, greaterThan(0));
+    final requestsBeforeSingleTap = feed.timelineRequests;
+    await tester.tap(find.text('推荐').first);
+    await tester.pumpAndSettle();
+    expect(scrollController.offset, 0);
+    expect(feed.timelineRequests, requestsBeforeSingleTap);
+
+    await tester.drag(find.byType(CustomScrollView).first, const Offset(0, -1200));
+    await tester.pumpAndSettle();
+    expect(scrollController.offset, greaterThan(0));
+    final requestsBeforeDoubleTap = feed.timelineRequests;
+    await tester.tap(find.text('推荐').first);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.text('推荐').first);
+    await tester.pumpAndSettle();
+    expect(scrollController.offset, 0);
+    expect(feed.timelineRequests, requestsBeforeDoubleTap + 1);
+
+    await tester.tap(find.byIcon(Icons.arrow_drop_down_rounded));
+    await tester.pumpAndSettle();
+    expect(find.byType(GroupDropdownPanel), findsOneWidget);
+  });
+
   testWidgets('tab translation reuses page paint at 120 Hz-sized steps', (
     tester,
   ) async {

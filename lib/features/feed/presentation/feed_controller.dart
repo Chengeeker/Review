@@ -552,24 +552,32 @@ class TimelineScrollNotifier extends StateNotifier<double> {
     _ref.read(feedControllerProvider.notifier).refreshFeed();
   }
 
-  /// 双击顶栏：
-  /// - 第一次双击（当前不在顶部）：回到顶部；
-  /// - 第二次双击（当前已经在顶部）：触发刷新界面。
+  /// 单击时间线顶栏：回到顶部，不改变底栏单击恢复历史位置的状态。
+  void handleTopBarSingleTap() {
+    final controller = scrollController;
+    if (controller != null && controller.hasClients && controller.offset > 0) {
+      controller.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  /// 双击时间线顶栏：回到顶部并刷新时间线。
   void handleTopBarDoubleTap() {
     final controller = scrollController;
 
     if (controller != null && controller.hasClients && controller.offset > 50) {
-      // 记录位置并回到顶部
+      // 保留离开前的位置，供底栏的返回上次位置操作使用。
       state = controller.offset;
       controller.animateTo(
         0.0,
         duration: const Duration(milliseconds: 350),
         curve: Curves.easeOutCubic,
       );
-    } else {
-      // 已经在顶部，触发刷新
-      _ref.read(feedControllerProvider.notifier).refreshFeed();
     }
+    _ref.read(feedControllerProvider.notifier).refreshFeed();
   }
 }
 

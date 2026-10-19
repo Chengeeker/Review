@@ -87,7 +87,7 @@ class HotTrendsViewState extends ConsumerState<HotTrendsView>
     if (categoryState != null) unawaited(categoryState._fetchList());
   }
 
-  /// 顶栏双击：列表不在顶部时回顶，已经在顶部时刷新当前分类。
+  /// 顶栏双击：回到顶部并刷新当前分类。
   void handleTopBarDoubleTap() {
     _currentCategoryState?._handleTopBarDoubleTap();
   }
@@ -105,6 +105,7 @@ class HotTrendsViewState extends ConsumerState<HotTrendsView>
     } else {
       _lastTopBarTapTime = now;
       _topBarSingleTapTimer?.cancel();
+      _currentCategoryState?._scrollToTop();
       _topBarSingleTapTimer = Timer(const Duration(milliseconds: 300), () {
         _lastTopBarTapTime = null;
       });
@@ -248,11 +249,8 @@ class _HotCategoryListViewState extends ConsumerState<_HotCategoryListView>
   }
 
   void _handleTopBarDoubleTap() {
-    if (_scrollController.hasClients && _scrollController.offset > 50) {
-      _scrollToTop();
-    } else {
-      unawaited(_fetchList());
-    }
+    _scrollToTop();
+    unawaited(_fetchList());
   }
 
   Future<void> _fetchList() async {

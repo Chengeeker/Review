@@ -116,6 +116,7 @@ class _FeedViewState extends ConsumerState<FeedView>
       } else {
         _lastTopBarTapTime = now;
         _topBarSingleTapTimer?.cancel();
+        ref.read(timelineScrollProvider.notifier).handleTopBarSingleTap();
         _topBarSingleTapTimer = Timer(const Duration(milliseconds: 300), () {
           _lastTopBarTapTime = null;
         });
@@ -158,30 +159,33 @@ class _FeedViewState extends ConsumerState<FeedView>
               ),
             ),
           ),
-          // Clickable Title with Dropdown Triangle (对齐截图 1: 最新微博 ▾)
-          title: InkWell(
-            onTap: _toggleDropdown,
-            borderRadius: BorderRadius.circular(12),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    feedState.currentCategoryTitle,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
+          // Title taps scroll to top; the arrow keeps the category menu.
+          title: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  feedState.currentCategoryTitle,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                InkWell(
+                  onTap: _toggleDropdown,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: AnimatedRotation(
+                      turns: _isDropdownOpen ? 0.5 : 0.0,
+                      duration: const Duration(milliseconds: 200),
+                      child: const Icon(Icons.arrow_drop_down_rounded, size: 24),
                     ),
                   ),
-                  const SizedBox(width: 4),
-                  AnimatedRotation(
-                    turns: _isDropdownOpen ? 0.5 : 0.0,
-                    duration: const Duration(milliseconds: 200),
-                    child: const Icon(Icons.arrow_drop_down_rounded, size: 24),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
           actions: [

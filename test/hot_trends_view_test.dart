@@ -158,7 +158,7 @@ void main() {
     expect(repository.requestedCategories, ['hot']);
   });
 
-  testWidgets('热搜顶栏双击离顶回顶，在顶部刷新当前分类', (WidgetTester tester) async {
+  testWidgets('热搜顶栏单击回顶，双击回顶并刷新当前分类', (WidgetTester tester) async {
     final hapticCalls = <MethodCall>[];
     final originalHapticsEnabled = HapticFeedbackUtil.isEnabled;
     HapticFeedbackUtil.isEnabled = true;
@@ -212,13 +212,22 @@ void main() {
     expect(find.text('hot item 0'), findsNothing);
 
     await tester.tap(find.text('微博热搜'));
+    await tester.pumpAndSettle();
+    expect(find.text('hot item 0'), findsOneWidget);
+    expect(repository.requestedCategories, isEmpty);
+
+    await tester.drag(find.text('hot item 0'), const Offset(0, -900));
+    await tester.pumpAndSettle();
+    expect(find.text('hot item 0'), findsNothing);
+    await tester.tap(find.text('微博热搜'));
     await tester.pump(const Duration(milliseconds: 100));
     await tester.tap(find.text('微博热搜'));
     await tester.pumpAndSettle();
     expect(find.text('hot item 0'), findsOneWidget);
-    expect(repository.requestedCategories, isEmpty);
+    expect(repository.requestedCategories, ['hot']);
     expect(hapticCalls, isNotEmpty);
 
+    repository.requestedCategories.clear();
     await tester.tap(find.text('微博热搜'));
     await tester.pump(const Duration(milliseconds: 100));
     await tester.tap(find.text('微博热搜'));

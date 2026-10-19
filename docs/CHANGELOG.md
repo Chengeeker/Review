@@ -1,5 +1,12 @@
 # Review 变更记录
 
+## 3.10.8+206（2026-10-19）
+
+- 修复时间线与热搜顶栏单击无操作的问题：单击立即回顶；双击回顶并刷新当前时间线或分类。
+- `main_navigation_test.dart` 5 项、`hot_trends_view_test.dart` 5 项通过；修改文件 `dart analyze` 和 `git diff --check` 通过。
+- ARM64 Release 构建成功（599.1 秒）；核验 `com.review`、版本 `3.10.8`、versionCode 206、target SDK 36、仅 `arm64-v8a`，V2 签名和 16KiB ZIP 对齐通过，证书 SHA-256 与前版一致。
+- 交付 [Review_v3.10.8.apk](../Review_v3.10.8.apk)，33,477,550 字节，SHA-256 `504F6761525878B5016A4BE3707709EADC05EA1D0980E2FC1AE82F32F9E1B63F`。3.10.7 已校验并归档至 `build/previous-deliveries/Review_v3.10.7-before-v3.10.8.apk`；根目录仅保留本版。未进行 Android 真机顶栏手势验收。
+
 ## 3.10.7+205（2026-10-19）
 
 - 修复底栏点击当前选中项没有触感反馈的问题；所有有效短点按均调用全局触感工具，保留触感设置开关和 40ms 防重复冷却。
