@@ -104,6 +104,7 @@ class _FeedViewState extends ConsumerState<FeedView>
     final showLoginBanner = isFriendsTab && !authState.isLoggedIn;
 
     void handleTopBarTap() {
+      HapticFeedbackUtil.light();
       final now = DateTime.now();
       if (_lastTopBarTapTime != null &&
           now.difference(_lastTopBarTapTime!) <

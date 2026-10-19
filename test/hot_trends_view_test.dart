@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:review/core/network/weibo_dio_client.dart';
 import 'package:review/core/storage/storage_service.dart';
 import 'package:review/core/theme/theme_provider.dart';
+import 'package:review/core/utils/haptic_feedback_util.dart';
 import 'package:review/features/search/data/search_repository.dart';
 import 'package:review/features/search/presentation/hot_trends_view.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -157,6 +159,25 @@ void main() {
   });
 
   testWidgets('热搜顶栏双击离顶回顶，在顶部刷新当前分类', (WidgetTester tester) async {
+    final hapticCalls = <MethodCall>[];
+    final originalHapticsEnabled = HapticFeedbackUtil.isEnabled;
+    HapticFeedbackUtil.isEnabled = true;
+    HapticFeedbackUtil.resetForTesting();
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') hapticCalls.add(call);
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      );
+      HapticFeedbackUtil.isEnabled = originalHapticsEnabled;
+      HapticFeedbackUtil.resetForTesting();
+    });
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final storage = StorageService(prefs);
@@ -196,11 +217,18 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('hot item 0'), findsOneWidget);
     expect(repository.requestedCategories, isEmpty);
+    expect(hapticCalls, isNotEmpty);
 
     await tester.tap(find.text('微博热搜'));
     await tester.pump(const Duration(milliseconds: 100));
     await tester.tap(find.text('微博热搜'));
     await tester.pumpAndSettle();
     expect(repository.requestedCategories, ['hot']);
+
+    HapticFeedbackUtil.resetForTesting();
+    hapticCalls.clear();
+    await tester.tap(find.text('微博热搜'));
+    await tester.pump();
+    expect(hapticCalls, hasLength(1));
   });
 }

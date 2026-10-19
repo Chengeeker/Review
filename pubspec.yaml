@@ -1,7 +1,7 @@
 name: review
 description: "A modern, lightweight Weibo client with Material 3."
 publish_to: 'none'
-version: 3.10.5+203
+version: 3.10.7+205
 
 environment:
   sdk: ^3.13.0

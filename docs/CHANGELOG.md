@@ -1,5 +1,21 @@
 # Review 变更记录
 
+## 3.10.7+205（2026-10-19）
+
+- 修复底栏点击当前选中项没有触感反馈的问题；所有有效短点按均调用全局触感工具，保留触感设置开关和 40ms 防重复冷却。
+- 时间线顶栏单击和双击操作均提供轻触反馈；打开微博卡片详情时增加轻触反馈，继续禁用水波纹，避免视觉水波纹与触感耦合或重复反馈。
+- `main_navigation_test.dart` 4 项、`hot_trends_view_test.dart` 5 项、`haptic_feedback_util_test.dart` 7 项通过；`article_card_test.dart` 8/9 项通过，`detail=true` 用例仍有既存的文章请求断言失败（全量测试此前也出现该项）；涉及文件 `dart analyze` 无问题。
+- ARM64 Release 构建成功（506.3 秒）；核验 `com.review`、版本 `3.10.7`、versionCode 205、target SDK 36、仅 `arm64-v8a`，V2 签名及 16 KiB ZIP 对齐通过。签名证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975` 与前版一致。
+- 交付 [Review_v3.10.7.apk](../Review_v3.10.7.apk)，33,477,550 字节，SHA-256 `D35460920F86B08F0E5DCE9917795D57EED67903AE2F3A13FB592CD7590EC76C`。3.10.6 已校验并归档至 `build/previous-deliveries/Review_v3.10.6-before-v3.10.7.apk`；根目录仅保留本版。未进行 Android 真机触感验收。
+
+## 3.10.6+204（2026-10-19）
+
+- 修复液态玻璃底栏点按当前选中项时不调用宿主回调的问题，恢复时间线单击回顶/返回位置、双击回顶并刷新，以及热搜单击回顶、双击回顶并刷新当前分类；长按或拖拽回到当前项仍不会触发同页操作。
+- 新增玻璃底栏同项连续点按与长按保护回归测试。
+- `main_navigation_test.dart` 4 项通过，`hot_trends_view_test.dart` 5 项通过，修改文件 `dart analyze` 无问题。全量 Flutter 测试 318 项中 311 项通过、7 项失败；失败位于既有文章卡片路由及微博长文展开用例，与底栏无关。
+- ARM64 Release 构建成功（489.5 秒）；核验 `com.review`、版本 `3.10.6`、versionCode 204、target SDK 36、仅 `arm64-v8a`，V2 签名及 16 KiB ZIP 对齐通过。签名证书 SHA-256 `3eb0f6708904f8ef916c6a2572e394ba981ee25d64861344cf1921ca7ea17975` 与前版一致。
+- 交付 [Review_v3.10.6.apk](../Review_v3.10.6.apk)，33,477,550 字节，SHA-256 `91DC3DBA0390B5DFAC97019E20ECCCE2742F1A036062E74ACD166E6CCC8C83F6`。3.10.5 已按 SHA-256 `DA562284D92F9B6BAC5E81AC939F6162AD282A47A0EF83D452D94F403D8A671C` 校验并归档至 `build/previous-deliveries/Review_v3.10.5-before-v3.10.6.apk`；根目录仅保留本版。未进行 Android 真机安装验收。
+
 ## 3.10.5+203（2026-10-18）
 
 - 彻底排查并解决启用底栏液态玻璃后切换主页面（时间线、热搜、设置）卡顿和掉帧问题，统一相册与底栏的液态玻璃高性能渲染规范。

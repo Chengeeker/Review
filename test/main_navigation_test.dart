@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
+    show GlassTabBar;
 import 'package:liquid_glass_widgets/utils/draggable_indicator_physics.dart';
 import 'package:review/core/design_system/components/review_navigation_bar.dart';
+import 'package:review/core/utils/haptic_feedback_util.dart';
 import 'package:review/core/network/weibo_dio_client.dart';
 import 'package:review/core/storage/storage_service.dart';
 import 'package:review/features/feed/data/feed_repository.dart';
@@ -147,6 +151,75 @@ void main() {
     },
   );
 
+  testWidgets(
+    'liquid glass forwards single and double taps on the selected tab',
+    (tester) async {
+      final hapticCalls = <MethodCall>[];
+      final originalHapticsEnabled = HapticFeedbackUtil.isEnabled;
+      HapticFeedbackUtil.isEnabled = true;
+      HapticFeedbackUtil.resetForTesting();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+            hapticCalls.add(call);
+            return null;
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(SystemChannels.platform, null);
+        HapticFeedbackUtil.isEnabled = originalHapticsEnabled;
+        HapticFeedbackUtil.resetForTesting();
+      });
+      SharedPreferences.setMockInitialValues({
+        StorageService.keyUseFloatingNavBar: true,
+        StorageService.keyUseLiquidGlass: true,
+      });
+      final storage = StorageService(await SharedPreferences.getInstance());
+      final selectedTabs = <int>[];
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [storageServiceProvider.overrideWithValue(storage)],
+          child: MaterialApp(
+            home: Scaffold(
+              bottomNavigationBar: ReviewNavigationBar(
+                selectedIndex: 0,
+                onSelected: selectedTabs.add,
+                hasBottomInset: false,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final barRect = tester.getRect(find.byType(GlassTabBar));
+      final timelineTabCenter = Offset(
+        barRect.left + barRect.width / 6,
+        barRect.center.dy,
+      );
+      await tester.tapAt(timelineTabCenter);
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.tapAt(timelineTabCenter);
+      await tester.pump();
+      expect(selectedTabs, [0, 0]);
+      await tester.pump();
+      expect(
+        hapticCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
+        hasLength(2),
+      );
+
+      final gesture = await tester.startGesture(timelineTabCenter);
+      await tester.pump(const Duration(milliseconds: 250));
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(selectedTabs, [0, 0]);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
   test('jelly transform produces identity matrix without deformation when maxDistortion is 0', () {
     // When pinchStrength / maxDistortion is 0, velocity should not cause any squash or stretch.
     final zeroDistortion = DraggableIndicatorPhysics.buildJellyTransform(
@@ -168,4 +241,3 @@ void main() {
     expect(withDistortion.storage[5], greaterThan(1.0)); // stretchY
   });
 }
-

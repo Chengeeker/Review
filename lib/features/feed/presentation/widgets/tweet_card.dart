@@ -650,6 +650,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
       onTap: isDetail
           ? null
           : () {
+              HapticFeedbackUtil.light();
               try {
                 final storage = ref.read(storageServiceProvider);
                 storage.recordViewedStatusJson(

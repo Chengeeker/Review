@@ -253,6 +253,7 @@ class _LiquidGlassNavigationBarState extends State<_LiquidGlassNavigationBar> {
   Offset? _pointerDownPosition;
   Timer? _longPressTimer;
   bool _isJellyDragging = false;
+  bool _longPressTriggered = false;
   int _selectedIndexAtPointerDown = 0;
   int? _pendingIndex;
   bool _movedBeyondSlop = false;
@@ -273,6 +274,7 @@ class _LiquidGlassNavigationBarState extends State<_LiquidGlassNavigationBar> {
       ..addPosition(event.timeStamp, event.position);
     _pointerDownAt = event.timeStamp;
     _pointerDownPosition = event.position;
+    _longPressTriggered = false;
     _selectedIndexAtPointerDown = widget.selectedIndex;
     _pendingIndex = null;
     _movedBeyondSlop = false;
@@ -283,6 +285,7 @@ class _LiquidGlassNavigationBarState extends State<_LiquidGlassNavigationBar> {
     _longPressTimer?.cancel();
     _longPressTimer = Timer(_longPressThreshold, () {
       if (!mounted || _activePointer != event.pointer) return;
+      _longPressTriggered = true;
       setState(() {
         _isJellyDragging = true;
       });
@@ -328,12 +331,15 @@ class _LiquidGlassNavigationBarState extends State<_LiquidGlassNavigationBar> {
     _cancelled |= cancelled;
     final gestureId = _gestureId;
     final wasJelly = _isJellyDragging;
+    final longPressTriggered = _longPressTriggered;
 
     scheduleMicrotask(() {
       if (!mounted || gestureId != _gestureId) return;
 
       final target = _pendingIndex;
-      final wasLongPress = releasedAt - _pointerDownAt! >= _longPressThreshold;
+      final wasLongPress =
+          longPressTriggered ||
+          releasedAt - _pointerDownAt! >= _longPressThreshold;
       final wasDrag = _draggedHorizontally;
       final movedVertically = _movedBeyondSlop && !wasDrag;
       final wasCancelled = _cancelled;
@@ -377,10 +383,8 @@ class _LiquidGlassNavigationBarState extends State<_LiquidGlassNavigationBar> {
   }
 
   void _select(int index) {
-    if (widget.selectedIndex != index) {
-      HapticFeedbackUtil.light();
-      widget.onSelected(index);
-    }
+    HapticFeedbackUtil.light();
+    widget.onSelected(index);
   }
 
   @override

@@ -93,6 +93,7 @@ class HotTrendsViewState extends ConsumerState<HotTrendsView>
   }
 
   void _handleTopBarTap() {
+    HapticFeedbackUtil.light();
     final now = DateTime.now();
     if (_lastTopBarTapTime != null &&
         now.difference(_lastTopBarTapTime!) <

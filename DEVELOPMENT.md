@@ -1,6 +1,6 @@
 # Review 开发与技术架构文档
 
-> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-10-18；当前应用版本：`3.10.5+203`。
+> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-10-19；当前应用版本：`3.10.7+205`。
 >
 > `README.md` 用于项目介绍；本文档维护当前实现，不记录登录 Cookie、Token、密码或其他凭据。
 
@@ -48,7 +48,7 @@ Review 是 Flutter 编写的微博网页端风格客户端。凡是涉及微博�
 
 主底栏的时间线、热搜、设置页面复用 Lurk 的双页叠放方式：切换时当前页与目标页反向同步平移一个屏宽，按入口顺序决定方向，RTL 反转；使用 260ms `easeOutCubic`，三个页面保持挂载以保留状态。系统关闭动画时直接切换。普通 `MaterialPageRoute` 在 Android、桌面和 Fuchsia 上复用 Lurk `SpringPageRoute` 的覆盖式语义：新页面全宽滑入覆盖旧页面，旧页面不移动、不淡入/淡出；LTR 从右侧进入，RTL 从左侧进入，push 320ms `easeOutCubic`、pop 220ms `easeInCubic`。Android 动画开启时由 `WidgetsBindingObserver` 把预测式返回进度转交当前 `PageRoute`；关闭系统动画时直接显示页面。iOS 保留 Cupertino 原生转场与边缘返回手势。图片画廊的显式 `PageRouteBuilder` 与 Hero 缩放动画继续走各自实现，不受全局路由主题影响。
 
-液态玻璃底栏使用 `liquid_glass_widgets: ^1.13.0`。`main()` 在 `runApp` 前执行 `LiquidGlassWidgets.initialize(enablePerformanceMonitor: false)`，并以 `LiquidGlassWidgets.wrap` 包裹应用、传入 `Theme.maybeBrightnessOf`。主页面由 `GlassPage` 提供隔离作用域；仅在“使用悬浮底栏”和独立的“使用液态玻璃效果”同时开启时，才将 `GlassBackgroundSource(enabled: true)` 挂到主页面 body，`Scaffold.extendBody` 在该路径为 true。背景源只采集页面 body，不包含导航栏本身，避免反馈采样；关闭效果时不运行背景采样并回到原材质导航。玻璃底栏实际启用时，在局部 `GlassAdaptiveScope` 不覆写初始画质：使用库完成初始化预热后的 premium 首帧路径，并按静态 shader 支持探测和运行帧耗时自适应降级/恢复，避免固定 `standard` 起步后等待质量升档；应用其他页面不参与这项检测。
+液态玻璃底栏使用 `liquid_glass_widgets: ^1.13.0`。`main()` 在 `runApp` 前执行 `LiquidGlassWidgets.initialize(enablePerformanceMonitor: false)`，并以 `LiquidGlassWidgets.wrap` 包裹应用、传入 `Theme.maybeBrightnessOf`。主页面由 `GlassPage` 提供隔离作用域；仅在“使用悬浮底栏”和独立的“使用液态玻璃效果”同时开启时，才将 `GlassBackgroundSource(enabled: true)` 挂到主页面 body，`Scaffold.extendBody` 在该路径为 true。背景源只采集页面 body，不包含导航栏本身，避免反馈采样；关闭效果时不运行背景采样并回到原材质导航。玻璃底栏实际启用时，在局部 `GlassAdaptiveScope` 不覆写初始画质：使用库完成初始化预热后的 premium 首帧路径，并按静态 shader 支持探测和运行帧耗时自适应降级/恢复，避免固定 `standard` 起步后等待质量升档；应用其他页面不参与这项检测。短点按松手时，即使点击当前选中项也要通知宿主，保留时间线和热搜原有的单击回顶与双击刷新；每次有效短点按都调用全局触感工具，并遵守触感开关、40ms 防重复冷却与水波纹去重；长按或拖拽回到当前项仍不触发同页操作。时间线顶栏每次轻点均通过无水波纹的外层手势提供轻触反馈；打开微博卡片详情也在 `NoSplash` 触控卡片的导航入口单独反馈一次，不启用水波纹。
 
 悬浮底栏的标准 M3 与液态玻璃两种样式共用响应式宽度 `min(440, 屏幕宽度 - 40)` 的 `2/3` 和 56dp 高度；标准样式仍使用主题 surface 背景、阴影、32dp 圆角和 4dp 内边距，液态玻璃样式仍使用独立光学参数。液态玻璃只替换当前实际存在的“时间线、热搜、设置”三个槽位，不增加尚不存在的消息/我的入口或发布按钮；底部 `SafeArea` 最小留白 21。主体参数为深色 40% 玻璃、clear body、厚度 10、blur 2.0、折射率 1.19、色散 0.008，主体和背景质量均为 premium（受局部自适应质量上限约束）；选中指示器折射率 1.18、色散 0.025、inner blur 6、pinch 0.7、press scale 1.06。选中指示胶囊使用深色 40% 填充（`#66000000`），选中和未选中图标/文字均为白色，以胶囊明暗与图标状态区分选中项，保证浅色图片背景上的文字可读。玻璃触控的选择回调延迟至松手：短点按仍保留当前 Tab 的回顶/刷新，长按或水平拖动不触发同页动作；只有水平释放速度达到 `1000 logical px/s` 的快速抛动才限制为起始页相邻一项，普通慢拖按松手时水滴所在页面选择（如时间线慢拖到设置可跨过热搜）。取消手势不提交；键盘和读屏语义激活仍即时生效。三个根页面在液态玻璃模式为 `MediaQuery.viewPadding.bottom + 76dp`；使用原始系统 inset，避免 `Scaffold.extendBody` 注入底栏高度后重复留白。标准悬浮和贴底模式仍分别使用 72dp 与 16dp。“使用液态玻璃效果”在个性化页作为独立分组常驻显示并独立保存；悬浮底栏需同时开启悬浮栏和液态玻璃开关，画廊返回/下载按钮只受液态玻璃开关控制。
 
