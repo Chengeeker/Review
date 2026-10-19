@@ -1,5 +1,13 @@
 # Review 变更记录
 
+## 3.10.9+207（2026-10-19）
+
+- 修复私信和群聊会话内点击其他用户头像打开主页时没有触感反馈的问题；保留原本无水波纹手势，仅在有效用户 UID 时调用全局触感工具。
+- 文章页工具栏的网页按钮现在在应用内打开原文；普通外链继续使用现有应用内浏览器，用户可从浏览器菜单手动选择外部浏览器。
+- `chat_history_test.dart` 21 项、`haptic_feedback_util_test.dart` 7 项、`link_routing_test.dart` 13 项通过；`article_card_test.dart` 8/9 项通过，`detail=true` 请求断言仍失败（该既有失败此前也已记录）。涉及 Dart 文件静态分析和 `git diff --check` 通过。
+- ARM64 Release 构建成功（489.5 秒）；核验 `com.review`、版本 `3.10.9`、versionCode 207、target SDK 36、仅 `arm64-v8a`，V2 签名及 16 KiB ZIP 对齐通过，证书 SHA-256 与前版一致（`3EB0F6708904F8EF916C6A2572E394BA981EE25D64861344CF1921CA7EA17975`）。
+- 交付 [Review_v3.10.9.apk](../Review_v3.10.9.apk)（33,477,550 字节），SHA-256 `4E7A7818BCDC1225513DEC072F3669A944BF3CBA12DF63AC111DBD56E06E06DA`。3.10.8 已校验并归档至 `build/previous-deliveries/Review_v3.10.8-before-v3.10.9.apk`；根目录仅保留本版 APK。未进行 Android 真机触感或 WebView 外链验收。
+
 ## 3.10.8+206（2026-10-19）
 
 - 修复时间线与热搜顶栏单击无操作的问题：单击立即回顶；双击回顶并刷新当前时间线或分类。

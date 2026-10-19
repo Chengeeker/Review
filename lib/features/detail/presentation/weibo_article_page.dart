@@ -8,16 +8,15 @@ import 'package:review/core/design_system/components/review_frosted_app_bar.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/constants/api_constants.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/network/weibo_dio_client.dart';
-import '../../../core/utils/app_toast.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
 import '../../../core/services/link_routing_service.dart';
 import '../../../core/utils/spring_page_route.dart';
 import '../../../core/widgets/app_avatar.dart';
+import '../../../core/widgets/in_app_browser_page.dart';
 import '../../feed/data/models/weibo_status_model.dart';
 import 'widgets/image_gallery_page.dart';
 
@@ -495,15 +494,16 @@ class _WeiboArticlePageState extends ConsumerState<WeiboArticlePage> {
     }
   }
 
-  Future<void> _openExternalBrowser() async {
+  void _openInAppBrowser() {
     HapticFeedbackUtil.light();
-    final launched = await launchUrl(
-      Uri.parse(_articleUrl),
-      mode: LaunchMode.externalApplication,
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => InAppBrowserPage(
+          url: _articleUrl,
+          title: _document?.title,
+        ),
+      ),
     );
-    if (!launched && mounted) {
-      AppToast.show(context, '未找到可用的外部浏览器');
-    }
   }
 
   void _openImage(int index) {
@@ -552,9 +552,9 @@ class _WeiboArticlePageState extends ConsumerState<WeiboArticlePage> {
         title: const Text('文章详情'),
         actions: [
           IconButton(
-            icon: const Icon(Icons.open_in_browser_rounded),
-            tooltip: '在外部浏览器打开',
-            onPressed: _openExternalBrowser,
+            icon: const Icon(Icons.language_rounded),
+            tooltip: '在应用内浏览器打开',
+            onPressed: _openInAppBrowser,
           ),
         ],
       ),

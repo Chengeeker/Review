@@ -1,6 +1,6 @@
 # Review 开发与技术架构文档
 
-> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-10-19；当前应用版本：`3.10.8+206`。
+> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-10-19；当前应用版本：`3.10.9+207`。
 >
 > `README.md` 用于项目介绍；本文档维护当前实现，不记录登录 Cookie、Token、密码或其他凭据。
 
@@ -331,6 +331,11 @@ lib/
      - 增加 `isHdrDisplaySupported` Channel 查询分支；
      - `create` 支持读取 `url`、`headers` 与 `path`；
      - 解码时优先命中内存缓存（0ms）；磁盘缓存命中直接通过 `ImageDecoder.ALLOCATOR_HARDWARE` 解码；若本地磁盘未命中，则使用带有微博图床鉴权头的 `HttpURLConnection` 边下边解边缓存至 `cacheimage/<md5>`，与 Flutter 缓存互通，解码成功后以硬件 GraphicBuffer 呈现并通过 Channel 触发 `hdrImageDecoded`。
+
+### 7.2.8 聊天头像触感反馈（3.10.9）
+
+- 私信和群聊消息中其他用户的头像点击通过原有无水波纹 `GestureDetector` 打开用户主页，并调用 `HapticFeedbackUtil.light()`。继续遵守全局触感开关和重复反馈节流；空 UID 不跳转也不触发反馈。不要改成带 Ink 水波纹的头像点击入口。
+- 通用文章/外链通过 `LinkRoutingService` 进入 `InAppBrowserPage`；文章页工具栏的网页图标也在应用内打开原文，内置浏览器菜单仍保留明确的“在外部浏览器打开”选项。微博文章卡片依旧先走原生文章阅读页，内链继续由链接路由器按文章、微博状态/主页或普通网页分别处理。
 
 ### 7.3 Android MethodChannel
 

@@ -1134,18 +1134,19 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
         children: [
           if (!isMe) ...[
             GestureDetector(
-              onTap: () {
-                if (senderUid.isNotEmpty) {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (ctx) => UserProfilePage(
-                        uid: senderUid,
-                        screenName: senderNick,
-                      ),
-                    ),
-                  );
-                }
-              },
+              onTap: senderUid.isEmpty
+                  ? null
+                  : () {
+                      HapticFeedbackUtil.light();
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (ctx) => UserProfilePage(
+                            uid: senderUid,
+                            screenName: senderNick,
+                          ),
+                        ),
+                      );
+                    },
               child: AppAvatar(url: senderAvatar, size: 38, name: senderNick),
             ),
             const SizedBox(width: 8),

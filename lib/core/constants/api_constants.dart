@@ -2,8 +2,8 @@
 class ApiConstants {
   ApiConstants._();
 
-  static const String appVersion = '3.10.8';
-  static const int appVersionCode = 206;
+  static const String appVersion = '3.10.9';
+  static const int appVersionCode = 207;
 
   static const String baseUrl = 'https://weibo.com';
   static const String passportUrl = 'https://passport.weibo.com';
