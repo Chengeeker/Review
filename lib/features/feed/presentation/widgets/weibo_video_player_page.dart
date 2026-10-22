@@ -1120,25 +1120,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                     ),
                   ),
 
-                // 5. 中间播放/暂停大图标
-                if (_showControls &&
-                    _isInitialized &&
-                    _controller != null &&
-                    !_isFastForwarding)
-                  Center(
-                    child: IconButton(
-                      iconSize: 64,
-                      icon: Icon(
-                        _controller!.value.isPlaying
-                            ? Icons.pause_circle_filled_rounded
-                            : Icons.play_circle_filled_rounded,
-                        color: Colors.white.withValues(alpha: 0.85),
-                      ),
-                      onPressed: _togglePlayPause,
-                    ),
-                  ),
-
-                // 6. 底部进度条与控制栏 (含时间、倍速、画质切换及横屏开关)
+                // 5. 底部进度条与控制栏 (含播放、时间、倍速、画质及横屏开关)
                 if (_showControls && _isInitialized && _controller != null)
                   Positioned(
                     bottom: 0,
@@ -1176,31 +1158,63 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                               ),
                             ),
                             const SizedBox(height: 4),
-                            // 进度条下方行：时间、倍速、画质、最右侧横屏开关
+                            // 进度条下方行：播放、时间、倍速、画质和横屏开关
                             Row(
                               children: [
-                                Text(
-                                  _formatDuration(_controller!.value.position),
-                                  style: const TextStyle(
+                                IconButton(
+                                  tooltip: _controller!.value.isPlaying
+                                      ? '暂停'
+                                      : '播放',
+                                  icon: Icon(
+                                    _controller!.value.isPlaying
+                                        ? Icons.pause_rounded
+                                        : Icons.play_arrow_rounded,
                                     color: Colors.white,
-                                    fontSize: 12,
+                                  ),
+                                  iconSize: 24,
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints.tightFor(
+                                    width: 40,
+                                    height: 40,
+                                  ),
+                                  onPressed: _togglePlayPause,
+                                ),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text.rich(
+                                    TextSpan(
+                                      children: [
+                                        TextSpan(
+                                          text: _formatDuration(
+                                            _controller!.value.position,
+                                          ),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        const TextSpan(
+                                          text: ' / ',
+                                          style: TextStyle(
+                                            color: Colors.white38,
+                                          ),
+                                        ),
+                                        TextSpan(
+                                          text: _formatDuration(
+                                            _controller!.value.duration,
+                                          ),
+                                          style: const TextStyle(
+                                            color: Colors.white70,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    maxLines: 1,
+                                    softWrap: false,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 12),
                                   ),
                                 ),
-                                const Text(
-                                  ' / ',
-                                  style: TextStyle(
-                                    color: Colors.white38,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                Text(
-                                  _formatDuration(_controller!.value.duration),
-                                  style: const TextStyle(
-                                    color: Colors.white70,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                                const Spacer(),
+                                const SizedBox(width: 8),
                                 // 倍速选择按钮
                                 InkWell(
                                   borderRadius: BorderRadius.circular(12),

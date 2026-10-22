@@ -246,6 +246,7 @@ void main() {
     pager.controller.jumpToPage(1);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump();
     expect(find.byType(WeiboVideoPlayerPage), findsOneWidget);
     expect(
         tester
@@ -255,6 +256,24 @@ void main() {
     expect(backend.played, [1]);
     final playerState = tester.state(find.byType(WeiboVideoPlayerPage));
     expect(find.byKey(const ValueKey('fake-video-1')), findsOneWidget);
+    expect(find.byIcon(Icons.pause_circle_filled_rounded), findsNothing);
+    final pauseButton = find.byIcon(Icons.pause_rounded);
+    expect(pauseButton, findsOneWidget);
+    final pauseButtonRect = tester.getRect(pauseButton);
+    expect(pauseButtonRect.center.dx, lessThan(100));
+    expect(
+        tester
+            .getRect(find.byKey(const ValueKey('gallery-thumbnail-strip')))
+            .bottom,
+        lessThanOrEqualTo(pauseButtonRect.top));
+    await tester.tap(pauseButton);
+    await tester.pump();
+    expect(backend.paused, contains(1));
+    final playButton = find.byIcon(Icons.play_arrow_rounded);
+    expect(playButton, findsOneWidget);
+    await tester.tap(playButton);
+    await tester.pump();
+    expect(backend.played, [1, 1]);
     await tester.fling(
         find.byType(WeiboVideoPlayerPage), const Offset(-500, 0), 1800);
     await tester.pump();
@@ -270,7 +289,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('gallery-thumbnail-3')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
-    expect(backend.played, [1, 2]);
+    expect(backend.played, [1, 1, 2]);
     await _pumpGallery(tester, const SizedBox());
     await tester.pump();
     await _flushPlayerDisposal(tester);

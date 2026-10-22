@@ -1,5 +1,12 @@
 # Review 变更记录
 
+## 3.10.10+208（2026-10-22）
+
+- 将视频播放器的播放/暂停键移到底部控制栏最左侧、时间显示之前，并移除遮挡画面的中央大图标；双击中间播放/暂停及左右双击快进/快退仍保留。
+- `mixed_media_gallery_test.dart` 5 项通过，新增断言覆盖底栏播放/暂停位置、被缩略条遮挡的情况及暂停/恢复播放；涉及 Dart 文件 `flutter analyze --no-pub` 无问题，`git diff --check` 通过。
+- ARM64 Release 构建成功（450.1 秒）；核验 `com.review`、版本 `3.10.10`、versionCode 208、target SDK 36、仅 `arm64-v8a`，V2 签名及 16 KiB ZIP 对齐通过，证书 SHA-256 与前版一致（`3EB0F6708904F8EF916C6A2572E394BA981EE25D64861344CF1921CA7EA17975`）。
+- 交付 [Review_v3.10.10.apk](../Review_v3.10.10.apk)（33,477,546 字节），SHA-256 `025E8BD862902DF0D6AE6408CC53A949215C7425C5D4F846F9652319244626DE`。3.10.9 已核验并归档至 `build/previous-deliveries/Review_v3.10.9-before-v3.10.10.apk`；根目录仅保留本版 APK。未进行 Android 真机控制栏观感验收。
+
 ## 3.10.9+207（2026-10-19）
 
 - 修复私信和群聊会话内点击其他用户头像打开主页时没有触感反馈的问题；保留原本无水波纹手势，仅在有效用户 UID 时调用全局触感工具。
