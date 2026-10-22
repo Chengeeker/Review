@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -17,14 +16,6 @@ const _articleId = '2309405350630165316501';
 const _articleUrl = 'https://weibo.com/ttarticle/p/show?id=$_articleId';
 const _cover = 'https://wx1.sinaimg.cn/large/article-cover.jpg';
 const _shortUrl = 'https://t.cn/article-test';
-
-class _ArticleRouteObserver extends NavigatorObserver {
-  final opened = Completer<void>();
-  @override
-  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (previousRoute != null && !opened.isCompleted) opened.complete();
-  }
-}
 
 Map<String, dynamic> _status(Map<String, dynamic> payload) => {
       'id': '5350630165316501',
@@ -185,7 +176,6 @@ void main() {
       SharedPreferences.setMockInitialValues({});
       final storage = StorageService(await SharedPreferences.getInstance());
       final client = _ArticleClient();
-      final observer = _ArticleRouteObserver();
       final status = WeiboStatusModel.fromJson(_status({
         'url_struct': [_link()],
       }));
@@ -195,7 +185,6 @@ void main() {
           weiboDioClientProvider.overrideWithValue(client),
         ],
         child: MaterialApp(
-          navigatorObservers: [observer],
           home: Scaffold(
             body: SingleChildScrollView(
               child: TweetCard(status: status, isDetail: isDetail),
@@ -211,8 +200,6 @@ void main() {
                 (widget) => widget is GestureDetector && widget.onTap != null),
           )
           .first);
-      await tester.pump();
-      await tester.runAsync(() => observer.opened.future);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.byType(WeiboArticlePage), findsOneWidget);
