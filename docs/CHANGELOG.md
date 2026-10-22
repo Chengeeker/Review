@@ -3,7 +3,9 @@
 ## 3.11.2+211（2026-10-22）
 
 - 按用户要求撤回微博卡片、转发原帖和文章封面的“一镜到底”详情转场，恢复原本的标准页面路由与打开行为；保留文章页内链接和外链的既有分流。
-- 已移除转场专用实现及测试，恢复原文章封面点击回归；相关测试和 ARM64 Release 构建结果待本次验证。
+- 已移除转场专用实现及测试，恢复原文章封面点击回归；Flutter 静态分析 0 error 0 warning。
+- ARM64 Release 构建成功（347.4 秒）；核验 `com.review`、版本 `3.11.2`、versionCode 211、target SDK 36、仅 `arm64-v8a`，V2 签名及 16 KiB ZIP 对齐通过，证书 SHA-256 与前版一致。
+- 交付 [Review_v3.11.2.apk](../Review_v3.11.2.apk)（32,822,190 字节，31.3 MB），SHA-256 `8828E96A56E6C3DEB7D387EA0047F8D228F603D27EB7A3B77C2C9BEAF27CE4E7`。3.11.1 已归档至 `build/previous-deliveries/Review_v3.11.1-before-v3.11.2.apk`；根目录仅保留本版 APK。
 
 ## 3.11.1+210（2026-10-22）
 
