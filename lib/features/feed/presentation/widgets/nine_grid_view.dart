@@ -50,6 +50,13 @@ class _NineGridViewState extends ConsumerState<NineGridView> {
 
   @override
   Widget build(BuildContext context) {
+    final child = _buildMedia(context);
+    return pics.any((pic) => pic.articleUrl != null)
+        ? RepaintBoundary(child: child)
+        : child;
+  }
+
+  Widget _buildMedia(BuildContext context) {
     if (pics.isEmpty) return const SizedBox.shrink();
 
     final style = ref.watch(weiboStyleProvider);

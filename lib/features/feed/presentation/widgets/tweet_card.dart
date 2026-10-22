@@ -607,6 +607,11 @@ class _TweetCardState extends ConsumerState<TweetCard> {
 
   @override
   Widget build(BuildContext context) {
+    final child = _buildCard(context);
+    return widget.isDetail ? child : RepaintBoundary(child: child);
+  }
+
+  Widget _buildCard(BuildContext context) {
     final status = widget.status;
     final poll = _poll ?? status.poll;
     final isDetail = widget.isDetail;
@@ -659,9 +664,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                   jsonEncode(status.toJson()),
                 );
               } catch (_) {}
-              Navigator.of(context).push(
-                cardDetailRoute(context, StatusDetailPage(status: status)),
-              );
+              openCardDetail(context, StatusDetailPage(status: status));
             },
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
@@ -1485,9 +1488,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
       final storage = ref.read(storageServiceProvider);
       storage.recordViewedStatusJson(retweet.id, jsonEncode(retweet.toJson()));
     } catch (_) {}
-    Navigator.of(context).push(
-      cardDetailRoute(context, StatusDetailPage(status: retweet)),
-    );
+    openCardDetail(context, StatusDetailPage(status: retweet));
   }
 
   Future<void> _handlePollOptionTap(
@@ -1894,9 +1895,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
           color: colorScheme.onSurfaceVariant,
           onTap: () {
             if (!widget.isDetail) {
-              Navigator.of(context).push(
-                cardDetailRoute(context, StatusDetailPage(status: status)),
-              );
+              openCardDetail(context, StatusDetailPage(status: status));
             }
           },
         ),

@@ -367,9 +367,11 @@ class LinkRoutingService {
       Navigator.of(context)
           .pushReplacement(MaterialPageRoute(builder: (_) => targetPage));
     } else {
-      Navigator.of(context).push(expandFromCard
-          ? cardDetailRoute(context, targetPage)
-          : MaterialPageRoute(builder: (_) => targetPage));
+      if (expandFromCard) {
+        openCardDetail(context, targetPage);
+      } else {
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => targetPage));
+      }
     }
   }
 
