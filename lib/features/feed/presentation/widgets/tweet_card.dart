@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../../../../core/utils/card_detail_route.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -659,9 +660,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                 );
               } catch (_) {}
               Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (ctx) => StatusDetailPage(status: status),
-                ),
+                cardDetailRoute(context, StatusDetailPage(status: status)),
               );
             },
       child: Padding(
@@ -1487,7 +1486,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
       storage.recordViewedStatusJson(retweet.id, jsonEncode(retweet.toJson()));
     } catch (_) {}
     Navigator.of(context).push(
-      MaterialPageRoute(builder: (ctx) => StatusDetailPage(status: retweet)),
+      cardDetailRoute(context, StatusDetailPage(status: retweet)),
     );
   }
 
@@ -1896,9 +1895,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
           onTap: () {
             if (!widget.isDetail) {
               Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (ctx) => StatusDetailPage(status: status),
-                ),
+                cardDetailRoute(context, StatusDetailPage(status: status)),
               );
             }
           },

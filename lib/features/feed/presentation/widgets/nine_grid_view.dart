@@ -382,6 +382,7 @@ class _NineGridViewState extends ConsumerState<NineGridView> {
         title: pic.articleTitle,
         sourceAuthorId: widget.authorId,
         sourceAuthorAvatar: widget.authorAvatar,
+        expandFromCard: true,
       );
       return;
     }

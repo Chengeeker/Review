@@ -8,6 +8,7 @@ import '../../features/profile/presentation/user_profile_page.dart';
 import '../../features/feed/presentation/widgets/weibo_video_link_page.dart';
 import '../../features/feed/presentation/widgets/weibo_video_player_page.dart';
 import '../utils/haptic_feedback_util.dart';
+import '../utils/card_detail_route.dart';
 import '../utils/weibo_article_link.dart';
 import '../widgets/in_app_browser_page.dart';
 
@@ -199,6 +200,7 @@ class LinkRoutingService {
     String? sourceAuthorId,
     String? sourceAuthorAvatar,
     bool replaceCurrent = false,
+    bool expandFromCard = false,
   }) {
     final clean = normalizeOfficialUrl(rawUrl);
     if (clean.isEmpty) return;
@@ -216,6 +218,7 @@ class LinkRoutingService {
           sourceAuthorAvatar: sourceAuthorAvatar,
         ),
         replace: replaceCurrent,
+        expandFromCard: expandFromCard,
       );
       return;
     }
@@ -357,13 +360,16 @@ class LinkRoutingService {
     BuildContext context,
     Widget targetPage, {
     bool replace = false,
+    bool expandFromCard = false,
   }) {
     if (!context.mounted) return;
     if (replace) {
       Navigator.of(context)
           .pushReplacement(MaterialPageRoute(builder: (_) => targetPage));
     } else {
-      Navigator.of(context).push(MaterialPageRoute(builder: (_) => targetPage));
+      Navigator.of(context).push(expandFromCard
+          ? cardDetailRoute(context, targetPage)
+          : MaterialPageRoute(builder: (_) => targetPage));
     }
   }
 
