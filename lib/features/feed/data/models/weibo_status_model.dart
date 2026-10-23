@@ -1649,16 +1649,16 @@ class WeiboStatusModel {
                 if (normalizedUrl != null && normalizedUrl.isNotEmpty) {
                   final label = pi['label']?.toString().toLowerCase() ?? '';
                   String qName = '标清';
-                  if (label.contains('1080') || label.contains('fhd')) {
+                  if (label.contains('1080')) {
                     qName = '1080P 超清';
-                  } else if (label.contains('720') || label.contains('hd')) {
+                  } else if (label.contains('720')) {
                     qName = '720P 高清';
-                  } else if (label.contains('480') || label.contains('sd')) {
+                  } else if (label.contains('480')) {
                     qName = '480P 标清';
-                  } else if (label.contains('360') || label.contains('ld')) {
+                  } else if (label.contains('360')) {
                     qName = '360P 流畅';
                   } else {
-                    qName = pi['quality_label']?.toString() ?? '默认画质';
+                    qName = label.isNotEmpty ? label : (pi['quality_label']?.toString() ?? '默认画质');
                   }
                   videoQualityMap[qName] = normalizedUrl;
 
@@ -1694,28 +1694,28 @@ class WeiboStatusModel {
           if (mediaInfo['stream_url_hd'] != null) {
             final u = _normalizeMediaUrl(mediaInfo['stream_url_hd']);
             if (u != null) {
-              videoQualityMap['720P 高清'] ??= u;
+              videoQualityMap['高清'] ??= u;
               videoStream ??= u;
             }
           }
           if (mediaInfo['mp4_hd_url'] != null) {
             final u = _normalizeMediaUrl(mediaInfo['mp4_hd_url']);
             if (u != null) {
-              videoQualityMap['720P 高清'] ??= u;
+              videoQualityMap['高清'] ??= u;
               videoStream ??= u;
             }
           }
           if (mediaInfo['stream_url'] != null) {
             final u = _normalizeMediaUrl(mediaInfo['stream_url']);
             if (u != null) {
-              videoQualityMap['480P 标清'] ??= u;
+              videoQualityMap['默认画质'] ??= u;
               videoStream ??= u;
             }
           }
           if (mediaInfo['mp4_sd_url'] != null) {
             final u = _normalizeMediaUrl(mediaInfo['mp4_sd_url']);
             if (u != null) {
-              videoQualityMap['480P 标清'] ??= u;
+              videoQualityMap['默认画质'] ??= u;
               videoStream ??= u;
             }
           }

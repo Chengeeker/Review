@@ -1,6 +1,6 @@
 # Review 开发与技术架构文档
 
-> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-10-22；当前应用版本：`3.11.2+211`。
+> 本文档是 Review 当前源码的开发说明，内容以代码和当前可验证的行为为准。文档更新日期：2026-10-23；当前应用版本：`3.11.4+213`。
 >
 > `README.md` 用于项目介绍；本文档维护当前实现，不记录登录 Cookie、Token、密码或其他凭据。
 
@@ -547,3 +547,8 @@ Copy-Item -LiteralPath 'build\app\outputs\flutter-apk\app-release.apk' -Destinat
 
 - [磨砂顶栏设计规范](docs/FROSTED_TOP_BAR_DESIGN_SPEC.md) 是可单独复用的完整规范，也是统一开发文档中的组成部分；修改顶栏材质、固定内容布局、分隔线或验收标准时，同步维护该文件并重建 `D:\App\开发文档\Review.md`。
 - 超话中心采用覆盖式滚动：列表视口从屏幕顶部开始绘制在整个磨砂顶栏后方；固定搜索/分类区为 108dp（搜索框布局 62dp、分类行 38dp、标签下方 8dp 磨砂留白）。首项 padding 在视口内部补齐状态栏安全区、工具栏、固定区和 4dp 内容间距；合计 inset 保持原布局不变，标签下沿与磨砂边界之间则有清晰余量。不要把列表视口放在顶栏下方的 `Column`/外层 `Padding` 中，否则滚动内容无法穿过完整顶栏，模糊会像从标签下方才开始。
+
+
+### 构建远程依赖等待（2026-10-23）
+
+若 Gradle 线程确认阻塞于 SSL/HTTP 依赖连接，且本机依赖齐全，可停止本次所属 wrapper/daemon 后离线编译；不要停止其他项目的 Java 进程。保留上文 JDK/TEMP 环境，在项目根目录执行 android/gradlew.bat -p android --offline assembleRelease -Ptarget-platform=android-arm64 -Ptarget=lib/main.dart -Ptree-shake-icons=false -Pdart-obfuscation=false。结果位于 build/app/outputs/apk/release/app-release.apk，仍需进行版本、ABI、签名及对齐核验。依赖缺失应明确报告，不改变锁文件。

@@ -11,6 +11,7 @@ import '../../../../core/network/weibo_dio_client.dart';
 import '../../../../core/storage/storage_service.dart';
 import '../../../../core/utils/app_toast.dart';
 import '../../../../core/utils/haptic_feedback_util.dart';
+import '../../../../core/utils/video_quality_utils.dart';
 import '../../../../core/widgets/cached_network_image.dart';
 import '../../../detail/data/detail_repository.dart';
 
@@ -116,9 +117,12 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
   void initState() {
     super.initState();
     _liveStatus = widget.liveStatus;
-    _qualityMap = Map.from(widget.videoQualityUrls ?? {});
+    _qualityMap = normalizeVideoQualities(
+      widget.videoQualityUrls ?? {},
+      preferredUrl: widget.videoUrl,
+    );
     if (_qualityMap.isEmpty && widget.videoUrl.isNotEmpty) {
-      _qualityMap['高清'] = widget.videoUrl;
+      _qualityMap['分辨率未知'] = widget.videoUrl;
     }
 
     if (_qualityMap.isNotEmpty) {
@@ -130,7 +134,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
           .key;
     }
 
-    _initPlayer();
+    _initPlayer(overrideUrl: _qualityMap[_currentQuality]);
     _initDeviceLevels();
     _resetControlsTimer();
   }
@@ -281,20 +285,28 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
           }
           if (liveMessage != null) return true;
         }
-        if (detail.videoQualityUrls != null &&
-            detail.videoQualityUrls!.isNotEmpty) {
-          setState(() {
-            _qualityMap = Map.from(detail.videoQualityUrls!);
-            _currentQuality = _qualityMap.keys.first;
-          });
-        }
         final streamUrl =
             detail.videoStreamUrl ??
             (detail.videoQualityUrls?.values.firstOrNull);
+        final qualities = normalizeVideoQualities(
+          detail.videoQualityUrls ?? {},
+          preferredUrl: streamUrl,
+        );
+        if (qualities.isNotEmpty) {
+          setState(() {
+            _qualityMap = qualities;
+            _currentQuality = qualities.entries
+                .firstWhere(
+                  (e) => e.value == streamUrl,
+                  orElse: () => qualities.entries.first,
+                )
+                .key;
+          });
+        }
         if (streamUrl != null &&
             streamUrl.isNotEmpty &&
             !_isLiveRoomPageUrl(streamUrl)) {
-          await _initPlayer(overrideUrl: streamUrl);
+          await _initPlayer(overrideUrl: _qualityMap[_currentQuality] ?? streamUrl);
           return true;
         }
 
@@ -820,7 +832,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                             setState(() {
                               _hasError = false;
                             });
-                            _initPlayer();
+                            _initPlayer(overrideUrl: _qualityMap[_currentQuality]);
                           },
                           child: const Text('重试'),
                         ),

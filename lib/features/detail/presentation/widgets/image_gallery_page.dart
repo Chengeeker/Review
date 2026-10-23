@@ -1284,7 +1284,6 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                         loadStateChanged: (state) {
                           if (state.extendedImageLoadState !=
                               LoadState.completed) {
-                            // shortcut: preview is available only for matching Hero launches, extend when other entry points expose decoded frames.
                             if (index == widget.initialIndex &&
                                 state.extendedImageLoadState ==
                                     LoadState.loading &&
@@ -1292,6 +1291,18 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                               return RawImage(
                                 key: const ValueKey('gallery-opening-preview'),
                                 image: _openingPreview,
+                                fit: BoxFit.contain,
+                              );
+                            }
+                            // Keep each page's preview visible while its original loads.
+                            if (state.extendedImageLoadState == LoadState.loading &&
+                                pic.previewUrl.isNotEmpty &&
+                                pic.previewUrl != imageUrl) {
+                              return ExtendedImage.network(
+                                pic.previewUrl,
+                                key: ValueKey('gallery-loading-preview-$index'),
+                                headers: _imageHeadersForUrl(pic.previewUrl),
+                                cache: true,
                                 fit: BoxFit.contain,
                               );
                             }

@@ -151,6 +151,67 @@ Future<void> _pumpGallery(WidgetTester tester, Widget child) => tester.pumpWidge
 );
 
 void main() {
+  testWidgets('second page keeps its own preview while original is pending', (
+    tester,
+  ) async {
+    final pics = List.generate(
+      2,
+      (i) => WeiboPicModel(
+        pid: 'pending-$i',
+        thumbnail: 'https://example.com/preview-$i.jpg',
+        large: 'https://example.com/preview-$i.jpg',
+        original: 'https://example.com/original-$i.jpg',
+      ),
+    );
+    await _cacheDecodedGalleryPics(tester, pics);
+    await _cacheDecodedGalleryPics(tester, [
+      for (final pic in pics)
+        WeiboPicModel(
+          pid: '${pic.pid}-preview',
+          thumbnail: pic.previewUrl,
+          large: pic.previewUrl,
+          original: pic.previewUrl,
+        ),
+    ]);
+    final provider = ExtendedNetworkImageProvider(
+      pics[1].originalUrl,
+      cache: true,
+    );
+    imageCache.evict(provider);
+    final pending = _GalleryImageStream();
+    imageCache.putIfAbsent(provider, () => pending);
+    await _pumpGallery(
+      tester,
+      MaterialApp(
+        home: ImageGalleryPage(
+          pics: pics,
+          initialIndex: 0,
+          statusId: 'pending-preview',
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.drag(
+      find.byType(ExtendedImageGesturePageView),
+      const Offset(-700, 0),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    final preview = find.byKey(const ValueKey('gallery-loading-preview-1'));
+    expect(preview, findsOneWidget);
+    expect(
+      (tester.widget<ExtendedImage>(preview).image
+              as ExtendedNetworkImageProvider)
+          .url,
+      pics[1].previewUrl,
+    );
+    final state = tester.state(preview) as ExtendedImageState;
+    expect(state.extendedImageLoadState, LoadState.completed);
+    pending.frame(state.extendedImageInfo!.image.clone());
+    await tester.pump();
+    expect(preview, findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    imageCache.evict(provider);
+  });
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     galleryTestStorage = StorageService(await SharedPreferences.getInstance());
