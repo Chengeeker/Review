@@ -1467,6 +1467,11 @@ class WeiboStatusModel {
     if (pageInfoRaw is Map && retweeted == null) {
       final pageInfo = Map<String, dynamic>.from(pageInfoRaw);
       final pageType = pageInfo['type']?.toString().toLowerCase() ?? '';
+      final isLivePage = liveId != null ||
+          pageType == 'live' ||
+          pageType == 'wblive' ||
+          pageType == 'live_video' ||
+          pageType == 'livevideo';
       final cardInfo = _asDynamicMap(pageInfo['card_info']);
       final cardPageInfo = _asDynamicMap(cardInfo?['page_info']);
       final cardPicInfo = _asDynamicMap(cardPageInfo?['pic_info']);
@@ -1490,7 +1495,8 @@ class WeiboStatusModel {
                   .whereType<String>()
                   .firstOrNull
               : null);
-      if (!isPollPage &&
+      if (!isLivePage &&
+          !isPollPage &&
           (isImageWebpage || articleUrl != null) &&
           !_isLotteryLinkCard(pageInfo) &&
           (articleUrl != null ||

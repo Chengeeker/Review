@@ -365,6 +365,15 @@ void main() {
           'text_raw': '今晚直播',
           'source': '来自微博网页版',
           'user': {'id': 'live-user', 'screen_name': '直播博主'},
+          'page_info': {
+            'type': 'webpage',
+            'page_title': '直播间',
+            'page_pic': {
+              'url': 'https://wx1.sinaimg.cn/original/live-cover.jpg',
+              'width': 600,
+              'height': 1200,
+            },
+          },
           'url_struct': [
             {
               'short_url': 'https://t.cn/live',
