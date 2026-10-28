@@ -155,6 +155,70 @@ void main() {
     expect(poll, isNull);
   });
 
+  test('FeedRepository resolves a retweeted poster before publishing the row',
+      () async {
+    SharedPreferences.setMockInitialValues({});
+    final storage = StorageService(await SharedPreferences.getInstance());
+    await storage.setFullCookie('SUB=test; XSRF-TOKEN=test');
+    final client = WeiboDioClient(storage);
+    var requests = 0;
+    client.dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      requests++;
+      expect(options.queryParameters['id'], '1234567890');
+      handler.resolve(Response(requestOptions: options, data: {
+        'data': {
+          'id': '1234567890',
+          'live_id': 'live-room',
+          'page_info': {
+            'type': 'video',
+            'page_pic': {'url': 'https://wx1.sinaimg.cn/large/live.jpg'},
+            'media_info': {'stream_url': 'https://example.com/live.m3u8'},
+          },
+        },
+      }));
+    }));
+    final raw = {
+      'id': 'retweet',
+      'retweeted_status': {
+        'id': '1234567890',
+        'source': '微博直播',
+        'pics': [
+          {
+            'pid': 'cached-poster',
+            'is_webpage_card': true,
+            'original': {'url': 'https://wx1.sinaimg.cn/large/live.jpg'},
+          },
+        ],
+        'url_struct': [
+          {'short_url': 'https://t.cn/card', 'url_type': 39},
+        ],
+        'page_info': {
+          'type': 'bigPic',
+          'page_pic': {'url': 'https://wx1.sinaimg.cn/large/live.jpg'},
+        },
+      },
+    };
+    final repository = FeedRepository(client, storage);
+    for (var i = 0; i < 2; i++) {
+      final input = i == 0
+          ? raw
+          : {
+              ...raw,
+              'retweeted_status': {
+                ...raw['retweeted_status']! as Map,
+                'url_struct': [],
+              },
+            };
+      final result = await repository.parseStatuses([input]);
+      final original = result.single.retweetedStatus!;
+      expect(original.pics, isEmpty);
+      expect(original.hasVideo, isTrue);
+      expect(original.isLiveBroadcast, isTrue);
+      expect(original.videoCoverUrl, 'https://wx1.sinaimg.cn/large/live.jpg');
+    }
+    expect(requests, 1);
+  });
+
   test('FeedRepository hydrates type-39 cards and preserves the feed reason',
       () async {
     SharedPreferences.setMockInitialValues({});

@@ -589,7 +589,12 @@ class DetailRepository {
         mergedUrlStruct,
       );
       return status.copyWith(
-        pics: mergeStatusPictures(status.pics, official.pics),
+        pics: mergeStatusPictures(
+          official.hasVideo
+              ? status.pics.where((pic) => !pic.isWebpageCard).toList()
+              : status.pics,
+          official.pics,
+        ),
         textRaw: hasWebpageImage
             ? (official.textRaw.trim().isNotEmpty
                 ? official.textRaw

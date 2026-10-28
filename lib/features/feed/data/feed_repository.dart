@@ -151,8 +151,23 @@ class FeedRepository {
             titleText: status.titleText,
             titleIcon: status.titleIcon,
             pics: DetailRepository.mergeStatusPictures(
-                status.pics, hydrated.pics),
+                hydrated.hasVideo
+                    ? status.pics.where((pic) => !pic.isWebpageCard).toList()
+                    : status.pics,
+                hydrated.hasVideo
+                    ? hydrated.pics.where((pic) => !pic.isWebpageCard).toList()
+                    : hydrated.pics),
           );
+        }
+      }
+      final rawRetweet = json['retweeted_status'];
+      if (rawRetweet is Map) {
+        final retweet = await _parseStatusItem(
+          rawRetweet,
+          resolveLongText: false,
+        );
+        if (retweet != null) {
+          status = status.copyWith(retweetedStatus: retweet);
         }
       }
       if (status.isLiveBroadcast && !status.hasPlayableVideoStream) {
@@ -245,7 +260,8 @@ class FeedRepository {
 
     return (status.poll == null && hasVoteMarker) ||
         (status.hotTopic == null && hasHotTopicMarker) ||
-        (status.pics.isEmpty && _hasAutomaticWebpageCard(status));
+        (!status.hasVideo &&
+            (_hasAutomaticWebpageCard(status) || status.source == '微博直播'));
   }
 
   static bool _hasAutomaticWebpageCard(WeiboStatusModel status) {
