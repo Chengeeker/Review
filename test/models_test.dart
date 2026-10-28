@@ -352,6 +352,42 @@ void main() {
       expect(retweet.videoDuration, equals('00:42'));
     });
 
+    test('WeiboStatusModel renders a retweeted live link as video card', () {
+      final status = WeiboStatusModel.fromJson({
+        'id': 'outer-status',
+        'mid': 'outer-status',
+        'text_raw': '转发直播',
+        'source': '来自微博网页版',
+        'user': {'id': 'outer-user', 'screen_name': '转发用户'},
+        'retweeted_status': {
+          'id': 'live-status',
+          'mid': 'live-status',
+          'text_raw': '今晚直播',
+          'source': '来自微博网页版',
+          'user': {'id': 'live-user', 'screen_name': '直播博主'},
+          'url_struct': [
+            {
+              'short_url': 'https://t.cn/live',
+              'ori_url': 'https://weibo.com/l/wblive/p/show/2304441234567890',
+              'url_type': 39,
+              'url_title': '直播间',
+              'card_image_url':
+                  'https://wx1.sinaimg.cn/original/live-cover.jpg',
+              'card_image_width': 600,
+              'card_image_height': 1200,
+            },
+          ],
+        },
+      });
+
+      final live = status.retweetedStatus!;
+      expect(live.isLiveBroadcast, isTrue);
+      expect(live.hasVideo, isTrue);
+      expect(live.pics, isEmpty);
+      expect(live.videoCoverUrl,
+          equals('https://wx1.sinaimg.cn/original/live-cover.jpg'));
+    });
+
     test('WeiboStatusModel does not promote retweeted page_info media', () {
       final status = WeiboStatusModel.fromJson({
         'id': 'outer-status',

@@ -14,6 +14,7 @@ class WeiboCommentModel {
   final List<Map<String, dynamic>> urlStruct;
   final List<WeiboCommentModel> subComments;
   final int subCommentsCount;
+  final bool replyCountKnown;
 
   const WeiboCommentModel({
     required this.id,
@@ -28,6 +29,7 @@ class WeiboCommentModel {
     this.urlStruct = const [],
     this.subComments = const [],
     this.subCommentsCount = 0,
+    this.replyCountKnown = false,
   });
 
   WeiboPicModel? get pic => pics.isNotEmpty ? pics.first : null;
@@ -326,6 +328,8 @@ class WeiboCommentModel {
       pics: picsList,
       urlStruct: rawUrlStruct,
       subComments: subList,
+      replyCountKnown: ['total_number', 'sub_comments_count', 'comments_count',
+        'reply_count', 'reply_num'].any((key) => int.tryParse('${json[key]}') != null),
       subCommentsCount: declaredSubCommentsCount > subList.length
           ? declaredSubCommentsCount
           : subList.length,

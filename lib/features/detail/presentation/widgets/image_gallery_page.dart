@@ -29,6 +29,7 @@ import '../../../../core/storage/storage_service.dart';
 import '../../../../core/theme/theme_provider.dart';
 import '../../../../core/utils/app_toast.dart';
 import '../../../../core/utils/haptic_feedback_util.dart';
+import '../../../../core/utils/spring_page_route.dart';
 import '../../../feed/data/models/weibo_status_model.dart';
 import '../../../feed/presentation/widgets/weibo_video_player_page.dart';
 import 'hdr_gallery_image.dart';
@@ -244,7 +245,8 @@ class _HeroReturnImageMorph extends StatefulWidget {
 class _HeroReturnImageMorphState extends State<_HeroReturnImageMorph> {
   @override
   void dispose() {
-    widget.image.dispose();
+    final image = widget.image;
+    WidgetsBinding.instance.addPostFrameCallback((_) => image.dispose());
     super.dispose();
   }
 
@@ -341,6 +343,32 @@ class ImageGalleryPage extends ConsumerStatefulWidget {
 
 class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
     with TickerProviderStateMixin {
+  static final Set<_ImageGalleryPageState> _activeGalleryPages = {};
+  static bool _globalCleanupScheduled = false;
+
+  static void _scheduleGlobalCleanup() {
+    if (_globalCleanupScheduled) return;
+    _globalCleanupScheduled = true;
+    PhysicsSpringGalleryRoute.whenAllRoutesIdle(() {
+      _globalCleanupScheduled = false;
+      if (_activeGalleryPages.isNotEmpty) return;
+      hdrGalleryChannel.setMethodCallHandler(null);
+      unawaited(
+        hdrGalleryChannel
+            .invokeMethod<void>('setWindowHdr', {'enabled': false})
+            .catchError((_) {}),
+      );
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      unawaited(
+        _mediaChannel
+            .invokeMethod<void>('setImageGalleryStatusBarVisible', {
+              'visible': true,
+            })
+            .catchError((_) {}),
+      );
+    });
+  }
+
   Map<String, String> _imageHeadersForUrl(String url) =>
       Uri.tryParse(url)?.host == 'upload.api.weibo.com'
       ? ref.read(weiboDioClientProvider).imageHeadersForUrl(url)
@@ -358,6 +386,8 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
   bool _isSaving = false;
   bool _showChrome = true;
   bool _chromeRouteVisible = false;
+  bool _isReturning = false;
+  bool _liquidGlassEnabled = false;
   late final AnimationController _chromeOpacityController;
   Animation<double>? _routeAnimation;
   bool _thumbnailUserScrolling = false;
@@ -465,6 +495,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
   @override
   void initState() {
     super.initState();
+    _activeGalleryPages.add(this);
     _chromeOpacityController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 140),
@@ -482,6 +513,19 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
       vsync: this,
     );
     _initLiveControllerForIndex(_currentIndex);
+    for (final pic in widget.pics) {
+      if (pic.isVideo || pic.isGif || pic.isWebpageCard) continue;
+      final url = pic.originalUrl;
+      if (isKnownSinaHdrGainMap(url)) _hdrUrls.add(url);
+      final pending = pendingSinaHdrGainMapProbe(url);
+      if (pending != null) {
+        unawaited(
+          pending.then((found) {
+            if (found && mounted) _onHdrDetected(url, _hdrDisplaySupported);
+          }),
+        );
+      }
+    }
     hdrGalleryChannel.setMethodCallHandler(_handleNativeHdrCall);
     unawaited(_checkHdrDisplaySupport());
     _updateWindowHdr();
@@ -514,30 +558,46 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
 
   void _handleRouteAnimationStatus(AnimationStatus status) {
     final visible = status == AnimationStatus.completed;
-    if (!mounted || visible == _chromeRouteVisible) return;
-    setState(() => _chromeRouteVisible = visible);
+    final returning =
+        status == AnimationStatus.reverse ||
+        (_isReturning && status != AnimationStatus.completed);
+    if (!mounted ||
+        (visible == _chromeRouteVisible && returning == _isReturning)) {
+      return;
+    }
+    setState(() {
+      _chromeRouteVisible = visible;
+      _isReturning = returning;
+    });
     if (visible) {
       _chromeOpacityController.forward();
     } else {
-      _chromeOpacityController.reverse();
+      if (_liquidGlassEnabled && returning) {
+        _chromeOpacityController
+          ..stop()
+          ..value = 0;
+      } else {
+        _chromeOpacityController.reverse();
+      }
     }
   }
 
   @override
   void dispose() {
-    hdrGalleryChannel.setMethodCallHandler(null);
-    unawaited(
-      hdrGalleryChannel
-          .invokeMethod<void>('setWindowHdr', {'enabled': false})
-          .catchError((_) {}),
-    );
+    _activeGalleryPages.remove(this);
+    if (_activeGalleryPages.isEmpty) {
+      _scheduleGlobalCleanup();
+    } else {
+      hdrGalleryChannel.setMethodCallHandler(
+        _activeGalleryPages.last._handleNativeHdrCall,
+      );
+    }
     for (final rect in _hdrRects.values) {
       rect.dispose();
     }
     _openingPreview?.dispose();
     _openingPreview = null;
     _routeAnimation?.removeStatusListener(_handleRouteAnimationStatus);
-    _restoreSystemUi();
     _galleryTapTimer?.cancel();
     _chromeOpacityController.dispose();
     _doubleTapAnimationController.dispose();
@@ -565,11 +625,6 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
     if (preview == null) return;
     _openingPreview = null;
     WidgetsBinding.instance.addPostFrameCallback((_) => preview.dispose());
-  }
-
-  void _restoreSystemUi() {
-    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    _setNativeStatusBarVisible(true);
   }
 
   void _setSystemStatusBarVisible(bool visible) {
@@ -1144,6 +1199,8 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
     final useLiquidGlass = ref.watch(
       themeProvider.select((state) => state.useLiquidGlass),
     );
+    _liquidGlassEnabled = useLiquidGlass;
+    final hideChromeForReturn = useLiquidGlass && _isReturning;
     final currentPic = widget.pics.isNotEmpty
         ? widget.pics[_currentIndex]
         : null;
@@ -1167,378 +1224,371 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
             // Raw pointer tracking avoids competing with ExtendedImage double taps.
             Listener(
               onPointerDown: _handleGalleryPointerDown,
-                onPointerMove: _handleGalleryPointerMove,
-                onPointerUp: _handleGalleryPointerUp,
-                onPointerCancel: _handleGalleryPointerCancel,
-                child: NotificationListener<ScrollNotification>(
-                  onNotification: _handleMainGalleryScroll,
-                  child: ExtendedImageGesturePageView.builder(
-                    controller: _pageController,
-                    physics: const BouncingScrollPhysics(),
-                    canScrollPage: (details) =>
-                        (details?.totalScale ?? 1.0) <= 1.0,
-                    shouldAccpetHorizontalOrVerticalDrag: (trackers) =>
-                        trackers.length == 1,
-                    pageSnapping:
-                        !_thumbnailUserScrolling && !_thumbnailSettling,
-                    itemCount: widget.pics.length,
-                    onPageChanged: (index) {
-                      final didChange = index != _currentIndex;
-                      if (didChange && _thumbnailUserScrolling) {
-                        HapticFeedbackUtil.selectionTick();
-                      } else if (!_thumbnailUserScrolling &&
-                          !_thumbnailSettling &&
-                          !_mainUserScrolling) {
-                        _activeMediaIndex.value = index;
-                        _initLiveControllerForIndex(index);
+              onPointerMove: _handleGalleryPointerMove,
+              onPointerUp: _handleGalleryPointerUp,
+              onPointerCancel: _handleGalleryPointerCancel,
+              child: NotificationListener<ScrollNotification>(
+                onNotification: _handleMainGalleryScroll,
+                child: ExtendedImageGesturePageView.builder(
+                  controller: _pageController,
+                  physics: const BouncingScrollPhysics(),
+                  canScrollPage: (details) =>
+                      (details?.totalScale ?? 1.0) <= 1.0,
+                  shouldAccpetHorizontalOrVerticalDrag: (trackers) =>
+                      trackers.length == 1,
+                  pageSnapping: !_thumbnailUserScrolling && !_thumbnailSettling,
+                  itemCount: widget.pics.length,
+                  onPageChanged: (index) {
+                    final didChange = index != _currentIndex;
+                    if (didChange && _thumbnailUserScrolling) {
+                      HapticFeedbackUtil.selectionTick();
+                    } else if (!_thumbnailUserScrolling &&
+                        !_thumbnailSettling &&
+                        !_mainUserScrolling) {
+                      _activeMediaIndex.value = index;
+                      _initLiveControllerForIndex(index);
+                    }
+                    setState(() {
+                      _currentIndex = index;
+                      _isPlayingLive = false;
+                      _pendingLivePlay = false;
+                    });
+
+                    // Pause previous live videos
+                    for (final entry in _liveControllers.entries) {
+                      if (entry.key != index && entry.value.value.isPlaying) {
+                        entry.value.pause();
                       }
-                      setState(() {
-                        _currentIndex = index;
-                        _isPlayingLive = false;
-                        _pendingLivePlay = false;
-                      });
-                      // Pause previous live videos
-                      for (final entry in _liveControllers.entries) {
-                        if (entry.key != index && entry.value.value.isPlaying) {
-                          entry.value.pause();
+                    }
+                    if (!_thumbnailUserScrolling &&
+                        !_thumbnailSettling &&
+                        _thumbnailController.hasClients) {
+                      // A main-image gesture takes ownership, cancelling any
+                      // old thumbnail inertia without feeding selection back.
+                      _thumbnailController.jumpToPage(index);
+                    }
+                  },
+                  itemBuilder: (context, index) {
+                    final pic = widget.pics[index];
+                    if (pic.isVideo) {
+                      // PageView may retain offscreen children. An explicit
+                      // active-index signal tears down hidden players too.
+                      return _withGalleryHero(
+                        index,
+                        pic,
+                        ValueListenableBuilder<int>(
+                          valueListenable: _activeMediaIndex,
+                          builder: (context, activeIndex, _) =>
+                              activeIndex == index &&
+                                  (widget.heroScope == null ||
+                                      _chromeRouteVisible)
+                              ? WeiboVideoPlayerPage(
+                                  key: ValueKey('gallery-video-$index'),
+                                  videoUrl: pic.videoUrl ?? '',
+                                  mediaHeaders: _imageHeadersForUrl(
+                                    pic.videoUrl ?? '',
+                                  ),
+                                  statusId: widget.statusId,
+                                  coverUrl: pic.previewUrl.isEmpty
+                                      ? null
+                                      : pic.previewUrl,
+                                  title: pic.videoTitle,
+                                  authorName: widget.authorName,
+                                  embedded: true,
+                                  onToggleChrome: _toggleChrome,
+                                  onFullscreenChanged: (isFullscreen) =>
+                                      _setChromeVisible(!isFullscreen),
+                                  onBottomControlsHeightChanged:
+                                      _setVideoBottomControlsHeight,
+                                )
+                              : pic.previewUrl.isEmpty
+                              ? const ColoredBox(color: Colors.black)
+                              : ExtendedImage.network(
+                                  pic.previewUrl,
+                                  headers: _imageHeadersForUrl(pic.previewUrl),
+                                  fit: BoxFit.contain,
+                                  cache: true,
+                                ),
+                        ),
+                      );
+                    }
+                    final controller = _liveControllers[index];
+                    final isInitialized = _liveInitialized[index] ?? false;
+                    final isLongPic =
+                        pic.isLong ||
+                        (pic.height > 0 &&
+                            pic.width > 0 &&
+                            pic.height / pic.width > 2.0);
+
+                    final imageUrl = pic.originalUrl.isNotEmpty
+                        ? pic.originalUrl
+                        : (pic.largeUrl.isNotEmpty
+                              ? pic.largeUrl
+                              : pic.bmiddleUrl);
+                    final foregroundImage = ExtendedImage.network(
+                      imageUrl,
+                      width: double.infinity,
+                      height: double.infinity,
+                      headers: _imageHeadersForUrl(imageUrl),
+                      cache: true,
+                      fit: BoxFit.contain,
+                      mode: ExtendedImageMode.gesture,
+                      // Keep slide-out disabled: during image loading the
+                      // package installs a scale recognizer that can steal paging.
+                      enableSlideOutPage: false,
+                      loadStateChanged: (state) {
+                        if (state.extendedImageLoadState !=
+                            LoadState.completed) {
+                          if (index == widget.initialIndex &&
+                              state.extendedImageLoadState ==
+                                  LoadState.loading &&
+                              _openingPreview != null) {
+                            return RawImage(
+                              key: const ValueKey('gallery-opening-preview'),
+                              image: _openingPreview,
+                              fit: BoxFit.contain,
+                            );
+                          }
+                          // Keep each page's preview visible while its original loads.
+                          if (state.extendedImageLoadState ==
+                                  LoadState.loading &&
+                              pic.previewUrl.isNotEmpty &&
+                              pic.previewUrl != imageUrl) {
+                            return ExtendedImage.network(
+                              pic.previewUrl,
+                              key: ValueKey('gallery-loading-preview-$index'),
+                              headers: _imageHeadersForUrl(pic.previewUrl),
+                              cache: true,
+                              fit: BoxFit.contain,
+                            );
+                          }
+                          return null;
                         }
-                      }
-                      if (!_thumbnailUserScrolling &&
-                          !_thumbnailSettling &&
-                          _thumbnailController.hasClients) {
-                        // A main-image gesture takes ownership, cancelling any
-                        // old thumbnail inertia without feeding selection back.
-                        _thumbnailController.jumpToPage(index);
-                      }
-                    },
-                    itemBuilder: (context, index) {
-                      final pic = widget.pics[index];
-                      if (pic.isVideo) {
-                        // PageView may retain offscreen children. An explicit
-                        // active-index signal tears down hidden players too.
-                        return _withGalleryHero(
-                          index,
-                          pic,
-                          ValueListenableBuilder<int>(
-                            valueListenable: _activeMediaIndex,
-                            builder: (context, activeIndex, _) =>
-                                activeIndex == index &&
-                                    (widget.heroScope == null ||
-                                        _chromeRouteVisible)
-                                ? WeiboVideoPlayerPage(
-                                    key: ValueKey('gallery-video-$index'),
-                                    videoUrl: pic.videoUrl ?? '',
-                                    mediaHeaders: _imageHeadersForUrl(
-                                      pic.videoUrl ?? '',
-                                    ),
-                                    statusId: widget.statusId,
-                                    coverUrl: pic.previewUrl.isEmpty
-                                        ? null
-                                        : pic.previewUrl,
-                                    title: pic.videoTitle,
-                                    authorName: widget.authorName,
-                                    embedded: true,
-                                    onToggleChrome: _toggleChrome,
-                                    onFullscreenChanged: (isFullscreen) =>
-                                        _setChromeVisible(!isFullscreen),
-                                    onBottomControlsHeightChanged:
-                                        _setVideoBottomControlsHeight,
-                                  )
-                                : pic.previewUrl.isEmpty
-                                ? const ColoredBox(color: Colors.black)
-                                : ExtendedImage.network(
-                                    pic.previewUrl,
-                                    headers: _imageHeadersForUrl(
-                                      pic.previewUrl,
-                                    ),
+                        if (index == widget.initialIndex) {
+                          _releaseOpeningPreviewAfterFrame();
+                        }
+                        // Reuse a decoded frame's widget to avoid repeated gesture animation initialization.
+                        return _pagingImages[state
+                            .extendedImageInfo!] ??= ExtendedImageGesture(
+                          state,
+                          imageBuilder: (image, {imageGestureState}) {
+                            final gestureState = imageGestureState!;
+                            final pager = gestureState.context
+                                .findAncestorStateOfType<
+                                  ExtendedImageGesturePageViewState
+                                >();
+                            // Hero flights rebuild this image in an overlay without a pager.
+                            if (pager == null) return image;
+                            // Register paging before the image's scale recognizer sees a fast single-finger move.
+                            return Listener(
+                              onPointerDown: (_) {
+                                pager.extendedImageGestureStates.remove(
+                                  gestureState,
+                                );
+                                pager.extendedImageGestureState = gestureState;
+                              },
+                              child: RawGestureDetector(
+                                gestures: {
+                                  ExtendedHorizontalDragGestureRecognizer:
+                                      GestureRecognizerFactoryWithHandlers<
+                                        ExtendedHorizontalDragGestureRecognizer
+                                      >(
+                                        () => ExtendedHorizontalDragGestureRecognizer(
+                                          canHorizontalOrVerticalDrag: () =>
+                                              (gestureState
+                                                      .gestureDetails
+                                                      ?.totalScale ??
+                                                  1) <=
+                                              1,
+                                          shouldAccpetHorizontalOrVerticalDrag:
+                                              (trackers) =>
+                                                  trackers.length == 1,
+                                        ),
+                                        (recognizer) => recognizer
+                                          ..onDown = pager.onDragDown
+                                          ..onStart = pager.onDragStart
+                                          ..onUpdate = pager.onDragUpdate
+                                          ..onEnd = pager.onDragEnd
+                                          ..onCancel = pager.onDragCancel
+                                          ..minFlingDistance = pager
+                                              .widget
+                                              .physics
+                                              .minFlingDistance
+                                          ..minFlingVelocity = pager
+                                              .widget
+                                              .physics
+                                              .minFlingVelocity
+                                          ..maxFlingVelocity = pager
+                                              .widget
+                                              .physics
+                                              .maxFlingVelocity
+                                          ..gestureSettings =
+                                              MediaQuery.gestureSettingsOf(
+                                                context,
+                                              ),
+                                      ),
+                                },
+                                child: image,
+                              ),
+                            );
+                          },
+                        );
+                      },
+                      onDoubleTap: (ExtendedImageGestureState state) {
+                        HapticFeedbackUtil.light();
+                        final pointerDownPosition = state.pointerDownPosition;
+                        final begin = state.gestureDetails!.totalScale ?? 1.0;
+                        double end = 1.0;
+                        if (begin <= 1.05) {
+                          end = isLongPic ? 3.5 : 2.5;
+                        } else if (begin <= 3.6) {
+                          end = 6.0;
+                        } else {
+                          end = 1.0;
+                        }
+
+                        _doubleTapAnimationController.stop();
+                        _doubleTapAnimationController.reset();
+
+                        if (_doubleTapListener != null) {
+                          _doubleTapAnimation?.removeListener(
+                            _doubleTapListener!,
+                          );
+                        }
+
+                        _doubleTapAnimation =
+                            Tween<double>(begin: begin, end: end).animate(
+                              CurvedAnimation(
+                                parent: _doubleTapAnimationController,
+                                curve: Curves.easeOutCubic,
+                              ),
+                            );
+
+                        _doubleTapListener = () {
+                          state.handleDoubleTap(
+                            scale: _doubleTapAnimation!.value,
+                            doubleTapPosition: pointerDownPosition,
+                          );
+                        };
+                        _doubleTapAnimation!.addListener(_doubleTapListener!);
+
+                        _doubleTapAnimationController.forward();
+                      },
+                      initGestureConfigHandler: (state) {
+                        return GestureConfig(
+                          // Do not let the image shrink below its fitted
+                          // size: ExtendedImage recenters sub-1.0 scales,
+                          // which otherwise makes pinch focus jump away.
+                          minScale: 1.0,
+                          animationMinScale: 1.0,
+                          maxScale: 8.0,
+                          animationMaxScale: 9.0,
+                          speed: 1.0,
+                          inertialSpeed: 120.0,
+                          initialScale: 1.0,
+                          inPageView: true,
+                          initialAlignment: InitialAlignment.center,
+                          gestureDetailsIsChanged: (details) {
+                            final rect = details?.destinationRect;
+                            final layout = details?.layoutRect;
+                            _hdrRectFor(imageUrl).value = rect?.shift(
+                              -(layout?.topLeft ?? Offset.zero),
+                            );
+                          },
+                        );
+                      },
+                    );
+                    final backgroundUrl = pic.webpageCardBackgroundUrl?.trim();
+                    final hasBackground =
+                        backgroundUrl != null &&
+                        backgroundUrl.isNotEmpty &&
+                        backgroundUrl != pic.originalUrl &&
+                        backgroundUrl != pic.largeUrl;
+
+                    final imageWidget = ColoredBox(
+                      color: pic.isWebpageCard
+                          ? Colors.white
+                          : Colors.transparent,
+                      child: hasBackground
+                          ? Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                IgnorePointer(
+                                  child: ExtendedImage.network(
+                                    backgroundUrl,
+                                    width: double.infinity,
+                                    height: double.infinity,
+                                    headers: _imageHeadersForUrl(backgroundUrl),
                                     fit: BoxFit.contain,
                                     cache: true,
                                   ),
-                          ),
-                        );
-                      }
-                      final controller = _liveControllers[index];
-                      final isInitialized = _liveInitialized[index] ?? false;
-                      final isLongPic =
-                          pic.isLong ||
-                          (pic.height > 0 &&
-                              pic.width > 0 &&
-                              pic.height / pic.width > 2.0);
-
-                      final imageUrl = pic.originalUrl.isNotEmpty
-                          ? pic.originalUrl
-                          : (pic.largeUrl.isNotEmpty
-                                ? pic.largeUrl
-                                : pic.bmiddleUrl);
-                      final foregroundImage = ExtendedImage.network(
-                        imageUrl,
-                        width: double.infinity,
-                        height: double.infinity,
-                        headers: _imageHeadersForUrl(imageUrl),
-                        cache: true,
-                        fit: BoxFit.contain,
-                        mode: ExtendedImageMode.gesture,
-                        // Keep slide-out disabled: during image loading the
-                        // package installs a scale recognizer that can steal paging.
-                        enableSlideOutPage: false,
-                        loadStateChanged: (state) {
-                          if (state.extendedImageLoadState !=
-                              LoadState.completed) {
-                            if (index == widget.initialIndex &&
-                                state.extendedImageLoadState ==
-                                    LoadState.loading &&
-                                _openingPreview != null) {
-                              return RawImage(
-                                key: const ValueKey('gallery-opening-preview'),
-                                image: _openingPreview,
-                                fit: BoxFit.contain,
-                              );
-                            }
-                            // Keep each page's preview visible while its original loads.
-                            if (state.extendedImageLoadState == LoadState.loading &&
-                                pic.previewUrl.isNotEmpty &&
-                                pic.previewUrl != imageUrl) {
-                              return ExtendedImage.network(
-                                pic.previewUrl,
-                                key: ValueKey('gallery-loading-preview-$index'),
-                                headers: _imageHeadersForUrl(pic.previewUrl),
-                                cache: true,
-                                fit: BoxFit.contain,
-                              );
-                            }
-                            return null;
-                          }
-                          if (index == widget.initialIndex) {
-                            _releaseOpeningPreviewAfterFrame();
-                          }
-                          // Reuse a decoded frame's widget to avoid repeated gesture animation initialization.
-                          return _pagingImages[state
-                              .extendedImageInfo!] ??= ExtendedImageGesture(
-                            state,
-                            imageBuilder: (image, {imageGestureState}) {
-                              final gestureState = imageGestureState!;
-                              final pager = gestureState.context
-                                  .findAncestorStateOfType<
-                                    ExtendedImageGesturePageViewState
-                                  >();
-                              // Hero flights rebuild this image in an overlay without a pager.
-                              if (pager == null) return image;
-                              // Register paging before the image's scale recognizer sees a fast single-finger move.
-                              return Listener(
-                                onPointerDown: (_) {
-                                  pager.extendedImageGestureStates.remove(
-                                    gestureState,
-                                  );
-                                  pager.extendedImageGestureState =
-                                      gestureState;
-                                },
-                                child: RawGestureDetector(
-                                  gestures: {
-                                    ExtendedHorizontalDragGestureRecognizer:
-                                        GestureRecognizerFactoryWithHandlers<
-                                          ExtendedHorizontalDragGestureRecognizer
-                                        >(
-                                          () => ExtendedHorizontalDragGestureRecognizer(
-                                            canHorizontalOrVerticalDrag: () =>
-                                                (gestureState
-                                                        .gestureDetails
-                                                        ?.totalScale ??
-                                                    1) <=
-                                                1,
-                                            shouldAccpetHorizontalOrVerticalDrag:
-                                                (trackers) =>
-                                                    trackers.length == 1,
-                                          ),
-                                          (recognizer) => recognizer
-                                            ..onDown = pager.onDragDown
-                                            ..onStart = pager.onDragStart
-                                            ..onUpdate = pager.onDragUpdate
-                                            ..onEnd = pager.onDragEnd
-                                            ..onCancel = pager.onDragCancel
-                                            ..minFlingDistance = pager
-                                                .widget
-                                                .physics
-                                                .minFlingDistance
-                                            ..minFlingVelocity = pager
-                                                .widget
-                                                .physics
-                                                .minFlingVelocity
-                                            ..maxFlingVelocity = pager
-                                                .widget
-                                                .physics
-                                                .maxFlingVelocity
-                                            ..gestureSettings =
-                                                MediaQuery.gestureSettingsOf(
-                                                  context,
-                                                ),
-                                        ),
-                                  },
-                                  child: image,
                                 ),
-                              );
-                            },
-                          );
-                        },
-                        onDoubleTap: (ExtendedImageGestureState state) {
-                          HapticFeedbackUtil.light();
-                          final pointerDownPosition = state.pointerDownPosition;
-                          final begin = state.gestureDetails!.totalScale ?? 1.0;
-                          double end = 1.0;
-                          if (begin <= 1.05) {
-                            end = isLongPic ? 3.5 : 2.5;
-                          } else if (begin <= 3.6) {
-                            end = 6.0;
-                          } else {
-                            end = 1.0;
-                          }
+                                foregroundImage,
+                              ],
+                            )
+                          : foregroundImage,
+                    );
 
-                          _doubleTapAnimationController.stop();
-                          _doubleTapAnimationController.reset();
-
-                          if (_doubleTapListener != null) {
-                            _doubleTapAnimation?.removeListener(
-                              _doubleTapListener!,
-                            );
-                          }
-
-                          _doubleTapAnimation =
-                              Tween<double>(begin: begin, end: end).animate(
-                                CurvedAnimation(
-                                  parent: _doubleTapAnimationController,
-                                  curve: Curves.easeOutCubic,
-                                ),
-                              );
-
-                          _doubleTapListener = () {
-                            state.handleDoubleTap(
-                              scale: _doubleTapAnimation!.value,
-                              doubleTapPosition: pointerDownPosition,
-                            );
-                          };
-                          _doubleTapAnimation!.addListener(_doubleTapListener!);
-
-                          _doubleTapAnimationController.forward();
-                        },
-                        initGestureConfigHandler: (state) {
-                          return GestureConfig(
-                            // Do not let the image shrink below its fitted
-                            // size: ExtendedImage recenters sub-1.0 scales,
-                            // which otherwise makes pinch focus jump away.
-                            minScale: 1.0,
-                            animationMinScale: 1.0,
-                            maxScale: 8.0,
-                            animationMaxScale: 9.0,
-                            speed: 1.0,
-                            inertialSpeed: 120.0,
-                            initialScale: 1.0,
-                            inPageView: true,
-                            initialAlignment: InitialAlignment.center,
-                            gestureDetailsIsChanged: (details) {
-                              final rect = details?.destinationRect;
-                              final layout = details?.layoutRect;
-                              _hdrRectFor(imageUrl).value = rect?.shift(
-                                -(layout?.topLeft ?? Offset.zero),
-                              );
-                            },
-                          );
-                        },
-                      );
-                      final backgroundUrl = pic.webpageCardBackgroundUrl
-                          ?.trim();
-                      final hasBackground =
-                          backgroundUrl != null &&
-                          backgroundUrl.isNotEmpty &&
-                          backgroundUrl != pic.originalUrl &&
-                          backgroundUrl != pic.largeUrl;
-
-                      final imageWidget = ColoredBox(
-                        color: pic.isWebpageCard
-                            ? Colors.white
-                            : Colors.transparent,
-                        child: hasBackground
-                            ? Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  IgnorePointer(
-                                    child: ExtendedImage.network(
-                                      backgroundUrl,
-                                      width: double.infinity,
-                                      height: double.infinity,
-                                      headers: _imageHeadersForUrl(
-                                        backgroundUrl,
-                                      ),
-                                      fit: BoxFit.contain,
-                                      cache: true,
-                                    ),
-                                  ),
-                                  foregroundImage,
-                                ],
-                              )
-                            : foregroundImage,
-                      );
-
-                      final heroImage = _withGalleryHero(
-                        index,
-                        pic,
-                        Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            imageWidget,
-                            // Live Photo Video Overlay when active
-                            if (pic.isLivePhoto &&
-                                controller != null &&
-                                isInitialized &&
-                                _isPlayingLive &&
-                                _currentIndex == index)
-                              Positioned.fill(
-                                child: Center(
-                                  child: AspectRatio(
-                                    aspectRatio:
-                                        controller.value.aspectRatio > 0
-                                        ? controller.value.aspectRatio
-                                        : 1.0,
-                                    child: VideoPlayer(controller),
-                                  ),
+                    final heroImage = _withGalleryHero(
+                      index,
+                      pic,
+                      Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          imageWidget,
+                          // Live Photo Video Overlay when active
+                          if (pic.isLivePhoto &&
+                              controller != null &&
+                              isInitialized &&
+                              _isPlayingLive &&
+                              _currentIndex == index)
+                            Positioned.fill(
+                              child: Center(
+                                child: AspectRatio(
+                                  aspectRatio: controller.value.aspectRatio > 0
+                                      ? controller.value.aspectRatio
+                                      : 1.0,
+                                  child: VideoPlayer(controller),
                                 ),
                               ),
-                          ],
-                        ),
-                      );
-                      if (pic.isGif || pic.isWebpageCard) return heroImage;
-                      return Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          heroImage,
-                          if (!pic.isVideo)
-                            ValueListenableBuilder<int>(
-                              valueListenable: _activeMediaIndex,
-                              builder: (context, activeIndex, _) =>
-                                  HdrGalleryImage(
-                                    key: ValueKey('hdr-$imageUrl'),
-                                    url: imageUrl,
-                                    headers: _imageHeadersForUrl(imageUrl),
-                                    active:
-                                        activeIndex == index &&
-                                        !_isPlayingLive,
-                                    visible:
-                                        activeIndex == index &&
-                                        _chromeRouteVisible &&
-                                        !_isPlayingLive,
-                                    displaySupported: _hdrDisplaySupported,
-                                    isCandidate:
-                                        _hdrUrls.contains(imageUrl) ||
-                                        isKnownSinaHdrGainMap(imageUrl),
-                                    imageRect: _hdrRectFor(imageUrl),
-                                    onDetected: (supported) =>
-                                        _onHdrDetected(imageUrl, supported),
-                                  ),
                             ),
                         ],
-                      );
-                    },
-                  ),
+                      ),
+                    );
+                    if (pic.isGif || pic.isWebpageCard) return heroImage;
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        heroImage,
+                        if (!pic.isVideo)
+                          ValueListenableBuilder<int>(
+                            valueListenable: _activeMediaIndex,
+                            builder: (context, activeIndex, _) =>
+                                HdrGalleryImage(
+                                  key: ValueKey('hdr-$imageUrl'),
+                                  url: imageUrl,
+                                  headers: _imageHeadersForUrl(imageUrl),
+                                  active:
+                                      activeIndex == index && !_isPlayingLive,
+                                  visible:
+                                      activeIndex == index &&
+                                      _chromeRouteVisible &&
+                                      !_isPlayingLive,
+                                  displaySupported: _hdrDisplaySupported,
+                                  isCandidate:
+                                      _hdrUrls.contains(imageUrl) ||
+                                      isKnownSinaHdrGainMap(imageUrl),
+                                  imageRect: _hdrRectFor(imageUrl),
+                                  onDetected: (supported) =>
+                                      _onHdrDetected(imageUrl, supported),
+                                ),
+                          ),
+                      ],
+                    );
+                  },
                 ),
               ),
+            ),
 
             if (_showChrome &&
                 _chromeRouteVisible &&
@@ -1551,7 +1601,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                 right: 16,
                 child: const GalleryHdrBadge(),
               ),
-            if (widget.pics.length > 1)
+            if (widget.pics.length > 1 && !hideChromeForReturn)
               Positioned(
                 left: 12,
                 right: 12,
@@ -1573,7 +1623,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
               ),
 
             // Top Bar: Back, Counter, Live Pill, Save
-            if (_showChrome)
+            if (_showChrome && !hideChromeForReturn)
               IgnorePointer(
                 key: const ValueKey('gallery-top-controls-pointer-gate'),
                 ignoring: !_chromeRouteVisible,

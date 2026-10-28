@@ -25,6 +25,29 @@ class ReviewNavigationBar extends ConsumerWidget {
   final bool hasBottomInset;
   final bool isTransitioning;
 
+  static LiquidGlassSettings liquidGlassSettingsFor(
+    BuildContext context, [
+    LiquidGlassSettings? settings,
+  ]) {
+    final base = settings ?? liquidGlassSettings;
+    return Theme.of(context).brightness == Brightness.light
+        ? base.copyWith(glassColor: const Color(0xF0FFFFFF), rimLight: 1)
+        : base;
+  }
+
+  static const liquidGlassSettings = LiquidGlassSettings(
+    glassColor: Color(0x66000000),
+    bodyMode: GlassBodyMode.clear,
+    thickness: 10,
+    blur: 2.0,
+    lightIntensity: 0.25,
+    ambientStrength: 0,
+    refractiveIndex: 1.19,
+    chromaticAberration: 0.008,
+    shadowElevation: 0,
+  );
+  static const liquidGlassQuality = GlassQuality.premium;
+
   static const _destinations = <_NavigationDestination>[
     _NavigationDestination(
       icon: Icons.dynamic_feed_outlined,
@@ -388,73 +411,109 @@ class _LiquidGlassNavigationBarState extends State<_LiquidGlassNavigationBar> {
   }
 
   @override
-  Widget build(BuildContext context) => SafeArea(
-    bottom: false,
-    child: Align(
-      alignment: Alignment.bottomCenter,
-      child: Padding(
-        padding: EdgeInsets.only(bottom: widget.hasBottomInset ? 6 : 14),
-        child: RepaintBoundary(
-          child: SizedBox(
-            width: ReviewNavigationBar._floatingBarWidth(context),
-            height: 56,
-            child: Listener(
-              onPointerDown: _onPointerDown,
-              onPointerMove: _onPointerMove,
-              onPointerUp: _onPointerUp,
-              onPointerCancel: _onPointerCancel,
-              child: GlassTabBar.bottom(
-                tabs: [
-                  for (final destination in ReviewNavigationBar._destinations)
-                    GlassTab(
-                      icon: Icon(destination.icon),
-                      activeIcon: Icon(destination.selectedIcon),
-                      label: destination.label,
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isLightMode = theme.brightness == Brightness.light;
+    final glassSettings = ReviewNavigationBar.liquidGlassSettingsFor(context)
+        .copyWith(shadowElevation: isLightMode ? 0.55 : 0);
+    final selectedContentColor = isLightMode
+        ? theme.colorScheme.primary
+        : Colors.white;
+    final unselectedContentColor = isLightMode
+        ? theme.colorScheme.onSurfaceVariant
+        : Colors.white;
+
+    return SafeArea(
+      bottom: false,
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Padding(
+          padding: EdgeInsets.only(bottom: widget.hasBottomInset ? 6 : 14),
+          child: RepaintBoundary(
+            child: SizedBox(
+              width: ReviewNavigationBar._floatingBarWidth(context),
+              height: 56,
+              child: Listener(
+                onPointerDown: _onPointerDown,
+                onPointerMove: _onPointerMove,
+                onPointerUp: _onPointerUp,
+                onPointerCancel: _onPointerCancel,
+                child: Stack(
+                  children: [
+                    GlassTabBar.bottom(
+                      tabs: [
+                        for (final destination
+                            in ReviewNavigationBar._destinations)
+                          GlassTab(
+                            icon: Icon(destination.icon),
+                            activeIcon: Icon(destination.selectedIcon),
+                            label: destination.label,
+                          ),
+                      ],
+                      selectedIndex: widget.selectedIndex,
+                      onTabSelected: _onTabSelected,
+                      barHeight: 56,
+                      horizontalPadding: 0,
+                      verticalPadding: 0,
+                      barBorderRadius: 9999,
+                      indicatorBorderRadius: 9999,
+                      settings: glassSettings,
+                      indicatorSettings: LiquidGlassSettings(
+                        glassColor: isLightMode
+                            ? const Color(0x18000000)
+                            : const Color(0x00FFFFFF),
+                        bodyMode: isLightMode
+                            ? GlassBodyMode.clear
+                            : GlassBodyMode.adaptive,
+                        refractiveIndex: 1.18,
+                        chromaticAberration: 0.025,
+                        rimShade: isLightMode ? 0.12 : 0,
+                        rimLight: isLightMode ? 0.35 : 0,
+                      ),
+                      quality: GlassQuality.premium,
+                      backgroundQuality: GlassQuality.premium,
+                      maskingQuality: MaskingQuality.high,
+                      enableBlend: true,
+                      indicatorColor: isLightMode
+                          ? const Color(0x26000000)
+                          : const Color(0x66000000),
+                      interactionGlowColor: const Color(0x20FFFFFF),
+                      indicatorPinchStrength: _isJellyDragging ? 0.7 : 0.0,
+                      indicatorExpansion: _isJellyDragging
+                          ? const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            )
+                          : EdgeInsets.zero,
+                      innerBlur: 6,
+                      pressScale: 1.06,
+                      selectedIconColor: selectedContentColor,
+                      selectedLabelColor: selectedContentColor,
+                      unselectedIconColor: unselectedContentColor,
+                      unselectedLabelColor: unselectedContentColor,
                     ),
-                ],
-                selectedIndex: widget.selectedIndex,
-                onTabSelected: _onTabSelected,
-                barHeight: 56,
-                horizontalPadding: 0,
-                verticalPadding: 0,
-                barBorderRadius: 9999,
-                indicatorBorderRadius: 9999,
-                settings: const LiquidGlassSettings(
-                  glassColor: Color(0x66000000),
-                  bodyMode: GlassBodyMode.clear,
-                  thickness: 10,
-                  blur: 2.0,
-                  lightIntensity: 0.25,
-                  ambientStrength: 0,
-                  refractiveIndex: 1.19,
-                  chromaticAberration: 0.008,
-                  shadowElevation: 0,
+                    if (isLightMode)
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            key: const ValueKey('liquid-glass-light-rim'),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(9999),
+                              border: Border.all(
+                                color: const Color(0xF5FFFFFF),
+                                width: 1,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-                indicatorSettings: const LiquidGlassSettings(
-                  refractiveIndex: 1.18,
-                  chromaticAberration: 0.025,
-                ),
-                quality: GlassQuality.premium,
-                backgroundQuality: GlassQuality.premium,
-                maskingQuality: MaskingQuality.high,
-                enableBlend: true,
-                indicatorColor: const Color(0x66000000),
-                interactionGlowColor: const Color(0x20FFFFFF),
-                indicatorPinchStrength: _isJellyDragging ? 0.7 : 0.0,
-                indicatorExpansion: _isJellyDragging
-                    ? const EdgeInsets.symmetric(horizontal: 12, vertical: 8)
-                    : EdgeInsets.zero,
-                innerBlur: 6,
-                pressScale: 1.06,
-                selectedIconColor: Colors.white,
-                selectedLabelColor: Colors.white,
-                unselectedIconColor: Colors.white,
-                unselectedLabelColor: Colors.white,
               ),
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }

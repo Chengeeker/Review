@@ -254,14 +254,17 @@ class _NineGridViewState extends ConsumerState<NineGridView> {
   }
 
   Widget _buildImageContent(WeiboPicModel pic, ColorScheme colorScheme) {
-    Widget networkImage(String url) {
+    Widget networkImage(String url, {required String layer}) {
       return ExtendedImage.network(
         url,
+        key: ValueKey('${pic.pid}:$layer'),
         headers: ApiConstants.imageHeaders,
         fit: pic.isWebpageCard ? BoxFit.contain : BoxFit.cover,
         cache: true,
+        gaplessPlayback: true,
         loadStateChanged: (state) {
-          if (state.extendedImageLoadState == LoadState.loading) {
+          if (state.extendedImageLoadState == LoadState.loading &&
+              state.extendedImageInfo == null) {
             return Container(
               color: pic.isWebpageCard
                   ? Colors.white
@@ -289,11 +292,15 @@ class _NineGridViewState extends ConsumerState<NineGridView> {
           ? Stack(
               fit: StackFit.expand,
               children: [
-                IgnorePointer(child: networkImage(backgroundUrl)),
-                IgnorePointer(child: networkImage(pic.previewUrl)),
+                IgnorePointer(
+                  child: networkImage(backgroundUrl, layer: 'background'),
+                ),
+                IgnorePointer(
+                  child: networkImage(pic.previewUrl, layer: 'preview'),
+                ),
               ],
             )
-          : networkImage(pic.previewUrl),
+          : networkImage(pic.previewUrl, layer: 'preview'),
     );
   }
 
@@ -408,8 +415,10 @@ class _NineGridViewState extends ConsumerState<NineGridView> {
   }
 
   void _openGallery(BuildContext context, int initialIndex) {
+    if (!context.mounted) return;
     HapticFeedbackUtil.light();
-    Navigator.of(context).push(
+    PhysicsSpringGalleryRoute.openFromSource(
+      context,
       PhysicsSpringGalleryRoute(
         child: ImageGalleryPage(
           pics: pics,

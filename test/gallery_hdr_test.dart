@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:dio/dio.dart';
 import 'package:extended_image/extended_image.dart';
@@ -13,6 +14,7 @@ import 'package:path_provider_platform_interface/path_provider_platform_interfac
 import 'package:review/features/detail/presentation/widgets/hdr_gallery_image.dart';
 import 'package:review/core/storage/storage_service.dart';
 import 'package:review/features/detail/presentation/widgets/image_gallery_page.dart';
+import 'package:review/core/constants/api_constants.dart';
 import 'package:review/features/feed/data/models/weibo_status_model.dart';
 import 'package:review/features/feed/presentation/widgets/nine_grid_view.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -61,7 +63,194 @@ class _HdrRangeAdapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
+class _ImageStream extends ImageStreamCompleter {
+  void frame(ui.Image image) => setImage(ImageInfo(image: image));
+}
+
 void main() {
+  testWidgets('feed photo holds its decoded frame while its replacement loads', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final storage = StorageService(await SharedPreferences.getInstance());
+    final recorder = ui.PictureRecorder();
+    Canvas(recorder).drawColor(Colors.blue, BlendMode.src);
+    final picture = recorder.endRecording();
+    final oldImage = await tester.runAsync(() => picture.toImage(16, 16));
+    picture.dispose();
+    const oldUrl = 'https://example.com/preview-old.gif';
+    const newUrl = 'https://example.com/preview-new.gif';
+    final oldProvider = ExtendedNetworkImageProvider(
+      oldUrl,
+      headers: ApiConstants.imageHeaders,
+      cache: true,
+    );
+    final newProvider = ExtendedNetworkImageProvider(
+      newUrl,
+      headers: ApiConstants.imageHeaders,
+      cache: true,
+    );
+    final oldStream = _ImageStream()..frame(oldImage!.clone());
+    final pendingStream = _ImageStream();
+    imageCache.putIfAbsent(oldProvider, () => oldStream);
+    imageCache.putIfAbsent(newProvider, () => pendingStream);
+    final currentPic = ValueNotifier(
+      const WeiboPicModel(
+        pid: 'stable-photo-id',
+        thumbnail: oldUrl,
+        large: oldUrl,
+        original: oldUrl,
+        isGif: true,
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [storageServiceProvider.overrideWithValue(storage)],
+        child: MaterialApp(
+          home: Scaffold(
+            body: ValueListenableBuilder<WeiboPicModel>(
+              valueListenable: currentPic,
+              builder: (context, pic, _) => SizedBox(
+                width: 220,
+                height: 220,
+                child: NineGridView(
+                  statusId: 'gapless-feed-photo',
+                  pics: [pic],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final image = find.byType(ExtendedImage);
+    expect(
+      (tester.state(image) as ExtendedImageState).extendedImageInfo,
+      isNotNull,
+    );
+    currentPic.value = const WeiboPicModel(
+      pid: 'stable-photo-id',
+      thumbnail: newUrl,
+      large: newUrl,
+      original: newUrl,
+      isGif: true,
+    );
+    await tester.pump();
+    final imageState = tester.state(image) as ExtendedImageState;
+    expect(
+      (tester.widget<ExtendedImage>(image).image as ExtendedNetworkImageProvider)
+          .url,
+      newUrl,
+    );
+    expect(imageState.extendedImageInfo!.image.width, 16);
+    final paintedImage = find.descendant(
+      of: image,
+      matching: find.byType(ExtendedRawImage),
+    );
+    expect(paintedImage, findsOneWidget);
+    expect(
+      tester.widget<ExtendedRawImage>(paintedImage).image,
+      same(imageState.extendedImageInfo!.image),
+    );
+    final retainedBytes = await tester.runAsync(
+      () => imageState.extendedImageInfo!.image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      ),
+    );
+    expect(retainedBytes!.buffer.asUint8List().sublist(0, 4), [0x21, 0x96, 0xf3, 0xff]);
+
+    final nextRecorder = ui.PictureRecorder();
+    Canvas(nextRecorder).drawColor(Colors.red, BlendMode.src);
+    final nextPicture = nextRecorder.endRecording();
+    final newImage = await tester.runAsync(() => nextPicture.toImage(16, 16));
+    nextPicture.dispose();
+    pendingStream.frame(newImage!.clone());
+    await tester.pump();
+    final replacement = (tester.state(image) as ExtendedImageState)
+        .extendedImageInfo!.image;
+    final replacementBytes = await tester.runAsync(
+      () => replacement.toByteData(format: ui.ImageByteFormat.rawRgba),
+    );
+    expect(
+      replacementBytes!.buffer.asUint8List().sublist(0, 4),
+      [0xf4, 0x43, 0x36, 0xff],
+    );
+
+    currentPic.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+    imageCache.evict(oldProvider);
+    imageCache.evict(newProvider);
+    oldImage.dispose();
+    newImage.dispose();
+  });
+
+  testWidgets('gallery inherits HDR badges for all known thumbnails without reprobes', (tester) async {
+    final previousPlatform = debugDefaultTargetPlatformOverride;
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    final oldAdapter = hdrThumbnailProbeClient.httpClientAdapter;
+    final adapter = _HdrRangeAdapter([0xff, 0xd8, ...latin1.encode('urn:iso:std:iso:ts:21496:-1')]);
+    hdrThumbnailProbeClient.httpClientAdapter = adapter;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = previousPlatform;
+      hdrThumbnailProbeClient.httpClientAdapter = oldAdapter;
+    });
+    final pics = List.generate(3, (i) => WeiboPicModel(pid: 'known-gallery-$i',
+      thumbnail: 'https://example.com/preview-$i.jpg',
+      large: 'https://example.com/preview-$i.jpg',
+      original: 'https://wx3.sinaimg.cn/large/known-gallery-$i.jpg'));
+    await tester.runAsync(() async {
+      for (final pic in pics) { expect(await cachedSinaHdrGainMapProbe(pic.originalUrl), isTrue); }
+    });
+    SharedPreferences.setMockInitialValues({});
+    final storage = StorageService(await SharedPreferences.getInstance());
+    await tester.pumpWidget(ProviderScope(overrides: [storageServiceProvider.overrideWithValue(storage)],
+      child: MaterialApp(home: ImageGalleryPage(pics: pics, initialIndex: 0, statusId: 'known-hdr'))));
+    await tester.pump();
+    for (var i = 0; i < 3; i++) {
+      expect(find.descendant(of: find.byKey(ValueKey('gallery-thumbnail-$i')),
+        matching: find.byWidgetPredicate((w) => w is GalleryHdrBadge && w.thumbnail)), findsOneWidget);
+    }
+    expect(adapter.requests, 3, reason: 'opening the gallery must not probe known neighbors again');
+    await tester.pumpWidget(const SizedBox.shrink());
+    debugDefaultTargetPlatformOverride = previousPlatform;
+  });
+
+  testWidgets('gallery joins a pending feed HDR probe for an unselected image', (tester) async {
+    final previousPlatform = debugDefaultTargetPlatformOverride;
+    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    final oldAdapter = hdrThumbnailProbeClient.httpClientAdapter;
+    final ready = Completer<void>();
+    final adapter = _HdrRangeAdapter([0xff, 0xd8, ...latin1.encode('urn:iso:std:iso:ts:21496:-1')], responseReady: ready.future);
+    hdrThumbnailProbeClient.httpClientAdapter = adapter;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = previousPlatform;
+      hdrThumbnailProbeClient.httpClientAdapter = oldAdapter;
+    });
+    const url = 'https://wx3.sinaimg.cn/large/pending-gallery-hdr.jpg';
+    final pending = cachedSinaHdrGainMapProbe(url);
+    expect(pendingSinaHdrGainMapProbe(url), same(pending));
+    SharedPreferences.setMockInitialValues({});
+    final storage = StorageService(await SharedPreferences.getInstance());
+    await tester.pumpWidget(ProviderScope(overrides: [storageServiceProvider.overrideWithValue(storage)],
+      child: const MaterialApp(home: ImageGalleryPage(pics: [
+        WeiboPicModel(pid: 'sdr', thumbnail: 'https://example.com/sdr.jpg', large: 'https://example.com/sdr.jpg', original: 'https://example.com/sdr.jpg'),
+        WeiboPicModel(pid: 'pending', thumbnail: 'https://example.com/pending.jpg', large: 'https://example.com/pending.jpg', original: url),
+      ], initialIndex: 0, statusId: 'pending-hdr'))));
+    await tester.pump();
+    expect(find.byType(GalleryHdrBadge), findsNothing);
+    ready.complete();
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(isKnownSinaHdrGainMap(url), isTrue);
+    await tester.pump();
+    expect(find.descendant(of: find.byKey(const ValueKey('gallery-thumbnail-1')),
+      matching: find.byType(GalleryHdrBadge)), findsOneWidget);
+    expect(adapter.requests, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+    debugDefaultTargetPlatformOverride = previousPlatform;
+  });
   test(
     'gallery HDR warmup uses the exact cache file and shares both probes',
     () async {

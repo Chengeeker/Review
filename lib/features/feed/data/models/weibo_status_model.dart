@@ -810,11 +810,11 @@ List<WeiboPicModel> _parseEmbeddedImageCards(
     final hasDirectVideo =
         videoQualityUrls is Map && videoQualityUrls.isNotEmpty;
 
-    // Do not turn a video cover into a photo when the same smart card already
-    // has native playback metadata. Topic cards likewise never receive a
-    // `card_image_url` in _parseUrlStructs, so their existing routing stays
-    // intact.
+    // Keep live smart-card covers on the native video preview path instead
+    // of treating them as ordinary photos with arbitrary source dimensions.
+    final isLiveCard = _extractLiveId(entry) != null;
     if (cardImageUrl != null &&
+        !isLiveCard &&
         !hasDirectVideo &&
         _isRealEmbeddedImageUrl(cardImageUrl)) {
       final width = _firstPositiveDimension([
@@ -1788,12 +1788,18 @@ class WeiboStatusModel {
     // onto the wrapper status.
     if (retweeted == null) {
       for (final urlEntry in typedUrlStruct) {
+        final isLiveCard = _extractLiveId(urlEntry) != null;
         final directUrl = _normalizeMediaUrl(urlEntry['video_url']);
-        if (directUrl == null) continue;
+        if (directUrl == null && !isLiveCard) continue;
 
-        videoStream ??= directUrl;
-        videoQualityMap['默认画质'] ??= directUrl;
-        videoCover ??= _normalizeMediaUrl(urlEntry['video_cover_url']);
+        if (directUrl != null) {
+          videoStream ??= directUrl;
+          videoQualityMap['默认画质'] ??= directUrl;
+        }
+        videoCover ??= _normalizeMediaUrl(
+          urlEntry['video_cover_url'] ??
+              (isLiveCard ? urlEntry['card_image_url'] : null),
+        );
         videoTitle ??= urlEntry['url_title']?.toString();
         final rawQualityUrls = urlEntry['video_quality_urls'];
         if (rawQualityUrls is Map) {

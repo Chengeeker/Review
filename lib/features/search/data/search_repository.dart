@@ -278,11 +278,79 @@ class SearchStatusesResult {
   });
 }
 
+class ChaohuaPostsResult {
+  const ChaohuaPostsResult(this.statuses, {required this.hasMore});
+  final List<WeiboStatusModel> statuses;
+  final bool hasMore;
+}
+
 /// Search Repository for Hot Search List and Keyword Search
 class SearchRepository {
   final WeiboDioClient _client;
 
   SearchRepository(this._client);
+
+  static bool isChaohuaPost(Map<String, dynamic> post, String pageId) {
+    // Use official identity fields, not text mentioning an ID or retweet metadata.
+    bool topicUrl(Object? value) {
+      final uri = Uri.tryParse(value?.toString() ?? '');
+      if (uri == null) return false;
+      if (uri.scheme == 'sinaweibo' && uri.host == 'pageinfo') {
+        return uri.queryParameters['pageid'] == pageId;
+      }
+      return (uri.host == 'weibo.com' || uri.host == 'm.weibo.cn') &&
+          uri.path == '/p/$pageId';
+    }
+    final source = post['title_source'];
+    if (source is Map && topicUrl(source['url'])) return true;
+    final urls = post['url_struct'];
+    if (urls is! List) return false;
+    return urls.whereType<Map>().any((entry) => entry['page_id']?.toString() == pageId ||
+        topicUrl(entry['h5_target_url']) || topicUrl(entry['long_url']));
+  }
+
+  Future<ChaohuaPostsResult> searchChaohuaPosts({required String pageId,
+      required String title, required String keyword, int page = 1,
+      bool Function()? isCurrent}) async {
+    if (!RegExp(r'^100808[0-9a-f]{32}$', caseSensitive: false).hasMatch(pageId)) {
+      throw StateError('超话信息尚未就绪');
+    }
+    final cleanTitle = title.replaceAll('[超话]', '').replaceFirst(RegExp(r'超话$'), '').trim();
+    final clean = keyword.trim();
+    if (clean.isEmpty || cleanTitle.isEmpty) return const ChaohuaPostsResult([], hasMore: false);
+    final response = await _client.dio.get<String>('https://s.weibo.com/weibo',
+      queryParameters: {'q': '$cleanTitle $clean', 'page': page},
+      options: Options(responseType: ResponseType.plain, headers: {
+        'Referer': 'https://s.weibo.com/',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      }));
+    final document = html_parser.parse(response.data ?? '');
+    final cards = document.querySelectorAll('.card-wrap[mid]');
+    if (cards.isEmpty && document.querySelector('.card-no-result') == null &&
+        document.querySelector('#pl_feedlist_index') == null) {
+      throw StateError('搜索服务暂不可用，请重试');
+    }
+    final ids = cards.map((e) => e.attributes['mid'] ?? '')
+        .where((id) => RegExp(r'^\d+$').hasMatch(id)).toSet().take(20).toList();
+    final statuses = <WeiboStatusModel>[];
+    for (var offset = 0; offset < ids.length; offset += 4) {
+      if (isCurrent != null && !isCurrent()) return const ChaohuaPostsResult([], hasMore: false);
+      final batch = await Future.wait(ids.skip(offset).take(4).map((id) async {
+        final detail = await _client.dio.get(ApiConstants.statusDetail, queryParameters: {'id': id});
+        if (detail.data is! Map || detail.data['ok'] == 0 || detail.data['id'] == null) {
+          throw StateError('帖子详情加载失败，请重试');
+        }
+        final raw = Map<String, dynamic>.from(detail.data as Map);
+        if (!isChaohuaPost(raw, pageId)) return null;
+        final model = WeiboStatusModel.fromJson(raw);
+        final text = html_parser.parse('${model.textRaw} ${model.fullTextRaw ?? ''}').body?.text ?? '';
+        return text.toLowerCase().contains(clean.toLowerCase()) ? model : null;
+      }));
+      statuses.addAll(batch.whereType<WeiboStatusModel>());
+    }
+    return ChaohuaPostsResult(statuses,
+        hasMore: document.querySelector('a.next[href]') != null);
+  }
 
   /// 获取网页端热搜总榜。
   ///

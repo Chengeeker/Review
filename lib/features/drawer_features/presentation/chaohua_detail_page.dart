@@ -13,6 +13,7 @@ import '../../compose/presentation/compose_tweet_page.dart';
 import '../../feed/data/models/weibo_status_model.dart';
 import '../../feed/presentation/widgets/tweet_card.dart';
 import '../../search/data/search_repository.dart';
+import '../../search/presentation/chaohua_search_page.dart';
 
 /// 超话频道分栏模型
 class ChaohuaChannel {
@@ -489,6 +490,15 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
                 ),
               ),
               actions: [
+                IconButton(icon: const Icon(Icons.search_rounded), tooltip: '搜索本超话',
+                  onPressed: () {
+                    if (!RegExp(r'^100808[0-9a-f]{32}$', caseSensitive: false).hasMatch(_currentContainerId)) {
+                      AppToast.show(context, '超话信息加载中，请稍后重试');
+                      return;
+                    }
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) =>
+                      ChaohuaSearchPage(pageId: _currentContainerId, title: displayTitle)));
+                  }),
                 IconButton(
                   icon: const Icon(Icons.share_outlined),
                   tooltip: '分享超话',

@@ -21,6 +21,7 @@ import '../../feed/presentation/widgets/tweet_card.dart';
 import '../../profile/presentation/user_profile_page.dart';
 import '../../../core/widgets/weibo_fans_icon.dart';
 import '../data/detail_repository.dart';
+import '../data/author_comment_filter.dart';
 import '../data/models/weibo_comment_model.dart';
 import '../data/models/weibo_attitude_model.dart';
 import 'widgets/comment_bottom_sheet.dart';
@@ -56,6 +57,29 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
   int _selectedTabIndex = 1;
   // Comment Sorting: 0 = 按热度, 1 = 按时间
   int _commentSortFlow = 0;
+  int _commentGeneration = 0;
+  AuthorCommentFilter? _authorCommentFilter;
+  String? _commentFilterError;
+  static const _commentFilters = ['按热度', '按时间', '仅楼主', '含楼主'];
+
+  Future<CommentResult> _commentPage(String cursor, int generation) {
+    final repo = ref.read(detailRepositoryProvider);
+    final authorId = _currentStatus?.user.id ?? '';
+    if (_commentSortFlow < 2) {
+      return repo.getComments(id: _effectiveStatusId, uid: authorId,
+          maxId: cursor, flow: _commentSortFlow);
+    }
+    if (authorId.isEmpty) throw StateError('Missing post author');
+    _authorCommentFilter ??= AuthorCommentFilter(
+      authorId: authorId, includeReplies: _commentSortFlow == 3,
+      isCurrent: () => mounted && generation == _commentGeneration,
+      fetchRoots: (cursor) => repo.getComments(id: _effectiveStatusId,
+          uid: authorId, maxId: cursor, strict: true),
+      fetchReplies: (id, cursor) => repo.getSecondComments(commentId: id,
+          uid: authorId, maxId: cursor, strict: true),
+    );
+    return _authorCommentFilter!.next();
+  }
 
   // Comments State
   final List<WeiboCommentModel> _comments = [];
@@ -202,21 +226,19 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
     final id = _effectiveStatusId;
     if (id.isEmpty) return;
     if (_isFetchingComments) return;
+    final generation = ++_commentGeneration;
+    _isLoadingMoreComments = false;
+    _authorCommentFilter = null;
     _isFetchingComments = true;
     setState(() {
       _isLoadingComments = true;
+      _commentFilterError = null;
     });
 
     try {
-      final repo = ref.read(detailRepositoryProvider);
-      final result = await repo.getComments(
-        id: id,
-        uid: _currentStatus?.user.id ?? '',
-        maxId: '0',
-        flow: _commentSortFlow,
-      );
+      final result = await _commentPage('0', generation);
 
-      if (mounted) {
+      if (mounted && generation == _commentGeneration) {
         final initialComment = widget.initialComment;
         final hasInitialComment = initialComment != null &&
             result.comments.any(
@@ -227,7 +249,7 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
           _comments.clear();
           _comments.addAll(result.comments);
           _showInitialCommentPreview =
-              initialComment != null && !hasInitialComment;
+              _commentSortFlow < 2 && initialComment != null && !hasInitialComment;
           if (_showInitialCommentPreview && initialComment != null) {
             _highlightedCommentId = initialComment.id;
           }
@@ -237,8 +259,16 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
         });
         _scheduleInitialCommentReveal();
       }
+    } catch (_) {
+      if (mounted && generation == _commentGeneration) {
+        setState(() {
+          _isLoadingComments = false;
+          _commentFilterError = '评论筛选失败，请重试';
+        });
+        AppToast.show(context, '评论筛选失败，请重试');
+      }
     } finally {
-      _isFetchingComments = false;
+      if (generation == _commentGeneration) _isFetchingComments = false;
     }
   }
 
@@ -249,17 +279,13 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
     final id = _effectiveStatusId;
     if (id.isEmpty) return false;
     _isLoadingMoreComments = true;
+    _commentFilterError = null;
+    final generation = _commentGeneration;
     final requestedMaxId = _maxId;
     try {
-      final repo = ref.read(detailRepositoryProvider);
-      final result = await repo.getComments(
-        id: id,
-        uid: _currentStatus?.user.id ?? '',
-        maxId: _maxId,
-        flow: _commentSortFlow,
-      );
+      final result = await _commentPage(_maxId, generation);
 
-      if (mounted) {
+      if (mounted && generation == _commentGeneration) {
         final nextMaxId = result.maxId.trim();
         setState(() {
           _comments.addAll(result.comments);
@@ -276,8 +302,14 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
         return _hasMore;
       }
       return false;
+    } catch (_) {
+      if (mounted && generation == _commentGeneration) {
+        setState(() => _commentFilterError = '评论筛选失败，请重试');
+        AppToast.show(context, '评论筛选失败，请重试');
+      }
+      return false;
     } finally {
-      _isLoadingMoreComments = false;
+      if (generation == _commentGeneration) _isLoadingMoreComments = false;
     }
   }
 
@@ -334,6 +366,7 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
   }
 
   void _scheduleInitialCommentReveal() {
+    if (_commentSortFlow >= 2) return;
     final targetId = _pendingInitialCommentId;
     if (targetId == null || _selectedTabIndex != 1) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -342,7 +375,7 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
   }
 
   Future<void> _resolveInitialComment(String targetId) async {
-    if (!mounted || _pendingInitialCommentId == null) return;
+    if (!mounted || _commentSortFlow >= 2 || _pendingInitialCommentId == null) return;
 
     final loadedComment = _findLoadedComment(targetId);
     if (loadedComment != null) {
@@ -877,9 +910,10 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                           ),
                           alignment: Alignment.center,
                           child: Text(
-                            '暂无评论，快来抢沙发吧~',
-                            style:
-                                TextStyle(color: colorScheme.onSurfaceVariant),
+                            _commentFilterError ?? (_commentSortFlow >= 2
+                                ? (_hasMore ? '本批尚未找到匹配评论，可继续筛选' : '暂无符合条件的评论')
+                                : '暂无评论，快来抢沙发吧~'),
+                            style: TextStyle(color: colorScheme.onSurfaceVariant),
                           ),
                         ),
                       )
@@ -906,6 +940,16 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                           ),
                         ),
                     ],
+                    if (_commentSortFlow >= 2 && _hasMore)
+                      SliverToBoxAdapter(child: Center(child: TextButton(
+                        onPressed: (_isFetchingComments || _isLoadingMoreComments)
+                            ? null : () async {
+                          setState(() {});
+                          await _loadMoreComments();
+                          if (mounted) setState(() {});
+                        },
+                        child: Text(_commentFilterError == null ? '继续筛选' : '重试筛选'),
+                      ))),
                   ] else ...[
                     // Attitudes (Likes) Tab
                     if (_isLoadingAttitudes && _attitudes.isEmpty)
@@ -1055,6 +1099,11 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                   borderRadius: BorderRadius.circular(12)),
               onSelected: (val) {
                 if (_commentSortFlow != val) {
+                  _commentGeneration++;
+                  _isFetchingComments = false;
+                  _isLoadingMoreComments = false;
+                  _authorCommentFilter = null;
+                  _showInitialCommentPreview = false;
                   HapticFeedbackUtil.light();
                   final currentOffset = _scrollController.hasClients
                       ? _scrollController.offset
@@ -1093,7 +1142,7 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                     ),
                     const SizedBox(width: 3),
                     Text(
-                      _commentSortFlow == 0 ? '按热度' : '按时间',
+                      _commentFilters[_commentSortFlow],
                       style: TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w500,
@@ -1104,6 +1153,14 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                 ),
               ),
               itemBuilder: (ctx) => [
+                for (final value in [2, 3])
+                  PopupMenuItem<int>(value: value, child: Row(children: [
+                    Icon(value == 2 ? Icons.person_outline : Icons.forum_outlined,
+                        size: 18, color: colorScheme.primary),
+                    const SizedBox(width: 10),
+                    Text(_commentFilters[value], style: TextStyle(
+                      fontWeight: _commentSortFlow == value ? FontWeight.bold : FontWeight.normal)),
+                  ])),
                 PopupMenuItem<int>(
                   value: 0,
                   child: Row(

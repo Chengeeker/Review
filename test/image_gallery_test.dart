@@ -151,6 +151,42 @@ Future<void> _pumpGallery(WidgetTester tester, Widget child) => tester.pumpWidge
 );
 
 void main() {
+  testWidgets('gallery route uses slower opening timing and prevents stacking', (tester) async {
+    late BuildContext sourceContext;
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await _pumpGallery(tester,
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        home: Builder(builder: (context) {
+          sourceContext = context;
+          return const Scaffold(body: Text('source'));
+        }),
+      ),
+    );
+
+    final firstRoute = PhysicsSpringGalleryRoute<String>(
+      child: const Scaffold(body: Text('first gallery')),
+    );
+    expect(firstRoute.transitionDuration, const Duration(milliseconds: 330));
+    expect(firstRoute.reverseTransitionDuration, const Duration(milliseconds: 200));
+
+    final firstPush = PhysicsSpringGalleryRoute.openFromSource<String>(sourceContext, firstRoute);
+    await tester.pump();
+    final duplicatePush = PhysicsSpringGalleryRoute.openFromSource<String>(
+      sourceContext,
+      PhysicsSpringGalleryRoute<String>(child: const Scaffold(body: Text('duplicate gallery'))),
+    );
+    expect(await duplicatePush, isNull);
+    await tester.pumpAndSettle();
+    expect(find.text('first gallery'), findsOneWidget);
+    expect(find.text('duplicate gallery'), findsNothing);
+
+    navigatorKey.currentState!.pop<String>();
+    await tester.pumpAndSettle();
+    await firstPush;
+    expect(navigatorKey.currentState!.canPop(), isFalse);
+  });
+
   testWidgets('second page keeps its own preview while original is pending', (
     tester,
   ) async {
@@ -501,7 +537,7 @@ void main() {
     expect(find.byTooltip('返回'), findsOneWidget);
     expect(find.byTooltip('保存高清大图 / 实况到相册'), findsOneWidget);
 
-    await tester.pump(const Duration(milliseconds: 220));
+    await tester.pump(const Duration(milliseconds: 330));
     expect(tester.widget<AnimatedOpacity>(fade).opacity, 1);
     expect(tester.widget<IgnorePointer>(topControlsGate).ignoring, isFalse);
     await tester.pump(const Duration(milliseconds: 70));

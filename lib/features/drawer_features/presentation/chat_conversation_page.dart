@@ -895,19 +895,7 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
           child: GestureDetector(
             onTap: snapshot.connectionState != ConnectionState.done
                 ? null
-                : () {
-                    HapticFeedbackUtil.light();
-                    Navigator.of(context).push(
-                      PhysicsSpringGalleryRoute(
-                        child: ImageGalleryPage(
-                          pics: [pic],
-                          initialIndex: 0,
-                          statusId: '',
-                          heroScope: scope,
-                        ),
-                      ),
-                    );
-                  },
+                : () => _openChatGallery([pic], 0, scope, ''),
             child: ImageGalleryHeroThumbnail(
               scope: scope,
               index: 0,
@@ -953,6 +941,27 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
     );
   }
 
+  void _openChatGallery(
+    List<WeiboPicModel> pics,
+    int initialIndex,
+    Object scope,
+    String statusId,
+  ) {
+    if (!mounted) return;
+    HapticFeedbackUtil.light();
+    PhysicsSpringGalleryRoute.openFromSource(
+      context,
+      PhysicsSpringGalleryRoute(
+        child: ImageGalleryPage(
+          pics: pics,
+          initialIndex: initialIndex,
+          statusId: statusId,
+          heroScope: scope,
+        ),
+      ),
+    );
+  }
+
   Widget _buildMessageImage(
     String url,
     Map<String, dynamic> message,
@@ -974,19 +983,12 @@ class _ChatConversationPageState extends ConsumerState<ChatConversationPage> {
       label: '查看聊天图片',
       button: true,
       child: GestureDetector(
-        onTap: () {
-          HapticFeedbackUtil.light();
-          Navigator.of(context).push(
-            PhysicsSpringGalleryRoute(
-              child: ImageGalleryPage(
-                pics: pics,
-                initialIndex: index,
-                statusId: 'chat-${widget.targetId}-$messageId',
-                heroScope: heroScope,
-              ),
-            ),
-          );
-        },
+        onTap: () => _openChatGallery(
+          pics,
+          index,
+          heroScope,
+          'chat-${widget.targetId}-$messageId',
+        ),
         child: ImageGalleryHeroThumbnail(
           scope: heroScope,
           index: index,

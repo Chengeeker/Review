@@ -81,6 +81,9 @@ Future<List<int>> _readStreamPrefix(Stream<List<int>> stream, int limit) async {
 
 bool isKnownSinaHdrGainMap(String url) => _hdrProbeCache[url] == true;
 
+/// Observe an existing feed probe without starting another network request.
+Future<bool>? pendingSinaHdrGainMapProbe(String url) => _hdrProbePending[url];
+
 Future<bool> cachedSinaHdrGainMapProbe(String url) {
   final cached = _hdrProbeCache.remove(url);
   if (cached != null) {

@@ -763,6 +763,7 @@ class DetailRepository {
     String maxId = '0',
     int count = 10,
     int flow = 0,
+    bool strict = false,
   }) async {
     try {
       final normalizedMaxId = maxId.trim().isEmpty ? '0' : maxId.trim();
@@ -790,6 +791,9 @@ class DetailRepository {
 
       if (response.data is Map) {
         final data = Map<String, dynamic>.from(response.data as Map);
+        if (strict && (data['ok'] == 0 || !data.containsKey('data'))) {
+          throw StateError('Comment request rejected');
+        }
         // Different web responses use either `data: [...]` or a nested
         // `data: {data: [...], max_id: ...}` envelope.  Use the same tolerant
         // extraction as second-level comments so a valid page is not treated
@@ -813,7 +817,8 @@ class DetailRepository {
           hasMore: hasMore,
         );
       }
-    } catch (_) {}
+      if (strict) throw StateError('Invalid comment response');
+    } catch (_) { if (strict) rethrow; }
     return const CommentResult(comments: [], hasMore: false);
   }
 
@@ -944,6 +949,7 @@ class DetailRepository {
     String maxId = '0',
     int count = 20,
     int flow = 0,
+    bool strict = false,
   }) async {
     try {
       final normalizedMaxId = _normalizeMaxId(maxId);
@@ -970,6 +976,9 @@ class DetailRepository {
 
       if (response.data is Map) {
         final data = Map<String, dynamic>.from(response.data as Map);
+        if (strict && (data['ok'] == 0 || !data.containsKey('data'))) {
+          throw StateError('Reply request rejected');
+        }
         final rawComments = _extractCommentList(data);
         final comments = rawComments
             .whereType<Map<String, dynamic>>()
@@ -985,7 +994,8 @@ class DetailRepository {
               nextMaxId != normalizedMaxId,
         );
       }
-    } catch (_) {}
+      if (strict) throw StateError('Invalid reply response');
+    } catch (_) { if (strict) rethrow; }
     return const CommentResult(comments: [], hasMore: false);
   }
 

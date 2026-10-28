@@ -13,6 +13,7 @@ import '../../../../core/theme/weibo_style_provider.dart';
 import '../../../../core/utils/app_dialog.dart';
 import '../../../../core/utils/app_toast.dart';
 import '../../../../core/utils/haptic_feedback_util.dart';
+import '../../../../core/utils/spring_page_route.dart';
 import '../../../../core/utils/weibo_text_parser.dart';
 import '../../../../core/utils/weibo_time_formatter.dart';
 import '../../../../core/constants/api_constants.dart';
@@ -650,6 +651,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
       onTap: isDetail
           ? null
           : () {
+              if (isCoveredRouteTransitioning(context)) return;
               HapticFeedbackUtil.light();
               try {
                 final storage = ref.read(storageServiceProvider);
