@@ -653,6 +653,15 @@ class MainActivity : FlutterActivity() {
                         true
                     }
                     "restoreSession" -> submitWeiboAuth(result) { it.restoreSession() }
+                    "exportBackupSession" -> {
+                        val uid = call.argument<String>("uid").orEmpty()
+                        submitWeiboAuth(result) { it.exportBackupSession(uid) }
+                    }
+                    "restoreBackupSession" -> {
+                        val session = call.argument<String>("session")
+                        val uid = call.argument<String>("uid").orEmpty()
+                        submitWeiboAuth(result) { it.restoreBackupSession(session, uid) }
+                    }
                     "hasNativeSession" -> submitWeiboAuth(result) { it.hasNativeSession() }
                     "requestWeiboApi" -> {
                         val endpoint = call.argument<String>("endpoint")?.trim().orEmpty()

@@ -3,6 +3,7 @@ import 'package:review/core/design_system/components/review_frosted_app_bar.dart
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/widgets/app_section_card.dart';
+import '../../../core/design_system/components/review_choice_tile.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/services/webdav_service.dart';
 import '../../../core/storage/storage_service.dart';
@@ -31,6 +32,8 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
   bool _isTesting = false;
   bool _isBackingUp = false;
   bool _isRestoring = false;
+  bool _includeCredentials = false;
+  bool get _isBusy => _isTesting || _isBackingUp || _isRestoring;
 
   @override
   void initState() {
@@ -72,12 +75,12 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
   }
 
   Future<void> _testConnection() async {
+    if (_isBusy) return;
     if (!_formKey.currentState!.validate()) return;
+    setState(() => _isTesting = true);
     HapticFeedbackUtil.light();
     await _saveConfig();
     if (!mounted) return;
-
-    setState(() => _isTesting = true);
 
     final success = await _webDavService.testConnection(
       serverUrl: _urlController.text.trim(),
@@ -96,38 +99,44 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
   }
 
   Future<void> _performBackup() async {
+    if (_isBusy) return;
     if (!_formKey.currentState!.validate()) return;
-    HapticFeedbackUtil.light();
-    await _saveConfig();
-    if (!mounted) return;
-
     setState(() => _isBackingUp = true);
-    final storage = ref.read(storageServiceProvider);
+    HapticFeedbackUtil.light();
+    try {
+      await _saveConfig();
+      if (!mounted) return;
+      final storage = ref.read(storageServiceProvider);
+      final backupData = await storage.exportAllData(
+        includeCredentials: _includeCredentials,
+      );
+      final dirName = _dirController.text.trim().isEmpty
+          ? 'Review'
+          : _dirController.text.trim();
 
-    final backupData = storage.exportAllData();
-    final dirName = _dirController.text.trim().isEmpty
-        ? 'Review'
-        : _dirController.text.trim();
+      final success = await _webDavService.uploadBackup(
+        serverUrl: _urlController.text.trim(),
+        username: _usernameController.text.trim(),
+        password: _passwordController.text.trim(),
+        directoryName: dirName,
+        data: backupData,
+      );
 
-    final success = await _webDavService.uploadBackup(
-      serverUrl: _urlController.text.trim(),
-      username: _usernameController.text.trim(),
-      password: _passwordController.text.trim(),
-      directoryName: dirName,
-      data: backupData,
-    );
-
-    if (!mounted) return;
-    setState(() => _isBackingUp = false);
-
-    HapticFeedbackUtil.medium();
-    AppToast.show(
-      context,
-      success ? '🎉 应用设置已成功备份到 WebDAV 云盘！' : '❌ 备份上传失败，请检查连接状态',
-    );
+      if (!mounted) return;
+      HapticFeedbackUtil.medium();
+      AppToast.show(
+        context,
+        success ? '🎉 应用设置已成功备份到 WebDAV 云盘！' : '❌ 备份上传失败，请检查连接状态',
+      );
+    } catch (_) {
+      if (mounted) AppToast.show(context, '备份失败，未能读取完整备份数据');
+    } finally {
+      if (mounted) setState(() => _isBackingUp = false);
+    }
   }
 
   Future<void> _performRestore() async {
+    if (_isBusy) return;
     if (!_formKey.currentState!.validate()) return;
     HapticFeedbackUtil.light();
     await _saveConfig();
@@ -138,7 +147,7 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
       builder: (ctx) => AlertDialog(
         title: const Text('从 WebDAV 恢复备份？'),
         content: const Text(
-          '恢复备份将使用云端数据覆盖当前的个性化设置，不会恢复微博 Cookie、Token 或其他登录凭据。是否继续？',
+          '恢复备份将覆盖备份中包含的设置和历史。若云端是全量备份，还会替换微博登录凭据及 WebDAV 密码；全量安全备份保留本机登录凭据。是否继续？',
         ),
         actions: [
           TextButton(
@@ -169,26 +178,33 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
     );
 
     if (!mounted) return;
-    setState(() => _isRestoring = false);
+    try {
+      if (backupData != null) {
+        await storage.restoreAllData(backupData);
 
-    if (backupData != null) {
-      await storage.restoreAllData(backupData);
+        if (!mounted) return;
 
-      if (!mounted) return;
+        // Refresh providers
+        ref.read(themeProvider.notifier).reload();
+        ref.read(weiboStyleProvider.notifier).reload();
+        if (backupData['backup_mode'] == 'full') {
+          ref.invalidate(authProvider);
+        }
+        _urlController.text = storage.getWebDavUrl();
+        _usernameController.text = storage.getWebDavUsername();
+        _passwordController.text = storage.getWebDavPassword();
+        _dirController.text = storage.getWebDavDirectory();
 
-      // Refresh providers
-      ref.read(themeProvider.notifier).reload();
-      ref.read(weiboStyleProvider.notifier).reload();
-      final fullCookie = storage.getFullCookie();
-      if (fullCookie != null && fullCookie.isNotEmpty) {
-        ref.read(authProvider.notifier).setAndVerifyCookie(fullCookie);
+        HapticFeedbackUtil.medium();
+        AppToast.show(context, '🎉 备份已成功恢复！重启应用可应用全部设置，登录有效性以微博校验为准');
+      } else {
+        if (!mounted) return;
+        AppToast.show(context, '❌ 未找到可用云端备份文件或下载失败');
       }
-
-      HapticFeedbackUtil.medium();
-      AppToast.show(context, '🎉 备份已成功恢复！应用设置已同步');
-    } else {
-      if (!mounted) return;
-      AppToast.show(context, '❌ 未找到可用云端备份文件或下载失败');
+    } catch (_) {
+      if (mounted) AppToast.show(context, '恢复失败，备份格式无效或数据写入失败');
+    } finally {
+      if (mounted) setState(() => _isRestoring = false);
     }
   }
 
@@ -239,7 +255,7 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          '全量安全备份 (Review)',
+                          '备份内容',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             color: colorScheme.primary,
@@ -248,7 +264,7 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '备份主题、微博样式和媒体路径；微博 Cookie、Token 与 WebDAV 密码不会上传。',
+                          '备份应用设置、搜索与浏览历史等本地数据，不包含图片和视频缓存。',
                           style: TextStyle(
                             fontSize: 14,
                             color: colorScheme.onSurfaceVariant,
@@ -259,6 +275,33 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
                     ),
                   ),
                 ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            AbsorbPointer(
+              absorbing: _isBackingUp || _isRestoring,
+              child: AppSectionCard(
+                child: Column(
+                  children: [
+                    ReviewChoiceTile<bool>(
+                      title: '全量安全备份',
+                      summary: 'Cookie、Token 和 WebDAV 密码不会上传。',
+                      value: false,
+                      groupValue: _includeCredentials,
+                      onSelected: () =>
+                          setState(() => _includeCredentials = false),
+                    ),
+                    ReviewChoiceTile<bool>(
+                      title: '全量备份',
+                      summary: '同时上传 Cookie、Token 和 WebDAV 密码。备份文件含明文凭据，请妥善保管云盘及历史备份。',
+                      value: true,
+                      groupValue: _includeCredentials,
+                      onSelected: () =>
+                          setState(() => _includeCredentials = true),
+                    ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 16),
@@ -279,6 +322,7 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
+                      enabled: !_isBusy,
                       controller: _urlController,
                       decoration: const InputDecoration(
                         labelText: '服务器 URL',
@@ -288,8 +332,9 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
                         isDense: true,
                       ),
                       validator: (v) {
-                        if (v == null || v.trim().isEmpty)
+                        if (v == null || v.trim().isEmpty) {
                           return '请输入 WebDAV 服务器地址';
+                        }
                         final lower = v.trim().toLowerCase();
                         if (lower.startsWith('http://') &&
                             !lower.startsWith('http://127.0.0.1') &&
@@ -301,6 +346,7 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
+                      enabled: !_isBusy,
                       controller: _usernameController,
                       decoration: const InputDecoration(
                         labelText: '账号 / 邮箱',
@@ -313,6 +359,7 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
+                      enabled: !_isBusy,
                       controller: _passwordController,
                       obscureText: true,
                       decoration: const InputDecoration(
@@ -327,6 +374,7 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
+                      enabled: !_isBusy,
                       controller: _dirController,
                       decoration: const InputDecoration(
                         labelText: '备份文件夹名称',
@@ -353,7 +401,7 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
                                 size: 18,
                               ),
                         label: Text(_isTesting ? '正在测试连接...' : '测试服务器连接'),
-                        onPressed: _isTesting ? null : _testConnection,
+                        onPressed: _isBusy ? null : _testConnection,
                       ),
                     ),
                   ],
@@ -395,9 +443,7 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
                                   )
                                 : const Icon(Icons.cloud_upload_rounded),
                             label: Text(_isBackingUp ? '正在上传...' : '立即备份到云端'),
-                            onPressed: (_isBackingUp || _isRestoring)
-                                ? null
-                                : _performBackup,
+                            onPressed: _isBusy ? null : _performBackup,
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -416,9 +462,7 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
                                   )
                                 : const Icon(Icons.cloud_download_rounded),
                             label: Text(_isRestoring ? '正在拉取...' : '从云端恢复备份'),
-                            onPressed: (_isBackingUp || _isRestoring)
-                                ? null
-                                : _performRestore,
+                            onPressed: _isBusy ? null : _performRestore,
                           ),
                         ),
                       ],

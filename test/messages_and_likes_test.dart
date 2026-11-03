@@ -11,6 +11,7 @@ import 'package:review/features/detail/data/detail_repository.dart';
 import 'package:review/features/detail/data/models/weibo_attitude_model.dart';
 import 'package:review/features/detail/data/models/weibo_comment_model.dart';
 import 'package:review/features/detail/presentation/status_detail_page.dart';
+import 'package:review/features/detail/presentation/widgets/image_gallery_page.dart';
 import 'package:review/features/detail/presentation/widgets/nested_comments_sheet.dart';
 import 'package:review/features/drawer_features/presentation/likes_comments_page.dart';
 import 'package:review/features/drawer_features/presentation/likes_favorites_page.dart';
@@ -42,6 +43,7 @@ class _RecordingDetailRepository extends Fake implements DetailRepository {
     String maxId = '0',
     int count = 15,
     int flow = 0,
+    bool strict = false,
   }) async {
     rootCommentRequests.add(maxId);
     final pagedResult = rootCommentResults[maxId];
@@ -60,6 +62,7 @@ class _RecordingDetailRepository extends Fake implements DetailRepository {
     String maxId = '0',
     int count = 20,
     int flow = 0,
+    bool strict = false,
   }) async {
     final requestKey = '$commentId|$maxId';
     secondCommentRequests.add(requestKey);
@@ -142,6 +145,141 @@ void main() {
     expect(find.text('共11条回复'), findsOneWidget);
     await tester.tap(find.text('可以点击这段文字回复'));
     expect(tappedReply?.id, equals('nested-reply-1'));
+  });
+
+  testWidgets('NestedCommentsSheet opens reply images with gallery Hero',
+      (tester) async {
+    final parent = WeiboCommentModel.fromJson({
+      'id': 'nested-image-root',
+      'text_raw': '主评论',
+      'total_number': 1,
+      'user': {'id': 'root-user', 'screen_name': '主评论用户'},
+      'comments': [
+        {
+          'id': 'nested-image-reply',
+          'text_raw': '回复图片',
+          'user': {'id': 'reply-user', 'screen_name': '回复用户'},
+          'pic_infos': {
+            'reply-pic': {'pid': 'reply-pic'},
+          },
+        },
+      ],
+    });
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final storage = StorageService(prefs);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          storageServiceProvider.overrideWithValue(storage),
+          detailRepositoryProvider
+              .overrideWithValue(_RecordingDetailRepository()),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: NestedCommentsSheet(
+              parentComment: parent,
+              totalCount: 1,
+              statusAuthorId: 'root-user',
+              onCommentTap: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    final source = find.byKey(
+      const ValueKey('nested-comment-image-nested-image-reply-0'),
+    );
+    expect(source, findsOneWidget);
+    final sourceHero = tester.widget<Hero>(
+      find.descendant(of: source, matching: find.byType(Hero)),
+    );
+    await tester.tap(source);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final gallery =
+        tester.widget<ImageGalleryPage>(find.byType(ImageGalleryPage));
+    expect(gallery.initialIndex, 0);
+    expect(
+      gallery.heroScope,
+      same((sourceHero.tag as ImageGalleryHeroTag).scope),
+    );
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is Hero && widget.tag == sourceHero.tag,
+      ),
+      findsNWidgets(2),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('StatusDetailPage opens comment images with gallery Hero',
+      (tester) async {
+    final status = WeiboStatusModel.fromJson({
+      'id': '5340912604415830',
+      'mid': '5340912604415830',
+      'text_raw': '原微博',
+      'user': {'id': 'root-user', 'screen_name': '博主'},
+    });
+    final comment = WeiboCommentModel.fromJson({
+      'id': 'status-image-comment',
+      'text_raw': '评论图片',
+      'user': {'id': 'comment-user', 'screen_name': '评论用户'},
+      'pic_infos': {
+        'comment-pic': {'pid': 'comment-pic'},
+      },
+    });
+    final repository = _RecordingDetailRepository()..rootComments = [comment];
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final storage = StorageService(prefs);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          storageServiceProvider.overrideWithValue(storage),
+          detailRepositoryProvider.overrideWithValue(repository),
+        ],
+        child: MaterialApp(home: StatusDetailPage(status: status)),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    final source = find.byKey(
+      const ValueKey('status-comment-image-status-image-comment-0'),
+    );
+    await tester.ensureVisible(source);
+    await tester.pump();
+    expect(source, findsOneWidget);
+    final sourceHero = tester.widget<Hero>(
+      find.descendant(of: source, matching: find.byType(Hero)),
+    );
+    await tester.tap(source);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final gallery =
+        tester.widget<ImageGalleryPage>(find.byType(ImageGalleryPage));
+    expect(gallery.initialIndex, 0);
+    expect(
+      gallery.heroScope,
+      same((sourceHero.tag as ImageGalleryHeroTag).scope),
+    );
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is Hero && widget.tag == sourceHero.tag,
+      ),
+      findsNWidgets(2),
+    );
+    expect(tester.takeException(), isNull);
   });
 
   test('destroyComment uses the official delete endpoint and comment id',

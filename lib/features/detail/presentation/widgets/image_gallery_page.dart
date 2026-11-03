@@ -79,6 +79,9 @@ class ImageGalleryHeroTag {
       Object.hash(identityHashCode(scope), index, mediaIdentity);
 }
 
+Tween<Rect?> _linearGalleryRectTween(Rect? begin, Rect? end) =>
+    RectTween(begin: begin, end: end);
+
 /// Keeps the gallery image as the flying widget in both directions.
 ///
 /// Flutter's default Hero shuttle always uses the destination child's layout.
@@ -313,6 +316,7 @@ class ImageGalleryHeroThumbnail extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Hero(
     tag: ImageGalleryHeroTag.forPic(scope: scope, index: index, pic: pic),
+    createRectTween: _linearGalleryRectTween,
     flightShuttleBuilder: imageGalleryHeroFlightShuttleBuilder,
     child: child,
   );
@@ -1028,6 +1032,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
       enabled: index == _currentIndex,
       child: Hero(
         tag: ImageGalleryHeroTag.forPic(scope: scope, index: index, pic: pic),
+        createRectTween: _linearGalleryRectTween,
         flightShuttleBuilder: imageGalleryHeroFlightShuttleBuilder,
         child: child,
       ),

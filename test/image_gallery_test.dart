@@ -446,12 +446,10 @@ void main() {
             body: Center(
               child: GestureDetector(
                 key: const ValueKey('hero-source-thumbnail'),
-                onTap: () => Navigator.of(context).push<void>(
-                  PageRouteBuilder<void>(
-                    opaque: false,
-                    barrierColor: Colors.black,
-                    transitionDuration: const Duration(milliseconds: 220),
-                    pageBuilder: (_, __, ___) => ImageGalleryPage(
+                onTap: () => PhysicsSpringGalleryRoute.openFromSource<void>(
+                  context,
+                  PhysicsSpringGalleryRoute<void>(
+                    child: ImageGalleryPage(
                       pics: const [galleryTestPic],
                       initialIndex: 0,
                       statusId: 'hero-test',
@@ -481,14 +479,28 @@ void main() {
     );
 
     expect(matchingHero(), findsOneWidget);
+    expect(tester.widget<Hero>(matchingHero()).createRectTween, isNotNull);
     await tester.tap(sourceThumbnail);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 110));
     expect(matchingHero(), findsWidgets);
     // Gallery networking/gesture widgets may keep frames scheduled, so finish
-    // the 220 ms route transition with bounded pumps instead of settling all.
+    // the 330 ms route transition with bounded pumps instead of settling all.
     await tester.pump(const Duration(milliseconds: 250));
     expect(matchingHero(), findsNWidgets(2));
+    expect(
+      tester.widgetList<Hero>(matchingHero()).every(
+        (hero) => hero.createRectTween != null,
+      ),
+      isTrue,
+    );
+    final tween = tester
+        .widget<Hero>(matchingHero().first)
+        .createRectTween!(
+          const Rect.fromLTWH(160, 520, 80, 80),
+          const Rect.fromLTWH(40, 0, 320, 1120),
+        );
+    expect(tween.transform(0.5)!.center.dx, 200);
     expect(tester.takeException(), isNull);
   });
 

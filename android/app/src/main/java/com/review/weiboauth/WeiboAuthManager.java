@@ -105,6 +105,28 @@ public final class WeiboAuthManager {
         sessionStore.clear();
     }
 
+    public synchronized String exportBackupSession(String uid) {
+        WeiboSession session = getActiveSession();
+        if (session == null) return null;
+        if (!session.uid.equals(uid)) throw new IllegalArgumentException("备份账号与原生会话不一致");
+        return session.toJson().toString();
+    }
+
+    public synchronized boolean restoreBackupSession(String json, String uid) throws Exception {
+        if (json == null) {
+            logout();
+            return true;
+        }
+        WeiboSession session = WeiboSession.fromJson(new org.json.JSONObject(json));
+        if (!session.hasRequiredFields() || !session.uid.equals(uid)) {
+            throw new IllegalArgumentException("无效的备份原生会话");
+        }
+        sessionStore.save(session);
+        activeSession = session;
+        pendingSession = null;
+        return true;
+    }
+
     private WeiboApi api() throws Exception {
         return new WeiboApi(context, NativeRuntime.get(context));
     }

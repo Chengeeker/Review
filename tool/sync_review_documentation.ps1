@@ -1,5 +1,6 @@
 param(
-    [string]$OutputPath = 'D:\App\开发文档\Review.md'
+    [string]$OutputPath = 'D:\App\开发文档\Review.md',
+    [string]$SourceRoot = 'D:\App\开发文档\Review-内部资料'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -7,7 +8,7 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $utf8 = [System.Text.UTF8Encoding]::new($false)
 
 function Read-ProjectDocument([string]$relativePath) {
-    $path = Join-Path $projectRoot $relativePath
+    $path = Join-Path $SourceRoot $relativePath
     return [System.IO.File]::ReadAllText($path, $utf8).Replace("`r`n", "`n").TrimEnd()
 }
 

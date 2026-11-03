@@ -969,7 +969,7 @@ void main() {
       });
 
       final storage = await StorageService.init();
-      final exported = storage.exportAllData();
+      final exported = await storage.exportAllData();
 
       final prefs = exported['preferences'] as Map<String, dynamic>;
 

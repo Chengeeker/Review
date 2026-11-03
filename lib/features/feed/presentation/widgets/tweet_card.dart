@@ -1017,7 +1017,6 @@ class _TweetCardState extends ConsumerState<TweetCard> {
               SelectionArea(child: mainTextWidget)
             else
               mainTextWidget,
-            if (contentAfterText != null) contentAfterText,
             if (status.isLongText &&
                 !isDetail &&
                 (_isLoadingLongText || hasMoreMainText)) ...[
@@ -1069,6 +1068,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                 ),
               ),
             ],
+            if (contentAfterText != null) contentAfterText,
             if (isDetail && status.isLongText && _isLoadingLongText) ...[
               const SizedBox(height: 6),
               Row(
@@ -1409,23 +1409,6 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     retweetTextTapTarget,
-                    if (retweet.pics.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      NineGridView(
-                        pics: retweet.pics,
-                        statusId: retweet.id,
-                        isDetail: widget.isDetail,
-                        authorName: retweet.user.screenName,
-                        authorId: retweet.user.id,
-                        authorAvatar: retweet.user.avatar,
-                        webpageCardCaption: _birthdayWebpageCardCaption(
-                          retweet,
-                        ),
-                      ),
-                    ] else if (retweet.hasVideo) ...[
-                      const SizedBox(height: 8),
-                      _buildVideoPreviewCard(context, retweet),
-                    ],
                     if (retweet.isLongText &&
                         !widget.isDetail &&
                         (_isLoadingRetweetLongText || hasMoreText)) ...[
@@ -1472,6 +1455,23 @@ class _TweetCardState extends ConsumerState<TweetCard> {
                           ),
                         ),
                       ),
+                    ],
+                    if (retweet.pics.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      NineGridView(
+                        pics: retweet.pics,
+                        statusId: retweet.id,
+                        isDetail: widget.isDetail,
+                        authorName: retweet.user.screenName,
+                        authorId: retweet.user.id,
+                        authorAvatar: retweet.user.avatar,
+                        webpageCardCaption: _birthdayWebpageCardCaption(
+                          retweet,
+                        ),
+                      ),
+                    ] else if (retweet.hasVideo) ...[
+                      const SizedBox(height: 8),
+                      _buildVideoPreviewCard(context, retweet),
                     ],
                   ],
                 );

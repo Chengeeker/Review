@@ -2,6 +2,12 @@
 
 适用于“全屏主图 + 底部缩略图滚轮”且两者各自使用滚动控制器的 Flutter 画廊。目标是避免旧惯性抢手势、让横向切图流畅，并在缩放时正确把拖动留给图片平移。
 
+## 居中缩略图不能横向偏移；评论图复用同一 Hero 路由（3.13.11）
+
+Flutter 默认 `MaterialRectArcTween` 在小缩略图与全屏图片尺寸差异很大时会让矩形中心走弧线，中心缩略图也会出现侧移。图片源端和画廊端均通过 `createRectTween` 使用 `RectTween`，只改变尺寸，不额外改变中心运动方向。时间线、详情和评论图片遵循同一 Hero 几何。
+
+评论和楼中楼图片区使用稳定 comment scope、完整评论图片列表和被点击图片下标，借助 `PhysicsSpringGalleryRoute.openFromSource` 与原缩略图配对。不要只推入 `ImageGalleryPage`；缺少 scope 或不一致的下标/媒体身份会退化成普通淡入页面，返回也没有共享图片动画。保持原有 330ms 打开和 200ms 返回。
+
 ## Hero 飞行层没有分页器：Release 灰色错误占位（2026-10-14）
 
 完成态图片的 `imageBuilder` 不能假设自己始终位于分页器内部。Hero 的 push 飞行会在 Navigator overlay 中重新构建目标图片子树，那里没有 `ExtendedImageGesturePageViewState` 祖先。强制非空会抛出 `Null check operator used on a null value`；Flutter 的 Release 默认错误占位使用 `RenderErrorBox.backgroundColor = 0xF0C0C0C0`，视觉上是一大片浅灰色，不是普通的背景蒙版。

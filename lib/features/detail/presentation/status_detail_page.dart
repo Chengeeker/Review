@@ -6,6 +6,7 @@ import 'package:review/core/design_system/components/review_frosted_app_bar.dart
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:extended_image/extended_image.dart';
+
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/theme/app_theme.dart';
@@ -13,6 +14,7 @@ import '../../../core/theme/card_display_provider.dart';
 import '../../../core/utils/app_toast.dart';
 import '../../../core/utils/app_dialog.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
+import '../../../core/utils/spring_page_route.dart';
 import '../../../core/utils/weibo_text_parser.dart';
 import '../../../core/utils/weibo_time_formatter.dart';
 import '../../../core/widgets/app_avatar.dart';
@@ -43,8 +45,10 @@ class StatusDetailPage extends ConsumerStatefulWidget {
     this.initialComment,
     this.initialCommentId,
     this.initialCommentParentId,
-  }) : assert(status != null || statusId != null,
-            'Either status or statusId must be provided');
+  }) : assert(
+         status != null || statusId != null,
+         'Either status or statusId must be provided',
+       );
 
   @override
   ConsumerState<StatusDetailPage> createState() => _StatusDetailPageState();
@@ -60,23 +64,37 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
   int _commentGeneration = 0;
   AuthorCommentFilter? _authorCommentFilter;
   String? _commentFilterError;
-  static const _commentFilters = ['按热度', '按时间', '仅楼主', '含楼主'];
+  static const _commentFilters = ['按热度', '按时间', '含楼主'];
 
   Future<CommentResult> _commentPage(String cursor, int generation) {
     final repo = ref.read(detailRepositoryProvider);
     final authorId = _currentStatus?.user.id ?? '';
     if (_commentSortFlow < 2) {
-      return repo.getComments(id: _effectiveStatusId, uid: authorId,
-          maxId: cursor, flow: _commentSortFlow);
+      return repo.getComments(
+        id: _effectiveStatusId,
+        uid: authorId,
+        maxId: cursor,
+        flow: _commentSortFlow,
+      );
     }
     if (authorId.isEmpty) throw StateError('Missing post author');
     _authorCommentFilter ??= AuthorCommentFilter(
-      authorId: authorId, includeReplies: _commentSortFlow == 3,
+      authorId: authorId,
+      includeReplies: true,
       isCurrent: () => mounted && generation == _commentGeneration,
-      fetchRoots: (cursor) => repo.getComments(id: _effectiveStatusId,
-          uid: authorId, maxId: cursor, strict: true),
-      fetchReplies: (id, cursor) => repo.getSecondComments(commentId: id,
-          uid: authorId, maxId: cursor, strict: true),
+      fetchRoots: (cursor) => repo.getComments(
+        id: _effectiveStatusId,
+        uid: authorId,
+        maxId: cursor,
+        flow: 1,
+        strict: true,
+      ),
+      fetchReplies: (id, cursor) => repo.getSecondComments(
+        commentId: id,
+        uid: authorId,
+        maxId: cursor,
+        strict: true,
+      ),
     );
     return _authorCommentFilter!.next();
   }
@@ -89,6 +107,7 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
   String _maxId = '0';
   bool _hasMore = true;
   final Map<String, GlobalKey> _commentKeys = {};
+  final Map<String, Object> _commentGalleryScopes = {};
   final Set<String> _hydratedReplyParents = {};
   bool _showInitialCommentPreview = false;
   String? _pendingInitialCommentId;
@@ -113,12 +132,12 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
     final candidate = (_currentStatus?.mid.isNotEmpty == true)
         ? _currentStatus!.mid
         : ((_currentStatus?.id.isNotEmpty == true)
-            ? _currentStatus!.id
-            : ((widget.status?.mid.isNotEmpty == true)
-                ? widget.status!.mid
-                : ((widget.status?.id.isNotEmpty == true)
-                    ? widget.status!.id
-                    : (widget.statusId ?? ''))));
+              ? _currentStatus!.id
+              : ((widget.status?.mid.isNotEmpty == true)
+                    ? widget.status!.mid
+                    : ((widget.status?.id.isNotEmpty == true)
+                          ? widget.status!.id
+                          : (widget.statusId ?? ''))));
     return WeiboStatusModel.mblogidToMid(candidate);
   }
 
@@ -136,8 +155,9 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
     _showInitialCommentPreview = widget.initialComment != null;
     _highlightedCommentId = widget.initialComment?.id;
     _pendingInitialCommentId = _trimCommentId(widget.initialCommentId);
-    _pendingInitialCommentParentId =
-        _trimCommentId(widget.initialCommentParentId);
+    _pendingInitialCommentParentId = _trimCommentId(
+      widget.initialCommentParentId,
+    );
     _fetchDetailAndComments();
   }
 
@@ -199,10 +219,22 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
     final updated = await repo.getStatusDetail(id);
     if (updated != null && mounted) {
       final currentVisibility = _currentStatus?.visibilityType;
-      final stableUpdated =
+      var stableUpdated =
           currentVisibility != null && updated.visibilityType == null
-              ? updated.copyWith(visibilityType: currentVisibility)
-              : updated;
+          ? updated.copyWith(visibilityType: currentVisibility)
+          : updated;
+      final sourceUser = widget.status?.user;
+      if (sourceUser != null &&
+          sourceUser.id == updated.user.id &&
+          sourceUser.avatar.startsWith('http')) {
+        // Keep the decoded source avatar when detail returns another size URL.
+        stableUpdated = stableUpdated.copyWith(
+          user: WeiboUserModel.fromJson({
+            ...updated.user.toJson(),
+            'avatar_hd': sourceUser.avatar,
+          }),
+        );
+      }
       setState(() {
         _currentStatus = stableUpdated;
       });
@@ -240,7 +272,8 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
 
       if (mounted && generation == _commentGeneration) {
         final initialComment = widget.initialComment;
-        final hasInitialComment = initialComment != null &&
+        final hasInitialComment =
+            initialComment != null &&
             result.comments.any(
               (comment) =>
                   _findCommentInTree(comment, initialComment.id) != null,
@@ -249,7 +282,9 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
           _comments.clear();
           _comments.addAll(result.comments);
           _showInitialCommentPreview =
-              _commentSortFlow < 2 && initialComment != null && !hasInitialComment;
+              _commentSortFlow < 2 &&
+              initialComment != null &&
+              !hasInitialComment;
           if (_showInitialCommentPreview && initialComment != null) {
             _highlightedCommentId = initialComment.id;
           }
@@ -293,7 +328,8 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
           // A broken/filtered response can repeat the same cursor.  Treat
           // that as the end of this seek instead of requesting the same page
           // forever while trying to locate a sent comment.
-          _hasMore = result.hasMore &&
+          _hasMore =
+              result.hasMore &&
               nextMaxId.isNotEmpty &&
               nextMaxId != '0' &&
               nextMaxId != requestedMaxId;
@@ -375,7 +411,8 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
   }
 
   Future<void> _resolveInitialComment(String targetId) async {
-    if (!mounted || _commentSortFlow >= 2 || _pendingInitialCommentId == null) return;
+    if (!mounted || _commentSortFlow >= 2 || _pendingInitialCommentId == null)
+      return;
 
     final loadedComment = _findLoadedComment(targetId);
     if (loadedComment != null) {
@@ -490,10 +527,13 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
     if (topLevelIndex == null) return;
 
     final position = _scrollController.position;
-    final fraction =
-        _comments.length <= 1 ? 0.0 : topLevelIndex / (_comments.length - 1);
-    final offset = (position.maxScrollExtent * fraction)
-        .clamp(0.0, position.maxScrollExtent);
+    final fraction = _comments.length <= 1
+        ? 0.0
+        : topLevelIndex / (_comments.length - 1);
+    final offset = (position.maxScrollExtent * fraction).clamp(
+      0.0,
+      position.maxScrollExtent,
+    );
     await _scrollController.animateTo(
       offset.toDouble(),
       duration: const Duration(milliseconds: 280),
@@ -598,7 +638,8 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
     final statusAuthorId = _currentStatus?.user.id ?? widget.status?.user.id;
     final isMyComment =
         (myUid != null && myUid.isNotEmpty && comment.user.id == myUid);
-    final isMyStatus = (myUid != null &&
+    final isMyStatus =
+        (myUid != null &&
         myUid.isNotEmpty &&
         statusAuthorId != null &&
         statusAuthorId == myUid);
@@ -653,8 +694,10 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
               ),
               if (canDelete)
                 ListTile(
-                  leading: Icon(Icons.delete_outline_rounded,
-                      color: colorScheme.error),
+                  leading: Icon(
+                    Icons.delete_outline_rounded,
+                    color: colorScheme.error,
+                  ),
                   title: Text(
                     '删除评论',
                     style: TextStyle(
@@ -758,8 +801,10 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
         }
       } else {
         if (mounted) {
-          AppToast.show(context,
-              res.message?.isNotEmpty == true ? res.message! : '删除失败，请稍后重试');
+          AppToast.show(
+            context,
+            res.message?.isNotEmpty == true ? res.message! : '删除失败，请稍后重试',
+          );
         }
       }
     }
@@ -772,12 +817,8 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
 
     if (_currentStatus == null) {
       return Scaffold(
-        appBar: ReviewFrostedAppBar(
-          title: const Text('文章详情'),
-        ),
-        body: const Center(
-          child: CircularProgressIndicator(),
-        ),
+        appBar: ReviewFrostedAppBar(title: const Text('文章详情')),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -794,8 +835,10 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                 icon: const Icon(Icons.more_horiz_rounded),
                 tooltip: '更多操作',
                 onPressed: () {
-                  TweetCard(status: _currentStatus!, isDetail: true)
-                      .showMoreOptions(context, ref);
+                  TweetCard(
+                    status: _currentStatus!,
+                    isDetail: true,
+                  ).showMoreOptions(context, ref);
                 },
               ),
               const SizedBox(width: 4),
@@ -845,9 +888,7 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                   ),
 
                   // 2. Interactive 3-Tab Bar (转发, 评论, 赞) + Sort Button
-                  SliverToBoxAdapter(
-                    child: _buildSectionTabBar(context),
-                  ),
+                  SliverToBoxAdapter(child: _buildSectionTabBar(context)),
 
                   // 3. Tab Content
                   if (_selectedTabIndex == 0) ...[
@@ -859,8 +900,9 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                             minHeight: _calculateMinTabHeight(context),
                           ),
                           alignment: Alignment.center,
-                          child:
-                              const CircularProgressIndicator(strokeWidth: 2),
+                          child: const CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
                         ),
                       )
                     else if (_reposts.isEmpty)
@@ -872,20 +914,18 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                           alignment: Alignment.center,
                           child: Text(
                             '暂无转发内容',
-                            style:
-                                TextStyle(color: colorScheme.onSurfaceVariant),
+                            style: TextStyle(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
                           ),
                         ),
                       )
                     else
                       SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final repost = _reposts[index];
-                            return _buildRepostItem(context, repost);
-                          },
-                          childCount: _reposts.length,
-                        ),
+                        delegate: SliverChildBuilderDelegate((context, index) {
+                          final repost = _reposts[index];
+                          return _buildRepostItem(context, repost);
+                        }, childCount: _reposts.length),
                       ),
                   ] else if (_selectedTabIndex == 1) ...[
                     // Comments Tab
@@ -898,8 +938,9 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                             minHeight: _calculateMinTabHeight(context),
                           ),
                           alignment: Alignment.center,
-                          child:
-                              const CircularProgressIndicator(strokeWidth: 2),
+                          child: const CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
                         ),
                       )
                     else if (_comments.isEmpty && !_showInitialCommentPreview)
@@ -910,10 +951,15 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                           ),
                           alignment: Alignment.center,
                           child: Text(
-                            _commentFilterError ?? (_commentSortFlow >= 2
-                                ? (_hasMore ? '本批尚未找到匹配评论，可继续筛选' : '暂无符合条件的评论')
-                                : '暂无评论，快来抢沙发吧~'),
-                            style: TextStyle(color: colorScheme.onSurfaceVariant),
+                            _commentFilterError ??
+                                (_commentSortFlow >= 2
+                                    ? (_hasMore
+                                          ? '本批尚未找到匹配评论，可继续筛选'
+                                          : '暂无符合条件的评论')
+                                    : '暂无评论，快来抢沙发吧~'),
+                            style: TextStyle(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
                           ),
                         ),
                       )
@@ -928,28 +974,36 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                         ),
                       if (_comments.isNotEmpty)
                         SliverList(
-                          delegate: SliverChildBuilderDelegate(
-                            (context, index) {
-                              final comment = _comments[index];
-                              return KeyedSubtree(
-                                key: _commentKeyFor(comment.id),
-                                child: _buildCommentItem(context, comment),
-                              );
-                            },
-                            childCount: _comments.length,
-                          ),
+                          delegate: SliverChildBuilderDelegate((
+                            context,
+                            index,
+                          ) {
+                            final comment = _comments[index];
+                            return KeyedSubtree(
+                              key: _commentKeyFor(comment.id),
+                              child: _buildCommentItem(context, comment),
+                            );
+                          }, childCount: _comments.length),
                         ),
                     ],
                     if (_commentSortFlow >= 2 && _hasMore)
-                      SliverToBoxAdapter(child: Center(child: TextButton(
-                        onPressed: (_isFetchingComments || _isLoadingMoreComments)
-                            ? null : () async {
-                          setState(() {});
-                          await _loadMoreComments();
-                          if (mounted) setState(() {});
-                        },
-                        child: Text(_commentFilterError == null ? '继续筛选' : '重试筛选'),
-                      ))),
+                      SliverToBoxAdapter(
+                        child: Center(
+                          child: TextButton(
+                            onPressed:
+                                (_isFetchingComments || _isLoadingMoreComments)
+                                ? null
+                                : () async {
+                                    setState(() {});
+                                    await _loadMoreComments();
+                                    if (mounted) setState(() {});
+                                  },
+                            child: Text(
+                              _commentFilterError == null ? '继续筛选' : '重试筛选',
+                            ),
+                          ),
+                        ),
+                      ),
                   ] else ...[
                     // Attitudes (Likes) Tab
                     if (_isLoadingAttitudes && _attitudes.isEmpty)
@@ -959,8 +1013,9 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                             minHeight: _calculateMinTabHeight(context),
                           ),
                           alignment: Alignment.center,
-                          child:
-                              const CircularProgressIndicator(strokeWidth: 2),
+                          child: const CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
                         ),
                       )
                     else if (_attitudes.isEmpty)
@@ -972,28 +1027,24 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                           alignment: Alignment.center,
                           child: Text(
                             '暂无点赞用户',
-                            style:
-                                TextStyle(color: colorScheme.onSurfaceVariant),
+                            style: TextStyle(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
                           ),
                         ),
                       )
                     else
                       SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final attitude = _attitudes[index];
-                            return _buildAttitudeItem(context, attitude);
-                          },
-                          childCount: _attitudes.length,
-                        ),
+                        delegate: SliverChildBuilderDelegate((context, index) {
+                          final attitude = _attitudes[index];
+                          return _buildAttitudeItem(context, attitude);
+                        }, childCount: _attitudes.length),
                       ),
                   ],
 
                   // 4. Dynamic Bottom Spacer to prevent scroll extent collapse
                   SliverToBoxAdapter(
-                    child: SizedBox(
-                      height: _savedScrollOffset > 0 ? 120 : 24,
-                    ),
+                    child: SizedBox(height: _savedScrollOffset > 0 ? 120 : 24),
                   ),
                 ],
               ),
@@ -1028,21 +1079,30 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 10),
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
-                          color: colorScheme.surfaceContainerHighest
-                              .withValues(alpha: 0.5),
+                          color: colorScheme.surfaceContainerHighest.withValues(
+                            alpha: 0.5,
+                          ),
                           borderRadius: BorderRadius.circular(24),
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.edit_outlined,
-                                size: 16, color: colorScheme.onSurfaceVariant),
+                            Icon(
+                              Icons.edit_outlined,
+                              size: 16,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
                             const SizedBox(width: 8),
-                            Text('发送一条友善的评论...',
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    color: colorScheme.onSurfaceVariant)),
+                            Text(
+                              '发送一条友善的评论...',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -1096,39 +1156,38 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
               initialValue: _commentSortFlow,
               tooltip: '排序方式',
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
               onSelected: (val) {
-                if (_commentSortFlow != val) {
-                  _commentGeneration++;
-                  _isFetchingComments = false;
-                  _isLoadingMoreComments = false;
-                  _authorCommentFilter = null;
-                  _showInitialCommentPreview = false;
-                  HapticFeedbackUtil.light();
-                  final currentOffset = _scrollController.hasClients
-                      ? _scrollController.offset
-                      : 0.0;
-                  _savedScrollOffset = currentOffset;
-                  setState(() {
-                    _commentSortFlow = val;
-                    _comments.clear();
-                    _maxId = '0';
-                    _hasMore = true;
-                    _isLoadingComments = true;
-                  });
-                  _fetchComments();
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted &&
-                        _scrollController.hasClients &&
-                        _savedScrollOffset > 0) {
-                      final maxExt = _scrollController.position.maxScrollExtent;
-                      final target = _savedScrollOffset.clamp(0.0, maxExt);
-                      if ((_scrollController.offset - target).abs() > 1.0) {
-                        _scrollController.jumpTo(target);
-                      }
+                _commentGeneration++;
+                _isFetchingComments = false;
+                _isLoadingMoreComments = false;
+                _authorCommentFilter = null;
+                _showInitialCommentPreview = false;
+                HapticFeedbackUtil.light();
+                final currentOffset = _scrollController.hasClients
+                    ? _scrollController.offset
+                    : 0.0;
+                _savedScrollOffset = currentOffset;
+                setState(() {
+                  _commentSortFlow = val;
+                  _comments.clear();
+                  _maxId = '0';
+                  _hasMore = true;
+                  _isLoadingComments = true;
+                });
+                _fetchComments();
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted &&
+                      _scrollController.hasClients &&
+                      _savedScrollOffset > 0) {
+                    final maxExt = _scrollController.position.maxScrollExtent;
+                    final target = _savedScrollOffset.clamp(0.0, maxExt);
+                    if ((_scrollController.offset - target).abs() > 1.0) {
+                      _scrollController.jumpTo(target);
                     }
-                  });
-                }
+                  }
+                });
               },
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -1153,14 +1212,28 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                 ),
               ),
               itemBuilder: (ctx) => [
-                for (final value in [2, 3])
-                  PopupMenuItem<int>(value: value, child: Row(children: [
-                    Icon(value == 2 ? Icons.person_outline : Icons.forum_outlined,
-                        size: 18, color: colorScheme.primary),
-                    const SizedBox(width: 10),
-                    Text(_commentFilters[value], style: TextStyle(
-                      fontWeight: _commentSortFlow == value ? FontWeight.bold : FontWeight.normal)),
-                  ])),
+                for (final value in [2])
+                  PopupMenuItem<int>(
+                    value: value,
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.forum_outlined,
+                          size: 18,
+                          color: colorScheme.primary,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          _commentFilters[value],
+                          style: TextStyle(
+                            fontWeight: _commentSortFlow == value
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 PopupMenuItem<int>(
                   value: 0,
                   child: Row(
@@ -1228,8 +1301,11 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
     return base.clamp(screenHeight * 0.5, screenHeight * 2.5);
   }
 
-  Widget _buildTabItem(BuildContext context,
-      {required int index, required String label}) {
+  Widget _buildTabItem(
+    BuildContext context, {
+    required int index,
+    required String label,
+  }) {
     final colorScheme = Theme.of(context).colorScheme;
     final isSelected = _selectedTabIndex == index;
 
@@ -1238,8 +1314,9 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
       onTap: () {
         if (_selectedTabIndex != index) {
           HapticFeedbackUtil.selection();
-          final currentOffset =
-              _scrollController.hasClients ? _scrollController.offset : 0.0;
+          final currentOffset = _scrollController.hasClients
+              ? _scrollController.offset
+              : 0.0;
           _savedScrollOffset = currentOffset;
           setState(() {
             _selectedTabIndex = index;
@@ -1375,7 +1452,8 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                     child: Text.rich(
                       TextSpan(
                         children: WeiboTextParser.parse(
-                          rawText: (repost.fullTextRaw != null &&
+                          rawText:
+                              (repost.fullTextRaw != null &&
                                   repost.fullTextRaw!.isNotEmpty)
                               ? repost.fullTextRaw!
                               : repost.textRaw,
@@ -1473,11 +1551,7 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
               ),
             ),
             const SizedBox(width: 8),
-            Icon(
-              Icons.favorite_rounded,
-              size: 20,
-              color: Colors.pink.shade400,
-            ),
+            Icon(Icons.favorite_rounded, size: 20, color: Colors.pink.shade400),
           ],
         ),
       ),
@@ -1553,8 +1627,9 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                                     comment.user.screenName,
                                     style: TextStyle(
                                       fontSize: 13.5,
-                                      fontWeight:
-                                          context.adjustWeight(FontWeight.bold),
+                                      fontWeight: context.adjustWeight(
+                                        FontWeight.bold,
+                                      ),
                                       color: colorScheme.onSurface,
                                     ),
                                     maxLines: 1,
@@ -1595,7 +1670,9 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                               },
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 4, vertical: 2),
+                                  horizontal: 4,
+                                  vertical: 2,
+                                ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -1633,11 +1710,7 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                     // Subtitle: Time + IP / AI generation label (e.g. "10分钟前 来自 湖北", "18分钟前 来自 AI生成")
                     Text(
                       comment.formattedIpOrSource.isNotEmpty
-                          ? '${WeiboTimeFormatter.format(
-                              rawDate: comment.createdAt,
-                              settings: ref.watch(cardDisplayProvider),
-                              language: 'zh',
-                            )}  ${comment.formattedIpOrSource}'
+                          ? '${WeiboTimeFormatter.format(rawDate: comment.createdAt, settings: ref.watch(cardDisplayProvider), language: 'zh')}  ${comment.formattedIpOrSource}'
                           : WeiboTimeFormatter.format(
                               rawDate: comment.createdAt,
                               settings: ref.watch(cardDisplayProvider),
@@ -1679,8 +1752,12 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
 
                     // Comment Images if any
                     if (comment.pics.isNotEmpty) ...[
-                      _buildCommentPics(context, comment.pics, comment.id,
-                          comment.user.screenName),
+                      _buildCommentPics(
+                        context,
+                        comment.pics,
+                        comment.id,
+                        comment.user.screenName,
+                      ),
                       const SizedBox(height: 6),
                     ],
 
@@ -1709,12 +1786,14 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 260),
                                   color: _isHighlightedComment(sub.id)
-                                      ? colorScheme.primary
-                                          .withValues(alpha: 0.12)
+                                      ? colorScheme.primary.withValues(
+                                          alpha: 0.12,
+                                        )
                                       : Colors.transparent,
                                   child: Padding(
-                                    padding:
-                                        const EdgeInsets.symmetric(vertical: 3),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 3,
+                                    ),
                                     child: Row(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
@@ -1730,11 +1809,11 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                                               MaterialPageRoute(
                                                 builder: (ctx) =>
                                                     UserProfilePage(
-                                                  user: sub.user,
-                                                  uid: sub.user.id,
-                                                  screenName:
-                                                      sub.user.screenName,
-                                                ),
+                                                      user: sub.user,
+                                                      uid: sub.user.id,
+                                                      screenName:
+                                                          sub.user.screenName,
+                                                    ),
                                               ),
                                             );
                                           },
@@ -1753,16 +1832,19 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                                                 children: [
                                                   InkWell(
                                                     onTap: () {
-                                                      Navigator.of(context)
-                                                          .push(
+                                                      Navigator.of(
+                                                        context,
+                                                      ).push(
                                                         MaterialPageRoute(
                                                           builder: (ctx) =>
                                                               UserProfilePage(
-                                                            user: sub.user,
-                                                            uid: sub.user.id,
-                                                            screenName: sub.user
-                                                                .screenName,
-                                                          ),
+                                                                user: sub.user,
+                                                                uid:
+                                                                    sub.user.id,
+                                                                screenName: sub
+                                                                    .user
+                                                                    .screenName,
+                                                              ),
                                                         ),
                                                       );
                                                     },
@@ -1771,15 +1853,17 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                                                       style: TextStyle(
                                                         fontWeight: context
                                                             .adjustWeight(
-                                                                FontWeight
-                                                                    .bold),
+                                                              FontWeight.bold,
+                                                            ),
                                                         fontSize: 12.5,
                                                         color:
                                                             colorScheme.primary,
                                                       ),
                                                     ),
                                                   ),
-                                                  if (sub.user.fansIconUrl
+                                                  if (sub
+                                                      .user
+                                                      .fansIconUrl
                                                       .isNotEmpty)
                                                     WeiboFansIcon(
                                                       url: sub.user.fansIconUrl,
@@ -1791,9 +1875,9 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                                                       size: 13,
                                                       color:
                                                           sub.user.verifiedType ==
-                                                                  0
-                                                              ? Colors.amber
-                                                              : Colors.blue,
+                                                              0
+                                                          ? Colors.amber
+                                                          : Colors.blue,
                                                     ),
                                                   if (_isStatusAuthor(sub.user))
                                                     _buildBloggerBadge(context),
@@ -1806,26 +1890,27 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                                                       HitTestBehavior.opaque,
                                                   onTap: () =>
                                                       _showCommentOptions(
-                                                          context, sub),
+                                                        context,
+                                                        sub,
+                                                      ),
                                                   child: SelectionArea(
                                                     child: Text.rich(
                                                       TextSpan(
-                                                        children:
-                                                            WeiboTextParser
-                                                                .parse(
+                                                        children: WeiboTextParser.parse(
                                                           rawText: sub.textRaw,
                                                           context: context,
                                                           urlStruct:
                                                               sub.urlStruct,
-                                                          defaultStyle:
-                                                              TextStyle(
+                                                          defaultStyle: TextStyle(
                                                             fontSize: 12.5,
                                                             color: colorScheme
                                                                 .onSurface,
                                                           ),
                                                           onPlainTextTap: () =>
                                                               _showCommentOptions(
-                                                                  context, sub),
+                                                                context,
+                                                                sub,
+                                                              ),
                                                         ),
                                                       ),
                                                     ),
@@ -1858,7 +1943,9 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                         onTap: () => _showNestedComments(comment),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 4),
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -1867,13 +1954,17 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
                                 style: TextStyle(
                                   color: colorScheme.primary,
                                   fontSize: 12.5,
-                                  fontWeight:
-                                      context.adjustWeight(FontWeight.w600),
+                                  fontWeight: context.adjustWeight(
+                                    FontWeight.w600,
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 2),
-                              Icon(Icons.chevron_right_rounded,
-                                  size: 16, color: colorScheme.primary),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                size: 16,
+                                color: colorScheme.primary,
+                              ),
                             ],
                           ),
                         ),
@@ -1890,8 +1981,8 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
   }
 
   bool _isStatusAuthor(WeiboUserModel user) {
-    final authorId =
-        (_currentStatus?.user.id ?? widget.status?.user.id ?? '').trim();
+    final authorId = (_currentStatus?.user.id ?? widget.status?.user.id ?? '')
+        .trim();
     final userId = user.id.trim();
     return authorId.isNotEmpty && userId.isNotEmpty && authorId == userId;
   }
@@ -1917,12 +2008,20 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
     );
   }
 
-  Widget _buildCommentPics(BuildContext context, List<WeiboPicModel> pics,
-      String commentId, String authorName) {
+  Widget _buildCommentPics(
+    BuildContext context,
+    List<WeiboPicModel> pics,
+    String commentId,
+    String authorName,
+  ) {
     final validPics = pics
         .where((p) => p.largeUrl.isNotEmpty || p.thumbnail.isNotEmpty)
         .toList();
     if (validPics.isEmpty) return const SizedBox.shrink();
+    final galleryScope = _commentGalleryScopes.putIfAbsent(
+      commentId,
+      () => Object(),
+    );
 
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -1937,106 +2036,107 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
       }
 
       return GestureDetector(
-        onTap: () {
-          HapticFeedbackUtil.light();
-          Navigator.of(context).push(
-            PageRouteBuilder(
-              opaque: false,
-              barrierColor: Colors.black,
-              transitionDuration: const Duration(milliseconds: 220),
-              reverseTransitionDuration: const Duration(milliseconds: 200),
-              pageBuilder: (_, __, ___) => ImageGalleryPage(
-                pics: validPics,
-                initialIndex: 0,
-                statusId: commentId,
-                authorName: authorName,
-              ),
-              transitionsBuilder: (_, animation, __, child) => FadeTransition(
-                opacity: animation,
-                child: child,
-              ),
-            ),
-          );
-        },
+        onTap: () => _openCommentGallery(
+          context,
+          pics: validPics,
+          index: 0,
+          commentId: commentId,
+          authorName: authorName,
+          scope: galleryScope,
+        ),
         child: Container(
-          constraints: const BoxConstraints(
-            maxWidth: 160,
-            maxHeight: 180,
-          ),
+          constraints: const BoxConstraints(maxWidth: 160, maxHeight: 180),
           child: AspectRatio(
             aspectRatio: aspectRatio,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: ExtendedImage.network(
-                    pic.bmiddleUrl.isNotEmpty ? pic.bmiddleUrl : pic.largeUrl,
-                    headers: ApiConstants.imageHeaders,
-                    fit: BoxFit.cover,
-                    cache: true,
-                    loadStateChanged: (ExtendedImageState state) {
-                      switch (state.extendedImageLoadState) {
-                        case LoadState.loading:
-                          return Container(
-                            color: colorScheme.surfaceContainerHighest
-                                .withValues(alpha: 0.35),
-                          );
-                        case LoadState.completed:
-                          return state.completedWidget;
-                        case LoadState.failed:
-                          return const SizedBox.shrink();
-                      }
-                    },
-                  ),
-                ),
-                if (pic.isLivePhoto)
-                  Positioned(
-                    bottom: 4,
-                    right: 4,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 1.5),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.72),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.motion_photos_on_rounded,
-                              size: 10, color: Colors.white),
-                          SizedBox(width: 2),
-                          Text('LIVE',
-                              style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 8.5,
-                                  fontWeight: FontWeight.bold)),
-                        ],
-                      ),
+            child: ImageGalleryHeroThumbnail(
+              scope: galleryScope,
+              index: 0,
+              pic: pic,
+              key: ValueKey('status-comment-image-$commentId-0'),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: ExtendedImage.network(
+                      pic.bmiddleUrl.isNotEmpty ? pic.bmiddleUrl : pic.largeUrl,
+                      headers: ApiConstants.imageHeaders,
+                      fit: BoxFit.cover,
+                      cache: true,
+                      loadStateChanged: (ExtendedImageState state) {
+                        switch (state.extendedImageLoadState) {
+                          case LoadState.loading:
+                            return Container(
+                              color: colorScheme.surfaceContainerHighest
+                                  .withValues(alpha: 0.35),
+                            );
+                          case LoadState.completed:
+                            return state.completedWidget;
+                          case LoadState.failed:
+                            return const SizedBox.shrink();
+                        }
+                      },
                     ),
-                  )
-                else if (pic.isGif || pic.isLong)
-                  Positioned(
-                    bottom: 4,
-                    right: 4,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 1.5),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.7),
-                        borderRadius: BorderRadius.circular(4),
+                  ),
+                  if (pic.isLivePhoto)
+                    Positioned(
+                      bottom: 4,
+                      right: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 1.5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.72),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.motion_photos_on_rounded,
+                              size: 10,
+                              color: Colors.white,
+                            ),
+                            SizedBox(width: 2),
+                            Text(
+                              'LIVE',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 8.5,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                      child: Text(
-                        pic.isGif ? 'GIF' : '长图',
-                        style: const TextStyle(
+                    )
+                  else if (pic.isGif || pic.isLong)
+                    Positioned(
+                      bottom: 4,
+                      right: 4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 1.5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          pic.isGif ? 'GIF' : '长图',
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 9,
-                            fontWeight: FontWeight.bold),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -2050,55 +2150,72 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
       children: List.generate(validPics.length, (idx) {
         final pic = validPics[idx];
         return GestureDetector(
-          onTap: () {
-            HapticFeedbackUtil.light();
-            Navigator.of(context).push(
-              PageRouteBuilder(
-                opaque: false,
-                barrierColor: Colors.black,
-                transitionDuration: const Duration(milliseconds: 220),
-                reverseTransitionDuration: const Duration(milliseconds: 200),
-                pageBuilder: (_, __, ___) => ImageGalleryPage(
-                  pics: validPics,
-                  initialIndex: idx,
-                  statusId: commentId,
-                  authorName: authorName,
+          onTap: () => _openCommentGallery(
+            context,
+            pics: validPics,
+            index: idx,
+            commentId: commentId,
+            authorName: authorName,
+            scope: galleryScope,
+          ),
+          child: ImageGalleryHeroThumbnail(
+            scope: galleryScope,
+            index: idx,
+            pic: pic,
+            key: ValueKey('status-comment-image-$commentId-$idx'),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: SizedBox(
+                width: 80,
+                height: 80,
+                child: ExtendedImage.network(
+                  pic.bmiddleUrl.isNotEmpty ? pic.bmiddleUrl : pic.largeUrl,
+                  headers: ApiConstants.imageHeaders,
+                  fit: BoxFit.cover,
+                  cache: true,
+                  loadStateChanged: (ExtendedImageState state) {
+                    switch (state.extendedImageLoadState) {
+                      case LoadState.loading:
+                        return Container(
+                          color: colorScheme.surfaceContainerHighest.withValues(
+                            alpha: 0.35,
+                          ),
+                        );
+                      case LoadState.completed:
+                        return state.completedWidget;
+                      case LoadState.failed:
+                        return const SizedBox.shrink();
+                    }
+                  },
                 ),
-                transitionsBuilder: (_, animation, __, child) => FadeTransition(
-                  opacity: animation,
-                  child: child,
-                ),
-              ),
-            );
-          },
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: SizedBox(
-              width: 80,
-              height: 80,
-              child: ExtendedImage.network(
-                pic.bmiddleUrl.isNotEmpty ? pic.bmiddleUrl : pic.largeUrl,
-                headers: ApiConstants.imageHeaders,
-                fit: BoxFit.cover,
-                cache: true,
-                loadStateChanged: (ExtendedImageState state) {
-                  switch (state.extendedImageLoadState) {
-                    case LoadState.loading:
-                      return Container(
-                        color: colorScheme.surfaceContainerHighest
-                            .withValues(alpha: 0.35),
-                      );
-                    case LoadState.completed:
-                      return state.completedWidget;
-                    case LoadState.failed:
-                      return const SizedBox.shrink();
-                  }
-                },
               ),
             ),
           ),
         );
       }),
+    );
+  }
+
+  void _openCommentGallery(
+    BuildContext context, {
+    required List<WeiboPicModel> pics,
+    required int index,
+    required String commentId,
+    required String authorName,
+    required Object scope,
+  }) {
+    HapticFeedbackUtil.light();
+    PhysicsSpringGalleryRoute.openFromSource(
+      context,
+      PhysicsSpringGalleryRoute(
+        child: ImageGalleryPage(
+          pics: pics,
+          initialIndex: index,
+          statusId: commentId,
+          authorName: authorName,
+          heroScope: scope,
+        ),
+      ),
     );
   }
 }

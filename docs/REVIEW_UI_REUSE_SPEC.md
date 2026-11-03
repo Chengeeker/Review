@@ -12,12 +12,12 @@ Review 当前默认采用 Flutter Material 3，并在主题之上增加局部磨
 
 ## 2. 必须一起阅读的源码
 
-以下路径均相对 `D:\App\Review`，不是要求把整套微博业务复制到新应用。
+以下路径均相对 `D:\App\Review`，不是要求把整套动态业务复制到新应用。
 
 | 层次 | 源码入口 | 迁移责任 |
 |---|---|---|---|
 | 应用入口 | `lib/main.dart` | 明暗主题接线、DynamicColorBuilder、中文 locale、DefaultTextStyle |
-| 主题与状态 | `lib/core/theme/app_theme.dart`、`theme_provider.dart`、`weibo_style_provider.dart` | 配色、字体、组件主题、路由动效；核对 `lib/core/storage/storage_service.dart` 中的实际默认值 |
+| 主题与状态 | `lib/core/theme/app_theme.dart`、`theme_provider.dart`、样式偏好 provider | 配色、字体、组件主题、路由动效；核对 `lib/core/storage/storage_service.dart` 中的实际默认值 |
 | 页面壳与磨砂 | `lib/core/design_system/components/review_page_scaffold.dart`、`review_frosted_app_bar.dart` | 安全区、内容 inset、Material 色层、局部滤镜 |
 | 导航与主框架 | `lib/core/design_system/components/review_navigation_bar.dart`、`lib/features/home/presentation/main_scaffold.dart` | 悬浮/贴底分支、页面保活、Tab 转场、重复点击行为 |
 | 设置组件 | `lib/core/widgets/app_section_card.dart`、`lib/core/design_system/components/review_preference_tile.dart`、`review_switch_tile.dart`、`review_choice_tile.dart` | 设置分组、导航行、开关行、单选行；不能用一个普通 ListTile 替换全部 |
@@ -104,7 +104,7 @@ UI 规范：D:\App\Review\docs\REVIEW_UI_REUSE_SPEC.md
 1. 先读目标项目的 AGENTS.md/开发文档，再读 Review UI 规范、当前开发说明与工程复盘中的 UI 防回归记录。以指定基线的实际源码及最终调用参数为准；历史 Miuix 页面、旧版液态玻璃底栏和旧 ShaderMask 顶栏方案不能作为当前实现。3.4.1 液态玻璃底栏按当前 `ReviewNavigationBar` 实现接入，液态玻璃开关与悬浮底栏偏好分开显示及保存。
 2. 开工前固定参考快照：记录 Review HEAD、工作区改动、Flutter SDK/锁文件，以及需迁移 UI 文件的快照或哈希。不要只用版本号标识参考。读取本地工作区，不能自动改用远程 main 或升级后的默认 M3。
 3. 先列“目标页面 → Review 对应页面 → 共享组件 → 允许替换的业务内容”映射。按规范第 2 节读取主题、入口接线、页面壳、导航、设置卡片和行、对应业务页、反馈/触感。追踪调用处覆盖，不能只复制 ThemeData。
-4. 同为 Flutter 时，直接迁移需要的 UI 实现和必要依赖，保持组件树、最终颜色角色、padding/margin、圆角、字体/行高、图标状态、阴影、分割线、系统栏、键盘避让和动效参数。允许改 import、类名、业务模型、文案、资源和回调；不能凭审美替换控件、合并不同卡片样式、重新排版或加入“更现代”的设计。按依赖边界接入目标业务，不搬入微博认证、接口、凭据和无关功能。
+4. 同为 Flutter 时，直接迁移需要的 UI 实现和必要依赖，保持组件树、最终颜色角色、padding/margin、圆角、字体/行高、图标状态、阴影、分割线、系统栏、键盘避让和动效参数。允许改 import、类名、业务模型、文案、资源和回调；不能凭审美替换控件、合并不同卡片样式、重新排版或加入“更现代”的设计。按依赖边界接入目标业务，不搬入动态认证、接口、凭据和无关功能。
 5. 分别复用标准响应式 56dp 悬浮底栏、68dp 贴底底栏，以及只用于悬浮栏的可选玻璃分支；两种悬浮样式共用宽度和高度，玻璃分支需要 GlassPage/body source、指定折射参数和 +76dp 安全留白。设置分组 24dp 无边框无阴影；默认信息流卡片 22dp、8/4 margin、elevation 1；磨砂顶栏 Material alpha 0.45 + 顶部 0.95→底部 0 渐变 + 裁剪内 sigma 20。其他细节全部按规范和最终源码，不推广成全局统一值。
 6. 主 Tab 保活及双页 260ms 平移、普通路由 320/220ms 覆盖式转场、图库 Hero、弹窗 60ms 原地淡入分别接入。保留返回手势、RTL、系统减少动画、触感开关和防重复反馈。局部滤镜保持裁剪，列表缓存和分页不因 UI 迁移退化。
 7. 固定验收环境：相同设备/模拟器、屏幕逻辑尺寸和 DPR、系统字体及缩放/字重、locale、系统导航方式、主题种子色/动态取色、明暗/纯黑、悬浮底栏开关、卡片样式、内容数据和滚动位置。先用动态取色关闭、经典红、默认字重、默认 card_rounded 建立可重复基线；若参考真机采用其他设置，则两端一起对齐。
@@ -144,7 +144,7 @@ UI 规范：D:\App\Review\docs\REVIEW_UI_REUSE_SPEC.md
 
 ### 3.10.2 增补：聊天视频与卡片点击
 
-私信和群聊附件视频沿用图片的紧凑媒体布局，封面内居中显示播放按钮，缺封面显示深色播放入口，保留真实附言并移除协议占位“分享视频”。列表不自动播放。点击轻震动，沿用图片放大/缩回 Hero 转场进入现有画廊视频组件；转场只移动封面，完成后才启动解码器。链接卡片外观不变，点击优先已有微博/用户实体对应的原生页面，缺失时使用有效长链接或 HTTPS 短链。
+私信和群聊附件视频沿用图片的紧凑媒体布局，封面内居中显示播放按钮，缺封面显示深色播放入口，保留真实附言并移除协议占位“分享视频”。列表不自动播放。点击轻震动，沿用图片放大/缩回 Hero 转场进入现有画廊视频组件；转场只移动封面，完成后才启动解码器。链接卡片外观不变，点击优先已有动态/用户实体对应的原生页面，缺失时使用有效长链接或 HTTPS 短链。
 
 ### 3.10.0 增补：信息流 HDR 角标与聊天图片转场
 

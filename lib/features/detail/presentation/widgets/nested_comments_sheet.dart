@@ -6,6 +6,7 @@ import '../../../../core/constants/api_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/theme/card_display_provider.dart';
 import '../../../../core/utils/haptic_feedback_util.dart';
+import '../../../../core/utils/spring_page_route.dart';
 import '../../../../core/utils/weibo_text_parser.dart';
 import '../../../../core/utils/weibo_time_formatter.dart';
 import '../../../../core/widgets/app_avatar.dart';
@@ -44,6 +45,7 @@ class NestedCommentsSheet extends ConsumerStatefulWidget {
 class _NestedCommentsSheetState extends ConsumerState<NestedCommentsSheet> {
   final _scrollController = ScrollController();
   final _comments = <WeiboCommentModel>[];
+  final _replyGalleryScopes = <String, Object>{};
   String _maxId = '0';
   bool _hasMore = true;
   bool _isLoading = false;
@@ -171,69 +173,88 @@ class _NestedCommentsSheetState extends ConsumerState<NestedCommentsSheet> {
         .where((pic) => pic.largeUrl.isNotEmpty || pic.thumbnail.isNotEmpty)
         .toList();
     if (pics.isEmpty) return const SizedBox.shrink();
+    final galleryScope =
+        _replyGalleryScopes.putIfAbsent(reply.id, () => Object());
 
     return Wrap(
       spacing: 6,
       runSpacing: 6,
-      children: pics.map((pic) {
+      children: List.generate(pics.length, (index) {
+        final pic = pics[index];
         final url = pic.bmiddleUrl.isNotEmpty
             ? pic.bmiddleUrl
             : (pic.largeUrl.isNotEmpty ? pic.largeUrl : pic.thumbnail);
         return GestureDetector(
-          onTap: () {
-            HapticFeedbackUtil.light();
-            Navigator.of(context).push(
-              PageRouteBuilder(
-                opaque: false,
-                barrierColor: Colors.black,
-                transitionDuration: const Duration(milliseconds: 220),
-                reverseTransitionDuration: const Duration(milliseconds: 200),
-                pageBuilder: (_, __, ___) => ImageGalleryPage(
-                  pics: pics,
-                  initialIndex: pics.indexOf(pic),
-                  statusId: reply.id,
-                  authorName: reply.user.screenName,
-                ),
-                transitionsBuilder: (_, animation, __, child) =>
-                    FadeTransition(opacity: animation, child: child),
+          key: ValueKey('nested-comment-image-${reply.id}-$index'),
+          onTap: () => _openReplyGallery(
+            context,
+            reply,
+            pics,
+            index,
+            galleryScope,
+          ),
+          child: ImageGalleryHeroThumbnail(
+            scope: galleryScope,
+            index: index,
+            pic: pic,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: ExtendedImage.network(
+                url,
+                headers: ApiConstants.imageHeaders,
+                width: 92,
+                height: 92,
+                fit: BoxFit.cover,
+                cache: true,
+                loadStateChanged: (state) {
+                  switch (state.extendedImageLoadState) {
+                    case LoadState.loading:
+                      return Container(
+                        width: 92,
+                        height: 92,
+                        color:
+                            Theme.of(context).colorScheme.surfaceContainerHighest,
+                      );
+                    case LoadState.completed:
+                      return state.completedWidget;
+                    case LoadState.failed:
+                      return Container(
+                        width: 92,
+                        height: 92,
+                        color:
+                            Theme.of(context).colorScheme.surfaceContainerHighest,
+                        alignment: Alignment.center,
+                        child: const Icon(Icons.broken_image_outlined),
+                      );
+                  }
+                },
               ),
-            );
-          },
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: ExtendedImage.network(
-              url,
-              headers: ApiConstants.imageHeaders,
-              width: 92,
-              height: 92,
-              fit: BoxFit.cover,
-              cache: true,
-              loadStateChanged: (state) {
-                switch (state.extendedImageLoadState) {
-                  case LoadState.loading:
-                    return Container(
-                      width: 92,
-                      height: 92,
-                      color:
-                          Theme.of(context).colorScheme.surfaceContainerHighest,
-                    );
-                  case LoadState.completed:
-                    return state.completedWidget;
-                  case LoadState.failed:
-                    return Container(
-                      width: 92,
-                      height: 92,
-                      color:
-                          Theme.of(context).colorScheme.surfaceContainerHighest,
-                      alignment: Alignment.center,
-                      child: const Icon(Icons.broken_image_outlined),
-                    );
-                }
-              },
             ),
           ),
         );
-      }).toList(),
+      }),
+    );
+  }
+
+  void _openReplyGallery(
+    BuildContext context,
+    WeiboCommentModel reply,
+    List<WeiboPicModel> pics,
+    int index,
+    Object scope,
+  ) {
+    HapticFeedbackUtil.light();
+    PhysicsSpringGalleryRoute.openFromSource(
+      context,
+      PhysicsSpringGalleryRoute(
+        child: ImageGalleryPage(
+          pics: pics,
+          initialIndex: index,
+          statusId: reply.id,
+          authorName: reply.user.screenName,
+          heroScope: scope,
+        ),
+      ),
     );
   }
 

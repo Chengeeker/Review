@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -460,6 +462,25 @@ class StorageService {
       _prefs.setString(keyCurrentPresetAppIconId, v);
 
   static const Set<String> allowedExportKeys = {
+    'key_theme_color_index',
+    'key_is_pure_black_dark',
+    keyBrowsingHistory,
+    keyBrowsingHistoryStatuses,
+    keyUseCustomFontWeight,
+    keyCustomFontWeightDelta,
+    keyAppTextScale,
+    keyScreenRefreshRateMode,
+    keyBlockedUserIds,
+    keyMutedMessageGroupIds,
+    keyMessageUnreadBaselines,
+    keyMessageContactUnreadBaselines,
+    keyMessageNotificationsEnabled,
+    keyMessageNotificationMentions,
+    keyMessageNotificationLikes,
+    keyMessageNotificationComments,
+    keyMessageNotificationDirectMessages,
+    keyMessageNotificationLastCounts,
+    keyMessageNotificationInitialized,
     keyCurrentPresetAppIconId,
     keyThemeMode,
     keyUseDynamicColor,
@@ -500,39 +521,182 @@ class StorageService {
     keyWebDavDirectory,
   };
 
-  Map<String, dynamic> exportAllData() {
+  static const credentialKeys = {
+    keySubCookie,
+    keySubpCookie,
+    keyFullCookie,
+    keyDesktopCookie,
+    keyMobileCookie,
+    keyCookieScopeSchemaVersion,
+    keyAccessToken,
+    keyIsLoggedIn,
+    keyUserUid,
+    keyUserNickname,
+    keyUserAvatar,
+    keyWebDavPassword,
+  };
+
+  static const _authChannel = MethodChannel('com.review/weibo_auth');
+
+  static const _backupBoolKeys = {
+    'key_is_pure_black_dark',
+    keyIsLoggedIn,
+    keyUseDynamicColor,
+    keyUseFloatingNavBar,
+    keyUseLiquidGlass,
+    keyEnableHaptics,
+    keyUseCustomFontWeight,
+    keyShowWeekday,
+    keyShowYear,
+    keyShowTimezone,
+    keyShowSeconds,
+    keyShowSource,
+    keyShowRegion,
+    keyLinkColorFollowTheme,
+    keyShowRemarkAndName,
+    keyShowBackgroundImage,
+    keyShowUserActivityIcon,
+    keyLargeImageMode,
+    keyRoundedImageCorners,
+    keyShowMenuAtBottom,
+    keyShowProfileLikedTweets,
+    keyHotSearchVerticalLayout,
+    keyMessageNotificationsEnabled,
+    keyMessageNotificationMentions,
+    keyMessageNotificationLikes,
+    keyMessageNotificationComments,
+    keyMessageNotificationDirectMessages,
+    keyMessageNotificationInitialized,
+  };
+  static const _backupIntKeys = {
+    keyThemeMode,
+    'key_theme_color_index',
+    keyCookieScopeSchemaVersion,
+    keyAutoClearImageCacheThresholdMb,
+    keyCustomFontWeightDelta,
+    keyScreenRefreshRateMode,
+    keyImageSavePathType,
+    keyVideoSavePathType,
+  };
+  static const _backupDoubleKeys = {
+    keyAppTextScale,
+    keyWeiboFontSize,
+    keyWeiboFontLineHeight,
+  };
+  static const _backupListKeys = {
+    keySearchHistory,
+    keyBrowsingHistory,
+    keyBrowsingHistoryStatuses,
+    keyBlockedUserIds,
+    keyMutedMessageGroupIds,
+  };
+
+  Future<Map<String, dynamic>> exportAllData({
+    bool includeCredentials = false,
+  }) async {
     final map = <String, dynamic>{};
-    for (final key in allowedExportKeys) {
+    for (final key in {
+      ...allowedExportKeys,
+      if (includeCredentials) ...credentialKeys,
+    }) {
       if (_prefs.containsKey(key)) {
         map[key] = _prefs.get(key);
       }
     }
-    return {
+    final data = <String, dynamic>{
       'app': 'Review',
-      'version': '1.0',
+      'version': '2.0',
+      'backup_mode': includeCredentials ? 'full' : 'safe',
       'exported_at': DateTime.now().toIso8601String(),
       'preferences': map,
     };
+    if (includeCredentials &&
+        !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android) {
+      data['native_session'] = await _authChannel.invokeMethod<String>(
+        'exportBackupSession',
+        {'uid': map[keyUserUid] ?? ''},
+      );
+    }
+    return data;
+  }
+
+  void validateBackup(Map<String, dynamic> data) {
+    if (data['app'] != 'Review' ||
+        !['1.0', '2.0'].contains(data['version']) ||
+        data['preferences'] is! Map<String, dynamic> ||
+        (data['version'] == '2.0' &&
+            !['safe', 'full'].contains(data['backup_mode']))) {
+      throw const FormatException('无效的 Review 备份');
+    }
+    final prefs = data['preferences'] as Map<String, dynamic>;
+    if (data['backup_mode'] == 'full' && data['native_session'] != null) {
+      final raw = data['native_session'];
+      if (raw is! String) throw const FormatException('无效的原生会话');
+      final session = jsonDecode(raw);
+      if (session is! Map<String, dynamic> ||
+          session['uid'] is! String ||
+          session['uid'] == '' ||
+          session['uid'] != prefs[keyUserUid]) {
+        throw const FormatException('备份账号与原生会话不一致');
+      }
+    }
+    for (final entry in prefs.entries) {
+      if (!allowedExportKeys.contains(entry.key) &&
+          !credentialKeys.contains(entry.key)) {
+        continue;
+      }
+      final value = entry.value;
+      final valid = _backupBoolKeys.contains(entry.key)
+          ? value is bool
+          : _backupIntKeys.contains(entry.key)
+          ? value is int
+          : _backupDoubleKeys.contains(entry.key)
+          ? value is num && value.isFinite
+          : _backupListKeys.contains(entry.key)
+          ? value is List && value.every((item) => item is String)
+          : value is String;
+      if (!valid) {
+        throw const FormatException('无效的备份设置');
+      }
+    }
   }
 
   Future<void> restoreAllData(Map<String, dynamic> data) async {
+    validateBackup(data);
+    final full = data['version'] == '2.0' && data['backup_mode'] == 'full';
+    if (full && !kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      final prefs = data['preferences'] as Map<String, dynamic>;
+      final restored = await _authChannel.invokeMethod<bool>(
+        'restoreBackupSession',
+        {'session': data['native_session'], 'uid': prefs[keyUserUid] ?? ''},
+      );
+      if (restored != true) throw StateError('原生会话恢复失败');
+    }
+    // Replace the complete auth group to avoid mixing two accounts' cookies.
+    if (full) await clearAuth();
     final prefsMap = data['preferences'];
     if (prefsMap is Map<String, dynamic>) {
       for (final entry in prefsMap.entries) {
         final k = entry.key;
-        if (!allowedExportKeys.contains(k)) continue;
-        final v = entry.value;
-        if (v is bool) {
-          await _prefs.setBool(k, v);
-        } else if (v is int) {
-          await _prefs.setInt(k, v);
-        } else if (v is double) {
-          await _prefs.setDouble(k, v);
-        } else if (v is String) {
-          await _prefs.setString(k, v);
-        } else if (v is List) {
-          await _prefs.setStringList(k, v.map((e) => e.toString()).toList());
+        if (!allowedExportKeys.contains(k) &&
+            !(full && credentialKeys.contains(k))) {
+          continue;
         }
+        final v = entry.value;
+        bool saved;
+        if (_backupDoubleKeys.contains(k)) {
+          saved = await _prefs.setDouble(k, (v as num).toDouble());
+        } else if (v is bool) {
+          saved = await _prefs.setBool(k, v);
+        } else if (v is int) {
+          saved = await _prefs.setInt(k, v);
+        } else if (v is String) {
+          saved = await _prefs.setString(k, v);
+        } else {
+          saved = await _prefs.setStringList(k, List<String>.from(v as List));
+        }
+        if (!saved) throw StateError('备份数据写入失败');
       }
     }
   }

@@ -36,6 +36,9 @@ class _FeedViewState extends ConsumerState<FeedView>
   DateTime? _lastTopBarTapTime;
   Timer? _topBarSingleTapTimer;
 
+  int? _findFeedChildIndex(Key key, Map<String, int> indices) =>
+      key is ValueKey<String> ? indices[key.value] : null;
+
   @override
   void initState() {
     super.initState();
@@ -93,6 +96,10 @@ class _FeedViewState extends ConsumerState<FeedView>
     final topBarBackground =
         theme.appBarTheme.backgroundColor ?? theme.scaffoldBackgroundColor;
     final topChromeHeight = MediaQuery.paddingOf(context).top + kToolbarHeight;
+    final feedStatusIndices = {
+      for (var index = 0; index < feedState.statuses.length; index++)
+        feedState.statuses[index].id: index,
+    };
 
     final isFriendsTab =
         feedState.currentCategory == 'friends' ||
@@ -376,29 +383,32 @@ class _FeedViewState extends ConsumerState<FeedView>
                                 : 16.0,
                           ),
                           sliver: SliverList(
-                            delegate: SliverChildBuilderDelegate((
-                              context,
-                              index,
-                            ) {
-                              // 双保险：滑动到倒数第 8 条微博时，提前向后预请求下一页内容
-                              if (index >= feedState.statuses.length - 8 &&
-                                  feedState.hasMore &&
-                                  !feedState.isLoading) {
-                                WidgetsBinding.instance.addPostFrameCallback((
-                                  _,
-                                ) {
-                                  ref
-                                      .read(feedControllerProvider.notifier)
-                                      .loadMore();
-                                });
-                              }
-                              final status = feedState.statuses[index];
-                              return TweetCard(
-                                status: status,
-                                showFeedReason:
-                                    feedState.currentCategory == 'all_follow',
-                              );
-                            }, childCount: feedState.statuses.length),
+                            delegate: SliverChildBuilderDelegate(
+                              (context, index) {
+                                // 双保险：滑动到倒数第 8 条微博时，提前向后预请求下一页内容
+                                if (index >= feedState.statuses.length - 8 &&
+                                    feedState.hasMore &&
+                                    !feedState.isLoading) {
+                                  WidgetsBinding.instance.addPostFrameCallback((
+                                    _,
+                                  ) {
+                                    ref
+                                        .read(feedControllerProvider.notifier)
+                                        .loadMore();
+                                  });
+                                }
+                                final status = feedState.statuses[index];
+                                return TweetCard(
+                                  key: ValueKey(status.id),
+                                  status: status,
+                                  showFeedReason:
+                                      feedState.currentCategory == 'all_follow',
+                                );
+                              },
+                              childCount: feedState.statuses.length,
+                              findChildIndexCallback: (key) =>
+                                  _findFeedChildIndex(key, feedStatusIndices),
+                            ),
                           ),
                         ),
                     ],
