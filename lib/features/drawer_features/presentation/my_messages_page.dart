@@ -287,10 +287,14 @@ class _MyMessagesPageState extends ConsumerState<MyMessagesPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '消息通知',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
+                        Padding(
+                          // Include the quick-action card's 0.8dp border.
+                          padding: const EdgeInsetsDirectional.only(start: 14.8),
+                          child: Text(
+                            '消息通知',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 12),

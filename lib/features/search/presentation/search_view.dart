@@ -358,7 +358,7 @@ class _SearchViewState extends ConsumerState<SearchView> {
           ),
         if (users.isNotEmpty) ...[
           Padding(
-            padding: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
             child: Row(
               children: [
                 Icon(
@@ -688,22 +688,25 @@ class _SearchViewState extends ConsumerState<SearchView> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Row(
-              children: [
-                const Icon(
-                  Icons.local_fire_department_rounded,
-                  size: 19,
-                  color: Color(0xFFFF5722),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  '热门搜索',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: context.adjustWeight(FontWeight.bold),
+            Padding(
+              padding: const EdgeInsetsDirectional.only(start: 14),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.local_fire_department_rounded,
+                    size: 19,
+                    color: Color(0xFFFF5722),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 6),
+                  Text(
+                    '热门搜索',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: context.adjustWeight(FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
             ),
             Row(
               mainAxisSize: MainAxisSize.min,

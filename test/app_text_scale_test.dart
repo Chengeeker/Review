@@ -8,6 +8,22 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  test(
+    'default scale is 95 percent and explicit saved choices survive',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final storage = await StorageService.init();
+      expect(storage.getAppTextScale(), 0.95);
+      expect(const ThemeState().appTextScale, 0.95);
+      expect(const AppTextScaler(TextScaler.noScaling, 0.95).scale(16), 15.2);
+      for (final savedScale in [1.0, 1.2]) {
+        await storage.setAppTextScale(savedScale);
+        final notifier = ThemeNotifier(storage);
+        expect(notifier.state.appTextScale, savedScale);
+        notifier.dispose();
+      }
+    },
+  );
   test('app scale is applied through the platform scaling curve', () {
     const scaler = AppTextScaler(_QuadraticTextScaler(), 1.2);
 
@@ -58,7 +74,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('应用字体大小'), findsOneWidget);
-    expect(find.text('100%'), findsOneWidget);
+    expect(find.text('95%'), findsOneWidget);
     expect(tester.widget<Slider>(slider).divisions, 12);
   });
 }

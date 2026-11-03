@@ -160,7 +160,7 @@ class _CustomAppIconPageState extends ConsumerState<CustomAppIconPage> {
 
           // 2. 预设图标列表
           Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 8),
+            padding: const EdgeInsetsDirectional.only(start: 16, bottom: 8),
             child: Text(
               '可选预设图标',
               style: TextStyle(

@@ -307,20 +307,21 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
             const SizedBox(height: 16),
 
             // 2. Configuration Card
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Text(
+                'WebDAV 服务器配置',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: colorScheme.primary,
+                ),
+              ),
+            ),
             AppSectionCard(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'WebDAV 服务器配置',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
                     TextFormField(
                       enabled: !_isBusy,
                       controller: _urlController,
@@ -411,20 +412,21 @@ class _WebDavBackupPageState extends ConsumerState<WebDavBackupPage> {
             const SizedBox(height: 16),
 
             // 3. Actions Section
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Text(
+                '云端备份与还原操作',
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: colorScheme.primary,
+                ),
+              ),
+            ),
             AppSectionCard(
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '云端备份与还原操作',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
                     Row(
                       children: [
                         Expanded(

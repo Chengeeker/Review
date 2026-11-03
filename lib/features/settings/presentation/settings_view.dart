@@ -418,10 +418,13 @@ class SettingsView extends ConsumerWidget {
 
   Widget _buildSectionTitle(BuildContext context, String title) {
     final colorScheme = Theme.of(context).colorScheme;
-    return Text(
-      title,
-      style: Theme.of(context).textTheme.titleSmall
-          ?.copyWith(color: colorScheme.onSurfaceVariant),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Text(
+        title,
+        style: Theme.of(context).textTheme.titleSmall
+            ?.copyWith(color: colorScheme.onSurfaceVariant),
+      ),
     );
   }
 

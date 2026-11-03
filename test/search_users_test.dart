@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:review/core/network/weibo_dio_client.dart';
 import 'package:review/core/storage/storage_service.dart';
+import 'package:review/core/widgets/app_avatar.dart';
 import 'package:review/features/feed/data/models/weibo_status_model.dart';
 import 'package:review/features/search/data/search_repository.dart';
 import 'package:review/features/search/presentation/search_results_page.dart';
@@ -23,10 +24,11 @@ class _SearchRepository extends SearchRepository {
   int suggestionsCalls = 0;
   bool failUsers = false;
   List<WeiboUserModel> firstPageUsers = [_blogger];
+  List<HotSearchItem> hotItems = [];
   final userPages = <int>[];
 
   @override
-  Future<List<HotSearchItem>> getHotSearch() async => [];
+  Future<List<HotSearchItem>> getHotSearch() async => hotItems;
 
   @override
   Future<SearchSuggestResult> getSearchSuggestions(String query) async {
@@ -257,6 +259,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
     expect(find.text('巴旦木公主_'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.byIcon(Icons.person_pin_rounded)).dx,
+      tester.getTopLeft(find.byType(AppAvatar)).dx,
+    );
     expect(find.text('粉丝 5'), findsNothing);
     expect(repo.userPages, [1]);
     expect(repo.suggestionsCalls, 1);
@@ -267,6 +273,32 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     expect(repo.userPages, [1]);
     await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('hot search heading aligns with ranks in both layouts', (tester) async {
+    final repo = _SearchRepository(client)
+      ..hotItems = [const HotSearchItem(rank: 1, word: '布局测试', num: 1)];
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          storageServiceProvider.overrideWithValue(storage),
+          searchRepositoryProvider.overrideWithValue(repo),
+        ],
+        child: const MaterialApp(home: SearchView()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    for (var layout = 0; layout < 2; layout++) {
+      expect(
+        tester.getTopLeft(find.byIcon(Icons.local_fire_department_rounded).first).dx,
+        tester.getTopLeft(find.text('1')).dx,
+      );
+      if (layout == 0) {
+        await tester.tap(find.byTooltip('切换为竖向显示'));
+        await tester.pumpAndSettle();
+      }
+    }
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('用户直达仅取官方排序前3个万粉账号，没有符合条件则隐藏', (tester) async {

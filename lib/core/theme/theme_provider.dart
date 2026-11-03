@@ -34,7 +34,7 @@ class ThemeState {
     this.customFontWeightDelta = 0,
     this.systemFontWeightAdjustment = 0,
     this.screenRefreshRateMode = 0,
-    this.appTextScale = 1.0,
+    this.appTextScale = StorageService.defaultAppTextScale,
     this.autoClearImageCacheThresholdMb =
         ImageCacheMaintenance.defaultAutoClearThresholdMb,
   });

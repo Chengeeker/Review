@@ -255,10 +255,13 @@ class _CacheManagementPageState extends ConsumerState<CacheManagementPage> {
             ),
           ),
           const SizedBox(height: 24),
-          Text(
-            '自动清理规则',
-            style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              '自动清理规则',
+              style: Theme.of(context).textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
           ),
           const SizedBox(height: 12),
           AppSectionCard(

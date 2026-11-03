@@ -11,7 +11,7 @@ Review 是使用 Flutter 构建的 Android 动态阅读与信息流应用。本�
 
 ## 当前版本
 
-当前源码为 `3.14.5+243`，应用 ID 为 `com.review`，Android 仅交付 `arm64-v8a` 正式安装包。版本以 `pubspec.yaml`、应用版本常量、Android 构建配置和最终 APK 元数据共同核验。
+当前源码为 `3.14.8+246`，应用 ID 为 `com.review`，Android 仅交付 `arm64-v8a` 正式安装包。版本以 `pubspec.yaml`、应用版本常量、Android 构建配置和最终 APK 元数据共同核验。
 
 ## 工程结构
 
@@ -40,10 +40,11 @@ flutter build apk --release --target-platform android-arm64 --no-tree-shake-icon
 
 `android/gradle.properties` 保持 `disable-abi-filtering=true`，并由 app 显式限制 `arm64-v8a`，避免插件重新启用其他架构。
 
-本机 JDK 若出现临时目录 loopback 管道错误，使用已创建的项目内临时目录：
+JDK 若出现临时目录 loopback 管道错误，先配置 JDK 17 的 `JAVA_HOME`，再使用项目内临时目录：
 
 ```powershell
-$taskJavaHome = 'D:\jdk17'
+$taskJavaHome = $env:JAVA_HOME
+if (-not $taskJavaHome) { throw '请先配置 JDK 17 的 JAVA_HOME' }
 $taskTempDir = Join-Path (Get-Location) 'build\.jvm-temp'
 New-Item -ItemType Directory -Path $taskTempDir -Force | Out-Null
 $env:JAVA_HOME = $taskJavaHome
@@ -60,6 +61,8 @@ android/gradlew.bat -p android --offline assembleRelease '-Ptarget-platform=andr
 ```
 
 Flutter 原始产物通常位于 `build/app/outputs/flutter-apk/app-release.apk`；直接使用 Gradle 构建时位于 `build/app/outputs/apk/release/app-release.apk`。核验包名、版本、唯一 ABI、正式签名和 ZIP 对齐后，将交付包命名为 `Review_v<版本名>.apk`，计算 SHA-256。项目根目录只保留当前交付包，回退包保存在 `build/previous-deliveries/`，不能为清理缓存删除该目录。
+
+项目目录清理仅删除确认可重建的编译、测试和插件产物，以及已核对内容相同的重复二进制。保留源码、未提交修改、依赖锁文件、包配置、签名、当前安装包、回退包与复盘资料；不递归清空整个 `build/`，不跟随目录链接。清理后首次编译或测试会重建缓存，耗时可能增加。仅整理目录不修改应用版本，也不为清理重新打包。
 
 ## 数据与备份
 

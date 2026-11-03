@@ -1,6 +1,6 @@
 # Review M3 UI 复用规范与提示词
 
-> 提炼日期：2026-10-18。基线为本地 `D:\App\Review` 当前工作区源码，`pubspec.yaml` 为 `3.8.1+195`，基础提交为 `57a9d705bbaeb2304cb5b250cb5cb68954807f1f`；工作区存在未提交修改，版本号或提交不能唯一标识这份源码。本文是源码提炼，未核对当前手机上的配置、截图或根目录 APK 与源码是否完全一致。
+> 初始提炼日期：2026-10-18；设置与字号说明校对于2026-11-04的`3.14.8+246`源码。版本号不能唯一标识含未提交修改的源码，迁移时需另行固定快照。本文记录源码规则，不代替目标设备上的视觉验收。
 
 ## 1. 复用目标与常见偏差
 
@@ -12,7 +12,7 @@ Review 当前默认采用 Flutter Material 3，并在主题之上增加局部磨
 
 ## 2. 必须一起阅读的源码
 
-以下路径均相对 `D:\App\Review`，不是要求把整套动态业务复制到新应用。
+以下路径均相对仓库根目录，不要求把整套动态业务复制到新应用。
 
 | 层次 | 源码入口 | 迁移责任 |
 |---|---|---|---|
@@ -38,7 +38,7 @@ Review 当前默认采用 Flutter Material 3，并在主题之上增加局部磨
 - 默认跟随系统明暗、动态取色关闭、纯黑关闭、悬浮底栏开启；实际安装状态可能已被用户修改。动态取色开启时由设备提供色板。
 - 浅色页面底为 `scheme.surface`；深色页面底 `#111215`、普通卡片 `#1B1C20`、贴底导航底 `#16171B`。纯黑页面/顶栏/贴底栏为黑，普通卡片 `#121212`。不能只设置 `Brightness.dark` 代替深色实现。
 - 字体基于 `Typography.material2021(platform: TargetPlatform.android)`，没有另设统一 fontFamily；主题文字 letterSpacing 为 0。标题 large 加粗、medium/small 为 w600；系统字重与自定义字重通过 `adjustFontWeight` / `context.adjustWeight` 处理，不能到处写死 bold。
-- 标准顶栏标题左对齐，18sp、加粗。普通 `ListTileTheme` 标题 15sp / 行高 1.35、副标题 12.5sp / 1.4；但 `ReviewPreferenceTile` 显式使用 `textTheme.titleMedium/bodyMedium`，开关/单选行又覆盖为 16sp/14sp。不能全局强制所有设置文字为 15sp 或 17sp。
+- 标准顶栏标题左对齐，18sp、加粗。普通 `ListTileTheme` 标题 15sp / 行高 1.35、副标题 12.5sp / 1.4；`ReviewPreferenceTile` 优先使用该局部主题，缺失时回退 `textTheme.titleMedium/bodyMedium`，开关/单选行仍按实际调用覆盖。不能全局强制所有设置文字为同一字号。全局默认字号95%，保留用户已保存值与系统缩放曲线。
 
 ### 3.2 磨砂顶栏与页面几何
 
@@ -72,9 +72,10 @@ Review 当前默认采用 Flutter Material 3，并在主题之上增加局部磨
 
 - 设置分组：圆角 **24**，margin **0**，elevation **0**，无描边、无阴影、无 tint；通常 surfaceContainerLow，纯黑改 surfaceContainer。外层已加左右 **16**，不能再加 CardTheme 默认 margin。
 - 设置首页：没有仅标题的独立 AppBar，列表 top 为安全区 + **20**；分组标题与卡片间 **12**，大分组间 **32**；悬浮底栏时 bottom padding **72**，贴底时 **16**。
+- 分组标题在卡片外，并对齐卡内内容起点，设置页通常是卡边缘内 **16dp**；有图标时按图标外框对齐。个性化9组及备份配置/操作2组统一为 `titleSmall`（14sp）、primary色，标题下 **12dp** 接卡片，组间仍为 **16dp**。控件内标签、预览和范围说明保留所属内容层级。其他页面按各自实际内边距对齐，不统一硬套16dp。
 - 个性化子页：ReviewPageScaffold 返回顶栏，列表 horizontal **16** / vertical **12** 再加 contentInsets；多个分组卡片间通常 **16**。首页分组间距不能直接套到子页。
 - 存储与备份：提供图片/视频保存路径和独立缓存管理页；缓存页只统计、清理 `cacheimage` 中可再生成的 MD5 图片文件，200 MB 为自动清理默认阈值，已保存媒体与账号资料不在清理范围。
-- ReviewPreferenceTile：左右 padding **16**，leading 最小宽 **24**、title gap **16**、minVerticalPadding **8**；默认右箭头 **24**。有 leading 的首页分割线卡片内 indent **56**，对应屏幕文字起点 72；不能误用 72 作为卡片内 indent。其他单选行的 divider 按真实布局保留，不能全局改成 56。
+- ReviewPreferenceTile：左右 padding **16**，leading 最小宽 **24**、title gap **16**、minVerticalPadding **8**；默认右箭头 **24**。设置首页、二级设置及关于弹窗均无功能项分隔线；展开项保留零Border防止默认细线回归。内容预览按用户选定的卡片样式演示，不属于设置行分隔线。
 - 通用 CardTheme：圆角 **22**、margin 横 **10** / 纵 **5**、0.8dp 轻描边、elevation **0**。它不是设置分组卡片的规范。
 - 信息流默认 `card_rounded`：圆角 **22**、margin 横 **8** / 纵 **4**、elevation **1**、shape 无描边、内 padding **(14,14,14,10)**；正文默认 **16sp / 行高 1.3**。`floating_rounded` 等选项、详情零 margin/零 elevation 分支不能丢失。不能把所有卡片统一改成设置分组样式。
 - Dialog 圆角 **28**，主题标题 **18sp** / 正文 **14sp**；`showAppDialog` 原地 **60ms** 淡入，没有上下平移或缩放。BottomSheet 顶圆角 **28**，surfaceContainerLow，纯黑 **#141414**，拖动条 **38×4.5**。FAB 圆角 **20**、elevation **1.5** / highlight **3**。SearchBar 为 StadiumBorder、elevation 0、surfaceContainerHigh，纯黑 **#1C1C1E**。
@@ -96,10 +97,10 @@ Review 当前默认采用 Flutter Material 3，并在主题之上增加局部磨
 
 ```text
 请开发/修改 <目标应用名> 的 UI。目标是复现 Review 指定基线的视觉与交互，不进行重新设计。
-参考项目：D:\App\Review
+参考项目：<Review源码检出目录>
 目标项目：<目标项目绝对路径>
-UI 规范：D:\App\Review\docs\REVIEW_UI_REUSE_SPEC.md
-完整开发文档：D:\App\开发文档\Review.md
+UI 规范：docs/REVIEW_UI_REUSE_SPEC.md
+开发指南：DEVELOPMENT.md
 
 1. 先读目标项目的 AGENTS.md/开发文档，再读 Review UI 规范、当前开发说明与工程复盘中的 UI 防回归记录。以指定基线的实际源码及最终调用参数为准；历史 Miuix 页面、旧版液态玻璃底栏和旧 ShaderMask 顶栏方案不能作为当前实现。3.4.1 液态玻璃底栏按当前 `ReviewNavigationBar` 实现接入，液态玻璃开关与悬浮底栏偏好分开显示及保存。
 2. 开工前固定参考快照：记录 Review HEAD、工作区改动、Flutter SDK/锁文件，以及需迁移 UI 文件的快照或哈希。不要只用版本号标识参考。读取本地工作区，不能自动改用远程 main 或升级后的默认 M3。

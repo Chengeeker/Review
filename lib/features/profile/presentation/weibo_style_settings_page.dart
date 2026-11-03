@@ -81,7 +81,7 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
               children: [
                 // ==================== 1. 卡片与时间配置 ====================
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 4, 4, 6),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
                   child: Text(
                     '卡片与时间显示',
                     style: TextStyle(
@@ -309,7 +309,7 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
 
                 // ==================== 2. 排版与视觉布局 ====================
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 4, 4, 6),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
                   child: Text(
                     '排版与视觉布局',
                     style: TextStyle(
@@ -455,7 +455,7 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
 
                 // ==================== 3. 功能开关与视觉控制 ====================
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 4, 4, 6),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
                   child: Text(
                     '功能开关与视觉控制',
                     style: TextStyle(

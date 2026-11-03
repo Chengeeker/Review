@@ -1,5 +1,6 @@
 import 'package:extended_image/extended_image.dart';
 import 'package:flutter/material.dart';
+
 import '../constants/api_constants.dart';
 import '../utils/haptic_feedback_util.dart';
 
@@ -11,6 +12,8 @@ class AppAvatar extends StatelessWidget {
   final bool verified;
   final int verifiedType;
   final VoidCallback? onTap;
+  // Opt in only with a key tied to user identity, so another user never inherits a frame.
+  final bool gaplessPlayback;
 
   const AppAvatar({
     super.key,
@@ -20,6 +23,7 @@ class AppAvatar extends StatelessWidget {
     this.verified = false,
     this.verifiedType = -1,
     this.onTap,
+    this.gaplessPlayback = false,
   });
 
   @override
@@ -39,9 +43,18 @@ class AppAvatar extends StatelessWidget {
         height: size,
         fit: BoxFit.cover,
         cache: true,
+        gaplessPlayback: gaplessPlayback,
         loadStateChanged: (state) {
           if (state.extendedImageLoadState == LoadState.failed ||
               state.extendedImageLoadState == LoadState.loading) {
+            if (gaplessPlayback && state.extendedImageInfo != null) {
+              return RawImage(
+                image: state.extendedImageInfo!.image,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+              );
+            }
             return _buildFallback(colorScheme);
           }
           return null;

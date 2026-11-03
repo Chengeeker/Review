@@ -892,6 +892,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('私信与群聊'), findsOneWidget);
+    final cardContent = find.ancestor(
+      of: find.byIcon(Icons.alternate_email_rounded),
+      matching: find.byType(Container),
+    ).first;
+    expect(
+      tester.getTopLeft(find.text('消息通知')).dx,
+      closeTo(tester.getTopLeft(cardContent).dx, 0.01),
+    );
     expect(find.text('37'), findsNothing);
     final mutedBadgeFinder =
         find.byKey(const ValueKey('message-unread-badge-short-muted-group-id'));

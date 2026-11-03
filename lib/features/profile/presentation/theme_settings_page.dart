@@ -109,22 +109,11 @@ class ThemeSettingsPage extends ConsumerWidget {
         ).add(contentInsets),
         children: [
           // 1. 明暗模式 (Theme Mode)
+          _buildSectionTitle(context, '明暗模式'),
           AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-                  child: Text(
-                    '明暗模式',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: context.adjustWeight(FontWeight.bold),
-                      color: colorScheme.onSurfaceVariant,
-                      letterSpacing: 0.0,
-                    ),
-                  ),
-                ),
                 ReviewChoiceTile<ThemeMode>(
                   title: '跟随系统',
                   summary: '自动匹配系统深色/浅色设置',
@@ -172,24 +161,13 @@ class ThemeSettingsPage extends ConsumerWidget {
           const SizedBox(height: 16),
 
           // 色彩方案 (Color Palette)
+          _buildSectionTitle(context, '色彩方案'),
           AppSectionCard(
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
-                    child: Text(
-                      '色彩方案',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: context.adjustWeight(FontWeight.bold),
-                        color: colorScheme.onSurfaceVariant,
-                        letterSpacing: 0.0,
-                      ),
-                    ),
-                  ),
                   ReviewSwitchTile(
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -263,22 +241,11 @@ class ThemeSettingsPage extends ConsumerWidget {
           const SizedBox(height: 16),
 
           // 3. 字体粗细 (Font Weight - 弹窗选择 5 档：偏细、默认、中等、偏粗、加粗)
+          _buildSectionTitle(context, '字体粗细'),
           AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-                  child: Text(
-                    '字体粗细',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: context.adjustWeight(FontWeight.bold),
-                      color: colorScheme.onSurfaceVariant,
-                      letterSpacing: 0.0,
-                    ),
-                  ),
-                ),
                 ListTile(
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -347,14 +314,7 @@ class ThemeSettingsPage extends ConsumerWidget {
           ),
           const SizedBox(height: 16),
 
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
-            child: Text(
-              '字体大小',
-              style: Theme.of(context).textTheme.titleSmall
-                  ?.copyWith(color: colorScheme.primary),
-            ),
-          ),
+          _buildSectionTitle(context, '字体大小'),
           AppSectionCard(
             margin: EdgeInsets.zero,
             child: ListTile(
@@ -399,22 +359,11 @@ class ThemeSettingsPage extends ConsumerWidget {
           const SizedBox(height: 16),
 
           // 底部导航
+          _buildSectionTitle(context, '底部导航'),
           AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-                  child: Text(
-                    '底部导航',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: context.adjustWeight(FontWeight.bold),
-                      color: colorScheme.onSurfaceVariant,
-                      letterSpacing: 0.0,
-                    ),
-                  ),
-                ),
                 ReviewSwitchTile(
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -434,22 +383,11 @@ class ThemeSettingsPage extends ConsumerWidget {
           ),
           const SizedBox(height: 16),
 
+          _buildSectionTitle(context, '显示效果'),
           AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-                  child: Text(
-                    '显示效果',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: context.adjustWeight(FontWeight.bold),
-                      color: colorScheme.onSurfaceVariant,
-                      letterSpacing: 0.0,
-                    ),
-                  ),
-                ),
                 ReviewSwitchTile(
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -473,22 +411,11 @@ class ThemeSettingsPage extends ConsumerWidget {
           const SizedBox(height: 16),
 
           // 5. 自定义应用图标 (Custom App Icon)
+          _buildSectionTitle(context, '应用图标'),
           AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-                  child: Text(
-                    '应用图标',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: context.adjustWeight(FontWeight.bold),
-                      color: colorScheme.onSurfaceVariant,
-                      letterSpacing: 0.0,
-                    ),
-                  ),
-                ),
                 ListTile(
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -533,22 +460,11 @@ class ThemeSettingsPage extends ConsumerWidget {
           const SizedBox(height: 16),
 
           // 6. 屏幕帧率设置 (Screen Refresh Rate)
+          _buildSectionTitle(context, '屏幕显示'),
           AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-                  child: Text(
-                    '屏幕显示',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: context.adjustWeight(FontWeight.bold),
-                      color: colorScheme.onSurfaceVariant,
-                      letterSpacing: 0.0,
-                    ),
-                  ),
-                ),
                 ListTile(
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -593,22 +509,11 @@ class ThemeSettingsPage extends ConsumerWidget {
           const SizedBox(height: 16),
 
           // 7. 触感与震动 (Haptic Feedback)
+          _buildSectionTitle(context, '触感与震动'),
           AppSectionCard(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-                  child: Text(
-                    '触感与震动',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: context.adjustWeight(FontWeight.bold),
-                      color: colorScheme.onSurfaceVariant,
-                      letterSpacing: 0.0,
-                    ),
-                  ),
-                ),
                 ReviewSwitchTile(
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -630,6 +535,19 @@ class ThemeSettingsPage extends ConsumerWidget {
           ),
           const SizedBox(height: 24),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(BuildContext context, String title) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      child: Text(
+        title,
+        style: theme.textTheme.titleSmall?.copyWith(
+          color: theme.colorScheme.primary,
+        ),
       ),
     );
   }

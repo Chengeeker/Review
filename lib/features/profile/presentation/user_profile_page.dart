@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:review/core/design_system/components/review_frosted_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dio/dio.dart';
+import 'package:extended_image/extended_image.dart';
 import '../../../core/auth/auth_provider.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/network/weibo_dio_client.dart';
@@ -48,6 +49,8 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
   static final Map<String, WeiboUserModel> _profileUserCache = {};
 
   late WeiboUserModel _user;
+  String? _cachedAvatarUrl;
+  String? _cachedAvatarUid;
   late TabController _tabController;
   late final ScrollController _scrollController;
   DateTime? _lastTopBarTapTime;
@@ -98,6 +101,27 @@ class _UserProfilePageState extends ConsumerState<UserProfilePage>
             screenName: cleanScreenName.isNotEmpty ? cleanScreenName : '微博用户',
             avatar: '',
           );
+    }
+
+    final auth = ref.read(authProvider);
+    for (final url in [
+      if (widget.user?.id == _user.id) widget.user!.avatar,
+      if (auth.uid == _user.id) auth.avatar ?? '',
+      _user.avatar,
+    ]) {
+      if (!url.startsWith('http')) continue;
+      final cached = imageCache.statusForKey(
+        ExtendedNetworkImageProvider(
+          url,
+          cache: true,
+          headers: ApiConstants.imageHeaders,
+        ),
+      );
+      if (cached.keepAlive || (cached.live && !cached.pending)) {
+        _cachedAvatarUrl = url;
+        _cachedAvatarUid = _user.id;
+        break;
+      }
     }
 
     final targetUid = _user.id.isNotEmpty ? _user.id : effectiveUid;
@@ -742,7 +766,11 @@ _showDateFilterDialog() {
                       Row(
                         children: [
                           AppAvatar(
-                            url: _user.avatar,
+                            key: ValueKey(_user.id),
+                            url: _cachedAvatarUid == _user.id
+                                ? _cachedAvatarUrl
+                                : _user.avatar,
+                            gaplessPlayback: true,
                             size: 64,
                             name: _user.screenName,
                             verified: _user.verified,
