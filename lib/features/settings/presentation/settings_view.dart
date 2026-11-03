@@ -71,7 +71,6 @@ class SettingsView extends ConsumerWidget {
                     );
                   },
                 ),
-                const Divider(height: 1, indent: 56),
 
                 // 微博样式 (卡片排版、时间显示、IP属地、点赞过滤)
                 ReviewPreferenceTile(
@@ -89,7 +88,6 @@ class SettingsView extends ConsumerWidget {
                     );
                   },
                 ),
-                const Divider(height: 1, indent: 56),
                 ReviewPreferenceTile(
                   leading: Icon(
                     Icons.notifications_active_outlined,
@@ -133,7 +131,6 @@ class SettingsView extends ConsumerWidget {
                     );
                   },
                 ),
-                const Divider(height: 1, indent: 56),
 
                 ReviewPreferenceTile(
                   leading: Icon(
@@ -141,7 +138,6 @@ class SettingsView extends ConsumerWidget {
                     color: colorScheme.onSurfaceVariant,
                   ),
                   title: '缓存管理',
-                  subtitle: '查看与清理图片缓存',
                   onTap: () {
                     HapticFeedbackUtil.light();
                     Navigator.of(context).push(
@@ -151,7 +147,6 @@ class SettingsView extends ConsumerWidget {
                     );
                   },
                 ),
-                const Divider(height: 1, indent: 56),
 
                 // WebDAV 备份
                 ReviewPreferenceTile(
@@ -160,7 +155,6 @@ class SettingsView extends ConsumerWidget {
                     color: colorScheme.onSurfaceVariant,
                   ),
                   title: 'WebDAV备份',
-                  subtitle: '仅备份应用设置，不包含微博登录凭据或 WebDAV 密码',
                   onTap: () {
                     HapticFeedbackUtil.light();
                     Navigator.of(context).push(
@@ -336,7 +330,6 @@ class SettingsView extends ConsumerWidget {
                       }
                     },
                   ),
-                  const Divider(height: 1, indent: 56),
                   ReviewPreferenceTile(
                     leading: Icon(
                       Icons.key_rounded,
@@ -351,7 +344,6 @@ class SettingsView extends ConsumerWidget {
                   ),
                 ],
                 if (isLoggedIn) ...[
-                  const Divider(height: 1, indent: 56),
                   ListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                     minLeadingWidth: 24,
@@ -659,7 +651,6 @@ class SettingsView extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 16),
-            const Divider(height: 1),
             const SizedBox(height: 14),
 
             // 3. Feature Highlights
@@ -686,7 +677,6 @@ class SettingsView extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 14),
-            const Divider(height: 1),
             const SizedBox(height: 12),
 
             // 4. GitHub Project Link

@@ -25,10 +25,15 @@ class ReviewPreferenceTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final titleTextStyle = theme.textTheme.titleMedium?.merge(titleStyle);
-    final subtitleTextStyle = theme.textTheme.bodyMedium
-        ?.copyWith(color: colorScheme.onSurfaceVariant)
-        .merge(subtitleStyle);
+    final tileTheme = ListTileTheme.of(context);
+    final titleTextStyle =
+        (tileTheme.titleTextStyle ?? theme.textTheme.titleMedium)?.merge(
+          titleStyle,
+        );
+    final subtitleTextStyle =
+        (tileTheme.subtitleTextStyle ?? theme.textTheme.bodyMedium)
+            ?.copyWith(color: colorScheme.onSurfaceVariant)
+            .merge(subtitleStyle);
 
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16),

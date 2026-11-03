@@ -195,7 +195,6 @@ class _MessageNotificationSettingsPageState
                   value: _enabled && _permissionGranted,
                   onChanged: _requestingPermission ? null : _setEnabled,
                 ),
-                const Divider(height: 1, indent: 72),
                 _categoryTile(
                   icon: Icons.alternate_email_rounded,
                   title: '@通知',
@@ -206,7 +205,6 @@ class _MessageNotificationSettingsPageState
                     value,
                   ),
                 ),
-                const Divider(height: 1, indent: 72),
                 _categoryTile(
                   icon: Icons.favorite_border_rounded,
                   title: '点赞通知',
@@ -217,7 +215,6 @@ class _MessageNotificationSettingsPageState
                     value,
                   ),
                 ),
-                const Divider(height: 1, indent: 72),
                 _categoryTile(
                   icon: Icons.chat_bubble_outline_rounded,
                   title: '回复通知',
@@ -228,7 +225,6 @@ class _MessageNotificationSettingsPageState
                     value,
                   ),
                 ),
-                const Divider(height: 1, indent: 72),
                 _categoryTile(
                   icon: Icons.forum_outlined,
                   title: '私信通知',

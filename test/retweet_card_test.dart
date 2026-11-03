@@ -16,6 +16,7 @@ class _NoopDetailRepository extends Fake implements DetailRepository {
     String maxId = '0',
     int count = 15,
     int flow = 0,
+    bool strict = false,
   }) async {
     return const CommentResult(comments: [], hasMore: false);
   }

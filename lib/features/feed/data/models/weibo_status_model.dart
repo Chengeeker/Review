@@ -578,6 +578,7 @@ bool _isRealEmbeddedImageUrl(String? url) {
   final lower = url.trim().toLowerCase();
 
   if (lower.contains('s.weibo.com') ||
+      lower.contains('photo.weibo.com/h5/repost/') ||
       lower.contains('weibo.com/u/') ||
       lower.contains('weibo.com/n/') ||
       lower.contains('weibo.com/detail/') ||
@@ -775,11 +776,23 @@ List<WeiboPicModel> _parseEmbeddedImageCards(
 
     final picInfos = entry['pic_infos'];
     if (picInfos is Map) {
-      for (final rawPic in picInfos.values) {
+      for (final item in picInfos.entries) {
+        final rawPic = item.value;
         if (rawPic is Map) {
           final picMap = Map<String, dynamic>.from(rawPic);
+          for (final key in const ['thumbnail', 'large', 'original', 'largest', 'mw2000', 'orj960']) {
+            final image = _asDynamicMap(picMap[key]);
+            final url = _normalizeMediaUrl(image?['url']);
+            if (image != null && url != null) {
+              picMap[key] = {...image, 'url': url};
+            }
+          }
           isImageAttachment = addCandidate(WeiboPicModel.fromJson(
-                {...picMap, 'pid': picMap['pid'] ?? '', ...articleFields},
+                {
+                  ...picMap,
+                  'pid': picMap['pid'] ?? item.key.toString(),
+                  ...articleFields,
+                },
               )) ||
               isImageAttachment;
         }
@@ -1415,19 +1428,31 @@ class WeiboStatusModel {
 
     final typedUrlStruct = _parseUrlStructs(json);
     final embeddedImageShortUrls = <String>{};
-    // A retweet wrapper can repeat the original smart-card metadata. The
-    // quoted status owns that image, so only promote cards on the root status
-    // and let the existing retweet card render the inner status once.
-    if (retweeted == null) {
-      pics.addAll(
-        _parseEmbeddedImageCards(
-          typedUrlStruct,
-          pics,
-          embeddedImageShortUrls,
-          poll,
-        ),
-      );
-    }
+    // Retweets may attach their own photos or repeat the quoted post's cards.
+    // Only links referenced by the outer text belong to the outer author.
+    final ownLinks = retweeted == null || typedUrlStruct.isEmpty
+        ? const <String>{}
+        : RegExp(r'''https?://[^\s<>"'\u200B\u200C\u200D\u2060\uFEFF]+''')
+            .allMatches(
+              '${json['text_raw'] ?? ''} ${json['text'] ?? ''} '
+              '${json['longTextContent_raw'] ?? json['longTextContent'] ?? json['full_text_raw'] ?? ''}',
+            )
+            .map((match) => _normalizeMediaUrl(match[0]))
+            .whereType<String>()
+            .toSet();
+    pics.addAll(
+      _parseEmbeddedImageCards(
+        retweeted == null
+            ? typedUrlStruct
+            : typedUrlStruct.where((entry) =>
+                ownLinks.contains(_normalizeMediaUrl(
+                  entry['short_url'] ?? entry['url_ori'],
+                ))).toList(),
+        pics,
+        embeddedImageShortUrls,
+        poll,
+      ),
+    );
     final liveId = _extractLiveId({
       'live_id': json['live_id'],
       'liveId': json['liveId'],

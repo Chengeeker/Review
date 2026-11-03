@@ -64,12 +64,6 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
               color: isDark
                   ? const Color(0xFF141416)
                   : colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-              border: Border(
-                bottom: BorderSide(
-                  color: theme.dividerColor.withValues(alpha: 0.2),
-                  width: 1,
-                ),
-              ),
             ),
             child: _buildLivePreviewCard(
               context,
@@ -128,7 +122,6 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                       ),
                     ),
                     children: [
-                      const Divider(height: 1, indent: 72),
                       RadioListTile<String>(
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
@@ -164,7 +157,6 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                                 .setTimeDisplayMode(val);
                         },
                       ),
-                      const Divider(height: 1, indent: 72),
                       RadioListTile<String>(
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
@@ -200,7 +192,6 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                                 .setTimeDisplayMode(val);
                         },
                       ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
                       SwitchListTile(
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
@@ -223,7 +214,6 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                               .setShowWeekday(val);
                         },
                       ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
                       SwitchListTile(
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
@@ -246,7 +236,6 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                               .setShowYear(val);
                         },
                       ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
                       SwitchListTile(
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
@@ -269,7 +258,6 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                               .setShowTimezone(val);
                         },
                       ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
                       SwitchListTile(
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
@@ -292,7 +280,6 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                               .setShowSeconds(val);
                         },
                       ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
                       SwitchListTile(
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 16,
@@ -367,7 +354,6 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                           style.cardBackgroundLayout,
                         ),
                       ),
-                      const Divider(height: 1, indent: 72),
                       ListTile(
                         leading: Icon(
                           Icons.format_size_rounded,
@@ -396,7 +382,6 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                         onTap: () =>
                             _showFontSizeDialog(context, ref, style.fontSize),
                       ),
-                      const Divider(height: 1, indent: 72),
                       ListTile(
                         leading: Icon(
                           Icons.format_line_spacing_rounded,
@@ -428,7 +413,6 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                           style.fontLineHeight,
                         ),
                       ),
-                      const Divider(height: 1, indent: 72),
                       ListTile(
                         leading: Icon(
                           Icons.location_on_outlined,
@@ -493,7 +477,6 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                         onChanged: (val) =>
                             notifier.setLinkColorFollowTheme(val),
                       ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
                       _buildMD3eSwitch(
                         context: context,
                         title: '同时显示备注和名字',
@@ -501,7 +484,6 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                         value: style.showRemarkAndName,
                         onChanged: (val) => notifier.setShowRemarkAndName(val),
                       ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
                       _buildMD3eSwitch(
                         context: context,
                         title: '显示个人主页背景图',
@@ -510,7 +492,6 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                         onChanged: (val) =>
                             notifier.setShowBackgroundImage(val),
                       ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
                       _buildMD3eSwitch(
                         context: context,
                         title: '显示微博用户活动图标',
@@ -519,7 +500,6 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                         onChanged: (val) =>
                             notifier.setShowUserActivityIcon(val),
                       ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
                       _buildMD3eSwitch(
                         context: context,
                         title: '大图片九宫格模式',
@@ -527,7 +507,6 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                         value: style.largeImageMode,
                         onChanged: (val) => notifier.setLargeImageMode(val),
                       ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
                       _buildMD3eSwitch(
                         context: context,
                         title: '微博内图片圆角显示',
@@ -536,7 +515,6 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                         onChanged: (val) =>
                             notifier.setRoundedImageCorners(val),
                       ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
                       _buildMD3eSwitch(
                         context: context,
                         title: '菜单键显示在底部',
@@ -544,7 +522,6 @@ class WeiboStyleSettingsPage extends ConsumerWidget {
                         value: style.showMenuAtBottom,
                         onChanged: (val) => notifier.setShowMenuAtBottom(val),
                       ),
-                      const Divider(height: 1, indent: 16, endIndent: 16),
                       _buildMD3eSwitch(
                         context: context,
                         title: '主页显示赞过的微博',

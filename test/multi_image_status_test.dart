@@ -232,7 +232,7 @@ void main() {
     expect(gallery.initialIndex, 0);
   });
 
-  testWidgets('text-only expansion follows media and does not expand grid',
+  testWidgets('text-only expansion precedes media and does not expand grid',
       (tester) async {
     final storage = await _storage();
     final fullText = List.filled(10, List.filled(50, '长文').join()).join('\n');
@@ -246,8 +246,8 @@ void main() {
     expect(body, findsOneWidget);
     expect(find.text('展开全文'), findsOneWidget);
     final button = find.text('展开全文');
-    expect(tester.getTopLeft(button).dy,
-        greaterThan(tester.getBottomLeft(find.byType(GridView)).dy));
+    expect(tester.getBottomLeft(button).dy,
+        lessThan(tester.getTopLeft(find.byType(GridView)).dy));
     await tester.tap(button);
     await tester.pump();
     expect(_gridCount(tester), 9);

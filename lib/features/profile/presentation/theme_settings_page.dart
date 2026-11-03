@@ -134,7 +134,6 @@ class ThemeSettingsPage extends ConsumerWidget {
                       .read(themeProvider.notifier)
                       .setThemeMode(ThemeMode.system),
                 ),
-                const Divider(height: 1, indent: 72),
                 ReviewChoiceTile<ThemeMode>(
                   title: '浅色模式',
                   value: ThemeMode.light,
@@ -143,7 +142,6 @@ class ThemeSettingsPage extends ConsumerWidget {
                       .read(themeProvider.notifier)
                       .setThemeMode(ThemeMode.light),
                 ),
-                const Divider(height: 1, indent: 72),
                 ReviewChoiceTile<ThemeMode>(
                   title: '深色模式',
                   value: ThemeMode.dark,
@@ -152,7 +150,6 @@ class ThemeSettingsPage extends ConsumerWidget {
                       .read(themeProvider.notifier)
                       .setThemeMode(ThemeMode.dark),
                 ),
-                const Divider(height: 1, indent: 16, endIndent: 16),
                 ReviewSwitchTile(
                   contentPadding: const EdgeInsets.symmetric(
                     horizontal: 16,
@@ -211,7 +208,6 @@ class ThemeSettingsPage extends ConsumerWidget {
                     },
                   ),
                   if (!themeState.useDynamicColor) ...[
-                    const Divider(height: 1, indent: 16, endIndent: 16),
                     Padding(
                       padding: const EdgeInsets.only(
                         left: 16,
@@ -313,7 +309,6 @@ class ThemeSettingsPage extends ConsumerWidget {
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => _showFontWeightDialog(context, ref, themeState),
                 ),
-                const Divider(height: 1, indent: 16, endIndent: 16),
                 Container(
                   margin: const EdgeInsets.fromLTRB(16, 12, 16, 14),
                   padding: const EdgeInsets.all(12),

@@ -416,9 +416,7 @@ class _LiquidGlassNavigationBarState extends State<_LiquidGlassNavigationBar> {
     final isLightMode = theme.brightness == Brightness.light;
     final glassSettings = ReviewNavigationBar.liquidGlassSettingsFor(context)
         .copyWith(shadowElevation: isLightMode ? 0.55 : 0);
-    final selectedContentColor = isLightMode
-        ? theme.colorScheme.primary
-        : Colors.white;
+    final selectedContentColor = theme.colorScheme.primary;
     final unselectedContentColor = isLightMode
         ? theme.colorScheme.onSurfaceVariant
         : Colors.white;
@@ -461,10 +459,8 @@ class _LiquidGlassNavigationBarState extends State<_LiquidGlassNavigationBar> {
                       indicatorSettings: LiquidGlassSettings(
                         glassColor: isLightMode
                             ? const Color(0x18000000)
-                            : const Color(0x00FFFFFF),
-                        bodyMode: isLightMode
-                            ? GlassBodyMode.clear
-                            : GlassBodyMode.adaptive,
+                            : const Color(0x26FFFFFF),
+                        bodyMode: GlassBodyMode.clear,
                         refractiveIndex: 1.18,
                         chromaticAberration: 0.025,
                         rimShade: isLightMode ? 0.12 : 0,
@@ -476,7 +472,7 @@ class _LiquidGlassNavigationBarState extends State<_LiquidGlassNavigationBar> {
                       enableBlend: true,
                       indicatorColor: isLightMode
                           ? const Color(0x26000000)
-                          : const Color(0x66000000),
+                          : const Color(0x26FFFFFF),
                       interactionGlowColor: const Color(0x20FFFFFF),
                       indicatorPinchStrength: _isJellyDragging ? 0.7 : 0.0,
                       indicatorExpansion: _isJellyDragging

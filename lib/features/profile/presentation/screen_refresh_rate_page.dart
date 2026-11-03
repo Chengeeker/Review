@@ -122,8 +122,6 @@ class _ScreenRefreshRatePageState extends ConsumerState<ScreenRefreshRatePage> {
             child: Column(
               children: [
                 for (int i = 0; i < options.length; i++) ...[
-                  if (i > 0)
-                    const Divider(height: 1, indent: 16, endIndent: 16),
                   _buildOptionItem(
                     context: context,
                     option: options[i],

@@ -71,6 +71,66 @@ void main() {
     },
   );
 
+  testWidgets('dark selection uses a grey capsule and themed foreground', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      StorageService.keyUseFloatingNavBar: true,
+      StorageService.keyUseLiquidGlass: true,
+    });
+    final storage = StorageService(await SharedPreferences.getInstance());
+    final container = ProviderContainer(
+      overrides: [storageServiceProvider.overrideWithValue(storage)],
+    );
+    addTearDown(container.dispose);
+    for (final seed in [Colors.teal, Colors.deepPurple]) {
+      final scheme = ColorScheme.fromSeed(
+        seedColor: seed,
+        brightness: Brightness.dark,
+      );
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: ThemeData(useMaterial3: true, colorScheme: scheme),
+            home: Scaffold(
+              body: const ColoredBox(color: Colors.black),
+              bottomNavigationBar: ReviewNavigationBar(
+                selectedIndex: seed == Colors.teal ? 0 : 2,
+                hasBottomInset: false,
+                onSelected: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final glassBar = tester.widget<GlassTabBar>(find.byType(GlassTabBar));
+      expect(glassBar.indicatorSettings?.glassColor, const Color(0x26FFFFFF));
+      expect(glassBar.indicatorSettings?.bodyMode, GlassBodyMode.clear);
+      expect(glassBar.indicatorColor, const Color(0x26FFFFFF));
+      expect(glassBar.selectedIconColor, scheme.primary);
+      expect(glassBar.selectedLabelColor, scheme.primary);
+      expect(glassBar.unselectedIconColor, Colors.white);
+      expect(glassBar.unselectedLabelColor, Colors.white);
+      expect(
+        glassBar.settings?.glassColor,
+        ReviewNavigationBar.liquidGlassSettings.glassColor,
+      );
+      expect(glassBar.settings?.shadowElevation, 0);
+      expect(glassBar.indicatorSettings?.refractiveIndex, 1.18);
+      expect(glassBar.indicatorSettings?.chromaticAberration, 0.025);
+      expect(glassBar.indicatorSettings?.rimShade, 0);
+      expect(glassBar.indicatorSettings?.rimLight, 0);
+      expect(
+        find.byKey(const ValueKey('liquid-glass-light-rim')),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('light liquid glass navigation uses readable themed colors', (
     tester,
   ) async {

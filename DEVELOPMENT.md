@@ -11,7 +11,7 @@ Review 是使用 Flutter 构建的 Android 动态阅读与信息流应用。本�
 
 ## 当前版本
 
-当前源码为 `3.14.0+238`，应用 ID 为 `com.review`，Android 仅交付 `arm64-v8a` 正式安装包。版本以 `pubspec.yaml`、应用版本常量、Android 构建配置和最终 APK 元数据共同核验。
+当前源码为 `3.14.5+243`，应用 ID 为 `com.review`，Android 仅交付 `arm64-v8a` 正式安装包。版本以 `pubspec.yaml`、应用版本常量、Android 构建配置和最终 APK 元数据共同核验。
 
 ## 工程结构
 
