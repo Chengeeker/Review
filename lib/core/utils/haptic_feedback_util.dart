@@ -4,6 +4,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+final noPressedOverlay = WidgetStateProperty.resolveWith<Color?>(
+  (states) => states.contains(WidgetState.pressed) ? Colors.transparent : null,
+);
+
 /// Global Haptic Feedback Controller with Anti-Double-Trigger Cooldown (防连击与防重复震动机制)
 class HapticFeedbackUtil {
   HapticFeedbackUtil._();
@@ -105,7 +109,7 @@ class HapticSplashFactory extends InteractiveInkFeatureFactory {
   final InteractiveInkFeatureFactory _delegate;
 
   const HapticSplashFactory({
-    InteractiveInkFeatureFactory delegate = InkSplash.splashFactory,
+    InteractiveInkFeatureFactory delegate = NoSplash.splashFactory,
   }) : _delegate = delegate;
 
   @override

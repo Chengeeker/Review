@@ -776,7 +776,7 @@ class _StatusDetailPageState extends ConsumerState<StatusDetailPage> {
             style: FilledButton.styleFrom(
               backgroundColor: colorScheme.error,
               foregroundColor: colorScheme.onError,
-            ),
+            ).copyWith(overlayColor: noPressedOverlay),
             onPressed: () => Navigator.of(dialogCtx).pop(true),
             child: const Text('删除'),
           ),

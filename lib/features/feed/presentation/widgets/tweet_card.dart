@@ -1720,7 +1720,7 @@ class _TweetCardState extends ConsumerState<TweetCard> {
 
     return InkWell(
       borderRadius: BorderRadius.circular(9),
-      splashFactory: InkSplash.splashFactory,
+      splashFactory: NoSplash.splashFactory,
       enableFeedback: false,
       onTap: showResult || poll.hasVoted || poll.isEnded
           ? null

@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show PredictiveBackEvent;
 
 /// Two-stage return curve used by image gallery hero dismissal.
 class TwoStageReturnCurve extends Curve {
@@ -15,6 +17,64 @@ class TwoStageReturnCurve extends Curve {
       return 0.20 + 0.80 * ((t - 0.35) / 0.65);
     }
     return 0.20 * math.pow(t / 0.35, 1.6);
+  }
+}
+
+class _GallerySourcePopEntry extends PopEntry<Object?>
+    with WidgetsBindingObserver {
+  _GallerySourcePopEntry(this.gallery, ModalRoute<dynamic> source)
+    : _source = source {
+    source.registerPopEntry(this);
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  final Route<dynamic> gallery;
+  ModalRoute<dynamic>? _source;
+  bool _inGesture = false;
+  bool _finished = false;
+
+  @override
+  final Animation<bool> canPopNotifier = const AlwaysStoppedAnimation(false);
+
+  @override
+  bool handleStartBackGesture(PredictiveBackEvent backEvent) {
+    _inGesture = gallery.isCurrent || (_source?.isCurrent ?? false);
+    if (!_inGesture) _releaseIfFinished();
+    return _inGesture;
+  }
+
+  @override
+  void handleCommitBackGesture() {
+    if (_inGesture && gallery.isCurrent) {
+      unawaited(gallery.navigator?.maybePop());
+    }
+    _inGesture = false;
+    _releaseIfFinished();
+  }
+
+  @override
+  void handleCancelBackGesture() {
+    _inGesture = false;
+    _releaseIfFinished();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) handleCancelBackGesture();
+  }
+
+  void release() {
+    _finished = true;
+    _releaseIfFinished();
+  }
+
+  void _releaseIfFinished() {
+    final source = _source;
+    if (source == null || !_finished || (_inGesture && source.isActive)) return;
+    _source = null;
+    source.unregisterPopEntry(this);
+    // Binding may still be iterating the observers for this gesture callback.
+    scheduleMicrotask(() => WidgetsBinding.instance.removeObserver(this));
   }
 }
 
@@ -33,7 +93,10 @@ class PhysicsSpringGalleryRoute<T> extends PageRouteBuilder<T> {
   ) {
     final navigator = Navigator.of(context);
     if (_activeRoutes.whereType<PhysicsSpringGalleryRoute>().any(
-      (active) => active.navigator == navigator,
+      (active) =>
+          active.navigator == navigator &&
+          active.animation?.status != AnimationStatus.reverse &&
+          active.animation?.status != AnimationStatus.dismissed,
     )) {
       return Future<R?>.value(null);
     }
@@ -90,6 +153,7 @@ class PhysicsSpringGalleryRoute<T> extends PageRouteBuilder<T> {
   }
 
   final Widget child;
+  _GallerySourcePopEntry? _sourcePopEntry;
   PhysicsSpringGalleryRoute({required this.child, super.settings})
     : super(
         opaque: false,
@@ -111,9 +175,20 @@ class PhysicsSpringGalleryRoute<T> extends PageRouteBuilder<T> {
   }
 
   @override
+  void didChangePrevious(Route<dynamic>? previousRoute) {
+    super.didChangePrevious(previousRoute);
+    if (_sourcePopEntry == null && previousRoute is ModalRoute<dynamic>) {
+      // System back must not leave the source while this gallery is exiting.
+      _sourcePopEntry = _GallerySourcePopEntry(this, previousRoute);
+    }
+  }
+
+  @override
   void dispose() {
     // Keep feed taps guarded until Navigator removes the Hero overlay.
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _sourcePopEntry?.release();
+      _sourcePopEntry = null;
       _activeRoutes.remove(this);
       _updateTransitionPointerRoute();
       _notifyRoutesIdle();

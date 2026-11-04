@@ -151,6 +151,79 @@ Future<void> _pumpGallery(WidgetTester tester, Widget child) => tester.pumpWidge
 );
 
 void main() {
+  for (final reopen in [false, true]) {
+    testWidgets('pending gallery side tap cannot pop ${reopen ? 'a new gallery' : 'the source route'}', (tester) async {
+      final navigator = GlobalKey<NavigatorState>();
+      await _pumpGallery(tester, MaterialApp(
+        navigatorKey: navigator,
+        home: const Scaffold(body: Text('source feed')),
+      ));
+      navigator.currentState!.push(PhysicsSpringGalleryRoute<void>(
+        child: const ImageGalleryPage(
+          pics: [galleryTestPic], initialIndex: 0, statusId: 'pending-return',
+        ),
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.tapAt(const Offset(30, 350));
+      await tester.pump(kDoubleTapTimeout - const Duration(milliseconds: 20));
+      navigator.currentState!.pop();
+      await tester.pump();
+      final replacement = reopen ? PhysicsSpringGalleryRoute<void>(
+        child: const ImageGalleryPage(
+          pics: [galleryTestPic], initialIndex: 0, statusId: 'new-gallery',
+        ),
+      ) : null;
+      if (replacement != null) {
+        navigator.currentState!.push(replacement);
+        await tester.pump();
+      }
+      await tester.pump(const Duration(milliseconds: 21));
+      expect(tester.takeException(), isNull);
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump();
+      if (replacement != null) {
+        expect(replacement.isCurrent, isTrue,
+          reason: 'a callback from the old gallery must not close its replacement');
+        navigator.currentState!.pop();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pump();
+      }
+      expect(find.text('source feed'), findsOneWidget);
+      expect(navigator.currentState!.canPop(), isFalse);
+      expect(PhysicsSpringGalleryRoute.hasActiveRoutes, isFalse);
+    });
+  }
+
+  testWidgets('queued gallery back callbacks only dismiss their own route once', (tester) async {
+    final navigator = GlobalKey<NavigatorState>();
+    await _pumpGallery(tester, MaterialApp(
+      navigatorKey: navigator,
+      home: const Scaffold(body: Text('source feed')),
+    ));
+    navigator.currentState!.push(PhysicsSpringGalleryRoute<void>(
+      child: const ImageGalleryPage(
+        pics: [galleryTestPic], initialIndex: 0, statusId: 'queued-return',
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 550));
+    final back = tester.widget<IconButton>(
+      find.widgetWithIcon(IconButton, Icons.arrow_back_rounded),
+    ).onPressed!;
+    back();
+    back();
+    back();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+    expect(find.text('source feed'), findsOneWidget);
+    expect(navigator.currentState!.canPop(), isFalse);
+    expect(PhysicsSpringGalleryRoute.hasActiveRoutes, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('gallery route uses slower opening timing and prevents stacking', (tester) async {
     late BuildContext sourceContext;
     final navigatorKey = GlobalKey<NavigatorState>();

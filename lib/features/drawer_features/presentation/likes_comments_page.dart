@@ -845,7 +845,7 @@ class _CommentsListViewState extends ConsumerState<_CommentsListView>
                             side: BorderSide(color: colorScheme.outline),
                             padding: const EdgeInsets.symmetric(horizontal: 10),
                             minimumSize: const Size(0, 48),
-                          ),
+                          ).copyWith(overlayColor: noPressedOverlay),
                         )
                       : null,
                   onTap: () => _openComment(context, c),

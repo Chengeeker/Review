@@ -150,10 +150,11 @@ Widget imageGalleryHeroFlightShuttleBuilder(
 /// Snapshot the complete image plane, not just the fitted/cropped viewport.
 /// ExtendedImage has its own RenderBox (it is NOT a Flutter RenderImage).
 class _HeroImageGeometry {
-  const _HeroImageGeometry(this.image, this.rect, this.radius);
+  const _HeroImageGeometry(this.image, this.rect, this.radius, this.viewport);
   final ui.Image image;
   final Rect rect;
   final BorderRadius radius;
+  final Size viewport;
 
   static _HeroImageGeometry? capture(BuildContext context) {
     final root = context.findRenderObject();
@@ -215,6 +216,7 @@ class _HeroImageGeometry {
           image,
           MatrixUtils.transformRect(transform, full),
           radius,
+          root.size,
         );
         return;
       }
@@ -276,7 +278,16 @@ class _HeroReturnPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final t = (1 - animation.value).clamp(0.0, 1.0);
+    // A diverted Hero keeps this shuttle but replaces its route animation.
+    final widthDelta = target.viewport.width - source.viewport.width;
+    final heightDelta = target.viewport.height - source.viewport.height;
+    final useWidth = widthDelta.abs() >= heightDelta.abs();
+    final extent = useWidth ? widthDelta : heightDelta;
+    final distance = useWidth
+        ? size.width - source.viewport.width
+        : size.height - source.viewport.height;
+    final t = (extent == 0 ? 1 - animation.value : distance / extent)
+        .clamp(0.0, 1.0);
     final rect = Rect.lerp(source.rect, target.rect, t)!;
     final radius = BorderRadius.lerp(source.radius, target.radius, t)!;
     canvas.save();
@@ -314,11 +325,15 @@ class ImageGalleryHeroThumbnail extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Hero(
-    tag: ImageGalleryHeroTag.forPic(scope: scope, index: index, pic: pic),
-    createRectTween: _linearGalleryRectTween,
-    flightShuttleBuilder: imageGalleryHeroFlightShuttleBuilder,
-    child: child,
+  Widget build(BuildContext context) => Listener(
+    // Hero's offstage placeholder must retain its thumbnail's hit target.
+    behavior: HitTestBehavior.opaque,
+    child: Hero(
+      tag: ImageGalleryHeroTag.forPic(scope: scope, index: index, pic: pic),
+      createRectTween: _linearGalleryRectTween,
+      flightShuttleBuilder: imageGalleryHeroFlightShuttleBuilder,
+      child: child,
+    ),
   );
 }
 
@@ -565,6 +580,13 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
     final returning =
         status == AnimationStatus.reverse ||
         (_isReturning && status != AnimationStatus.completed);
+    if (returning) {
+      _galleryTapTimer?.cancel();
+      _galleryTapTimer = null;
+      _pendingGalleryTapPosition = null;
+      _galleryPointers.clear();
+      _resetGalleryTapPointer();
+    }
     if (!mounted ||
         (visible == _chromeRouteVisible && returning == _isReturning)) {
       return;
@@ -683,8 +705,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
   }
 
   void _toggleLivePlay() {
-    // 该按钮使用普通 InkSplash，并在动作入口只触发一次轻触。
-    // 普通水波纹不提供业务触感，动作入口只触发一次反馈。
+    // 无水波纹的局部入口仍在动作确认时提供一次触感。
     HapticFeedbackUtil.light();
     final controller = _liveControllers[_currentIndex];
     if (controller == null || !(_liveInitialized[_currentIndex] ?? false)) {
@@ -874,7 +895,17 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
     setState(() => _videoBottomControlsHeight = height);
   }
 
+  bool get _ownsCurrentRoute =>
+      mounted && ModalRoute.of(context)?.isCurrent == true;
+
+  void _dismissGallery() {
+    if (!_ownsCurrentRoute) return;
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) navigator.pop();
+  }
+
   void _handleGalleryTap(Offset position) {
+    if (!_ownsCurrentRoute) return;
     final screenWidth = MediaQuery.sizeOf(context).width;
     final x = position.dx;
     final isMiddleThird = x >= screenWidth / 3 && x < screenWidth * 2 / 3;
@@ -882,7 +913,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
     if (isMiddleThird) {
       _toggleChrome();
     } else {
-      Navigator.of(context).pop();
+      _dismissGallery();
     }
   }
 
@@ -944,6 +975,8 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
 
     _galleryTapTimer?.cancel();
     if (pendingPosition != null) _handleGalleryTap(pendingPosition);
+    // Flushing the previous tap can already have dismissed this gallery.
+    if (!_ownsCurrentRoute) return;
     _pendingGalleryTapPosition = position;
     _galleryTapTimer = Timer(kDoubleTapTimeout, () {
       final pending = _pendingGalleryTapPosition;
@@ -1657,7 +1690,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                               ),
                               useLiquidGlass: useLiquidGlass,
                               // 返回动作不再依赖水波纹触感。
-                              onPressed: () => Navigator.of(context).pop(),
+                              onPressed: _dismissGallery,
                             ),
 
                             // Counter or Live Photo Switcher Pill
@@ -1666,8 +1699,7 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
                               opacity: controlsOpacity,
                               child: isCurrentLive
                                   ? InkWell(
-                                      // 使用普通水波纹；触感由 _toggleLivePlay 单独提供一次。
-                                      splashFactory: InkSplash.splashFactory,
+                                      splashFactory: NoSplash.splashFactory,
                                       enableFeedback: false,
                                       onTap: _toggleLivePlay,
                                       borderRadius: BorderRadius.circular(20),
@@ -1969,7 +2001,7 @@ class _GalleryGlassIconButtonState extends State<_GalleryGlassIconButton> {
               foregroundColor: Colors.white,
               backgroundColor: Colors.transparent,
               shape: const CircleBorder(),
-            ),
+            ).copyWith(overlayColor: noPressedOverlay),
             onPressed: widget.onPressed,
             icon: Opacity(
               key: widget.opacityKey,

@@ -696,7 +696,7 @@ class _ChaohuaDetailPageState extends ConsumerState<ChaohuaDetailPage>
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                              ),
+                              ).copyWith(overlayColor: noPressedOverlay),
                               child: _isCheckingIn
                                   ? const SizedBox(
                                       width: 16,

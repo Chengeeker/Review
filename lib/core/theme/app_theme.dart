@@ -16,6 +16,50 @@ const _reviewPageTransitionsTheme = PageTransitionsTheme(
   },
 );
 
+ThemeData _withoutTouchInk(ThemeData theme) {
+  ButtonStyle button(ButtonStyle? style) =>
+      (style ?? const ButtonStyle()).copyWith(overlayColor: noPressedOverlay);
+  return theme.copyWith(
+    splashColor: Colors.transparent,
+    highlightColor: Colors.transparent,
+    iconButtonTheme: IconButtonThemeData(
+      style: button(theme.iconButtonTheme.style),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: button(theme.textButtonTheme.style),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: button(theme.filledButtonTheme.style),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: button(theme.outlinedButtonTheme.style),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: button(theme.elevatedButtonTheme.style),
+    ),
+    segmentedButtonTheme: SegmentedButtonThemeData(
+      style: button(theme.segmentedButtonTheme.style),
+    ),
+    radioTheme: theme.radioTheme.copyWith(overlayColor: noPressedOverlay),
+    checkboxTheme: theme.checkboxTheme.copyWith(overlayColor: noPressedOverlay),
+    switchTheme: theme.switchTheme.copyWith(overlayColor: noPressedOverlay),
+    tabBarTheme: theme.tabBarTheme.copyWith(overlayColor: noPressedOverlay),
+    navigationBarTheme: theme.navigationBarTheme.copyWith(
+      overlayColor: noPressedOverlay,
+    ),
+    sliderTheme: theme.sliderTheme.copyWith(
+      overlayColor: WidgetStateColor.resolveWith(
+        (states) =>
+            states.contains(WidgetState.pressed) ||
+                states.contains(WidgetState.dragged)
+            ? Colors.transparent
+            : theme.sliderTheme.overlayColor ??
+                  theme.colorScheme.primary.withValues(alpha: 0.12),
+      ),
+    ),
+  );
+}
+
 class _StackedPageTransitionsBuilder extends PageTransitionsBuilder {
   const _StackedPageTransitionsBuilder();
 
@@ -295,7 +339,7 @@ class AppTheme {
       fontWeightAdjustment: fontWeightAdjustment,
     );
 
-    return ThemeData(
+    final theme = ThemeData(
       useMaterial3: true,
       pageTransitionsTheme: _reviewPageTransitionsTheme,
       splashFactory: const HapticSplashFactory(),
@@ -428,6 +472,7 @@ class AppTheme {
         thickness: 0.5,
       ),
     );
+    return _withoutTouchInk(theme);
   }
 
   static ThemeData darkTheme({
@@ -463,7 +508,7 @@ class AppTheme {
       fontWeightAdjustment: fontWeightAdjustment,
     );
 
-    return ThemeData(
+    final theme = ThemeData(
       useMaterial3: true,
       pageTransitionsTheme: _reviewPageTransitionsTheme,
       splashFactory: const HapticSplashFactory(),
@@ -608,6 +653,7 @@ class AppTheme {
         thickness: 0.5,
       ),
     );
+    return _withoutTouchInk(theme);
   }
 }
 
