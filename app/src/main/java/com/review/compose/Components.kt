@@ -2,6 +2,7 @@ package com.review.compose
 
 import android.os.Build
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -29,6 +30,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.material.icons.rounded.Person
@@ -54,6 +56,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil.compose.SubcomposeAsyncImage
 import coil.compose.SubcomposeAsyncImageContent
+import coil.imageLoader
+import coil.memory.MemoryCache
 import coil.request.ImageRequest
 
 @Composable
@@ -155,7 +159,12 @@ fun Avatar(name: String, url: String = "", modifier: Modifier = Modifier, verifi
                     .addHeader("User-Agent", ApiClient.USER_AGENT)
                     .apply { if (shareWithProfile) size(sharedSize); if (!crossfade) crossfade(false) }.build()
             }
-            SubcomposeAsyncImage(model = request, contentDescription = null, modifier = Modifier.fillMaxSize(),
+            val cached = remember(request) {
+                if (shareWithProfile && !crossfade) context.imageLoader.memoryCache?.get(MemoryCache.Key(url))?.bitmap?.asImageBitmap()
+                else null
+            }
+            if (cached != null) Image(cached, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            else SubcomposeAsyncImage(model = request, contentDescription = null, modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop, loading = { Fallback() }, error = { Fallback() })
         }
     }
@@ -309,18 +318,20 @@ fun PostCard(post: Post, saved: Boolean, onOpen: () -> Unit, onSave: () -> Unit,
                         if (post.data.optInt("edit_count") > 0) Text("已编辑", Modifier.clip(RoundedCornerShape(6.dp)).background(colors.secondaryContainer.copy(alpha = .85f)).reviewClickable { model.revisionPost = post }.padding(horizontal = 5.dp, vertical = 1.dp), color = colors.onSecondaryContainer, fontSize = 10.5.sp, fontWeight = reviewWeight(FontWeight.SemiBold), maxLines = 1)
                     }
                 }
-                if (!model.bool("menuBottom", true)) IconButton(onClick = hapticClick { model.actionPost = post }) { Icon(Icons.Outlined.MoreHoriz, "更多", Modifier.size(20.dp)) }
+                if (!detail && !model.bool("menuBottom", true)) IconButton(onClick = hapticClick { model.actionPost = post }) { Icon(Icons.Outlined.MoreHoriz, "更多", Modifier.size(20.dp)) }
             }
             Spacer(Modifier.height(10.dp))
             PostBody(post, detail, onGallery)
-            Spacer(Modifier.height(12.dp))
-            Box(Modifier.height(1.dp), contentAlignment = Alignment.Center) { ReviewDivider() }
-            Spacer(Modifier.height(4.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
-                PostAction(Icons.Rounded.Repeat, "转发", post.shares, colors.onSurfaceVariant) { model.saveDraft("//@${post.author}: ${post.text}"); model.navigate("draft") }
-                PostAction(Icons.Rounded.ChatBubbleOutline, "评论", post.comments, colors.onSurfaceVariant) { if (!detail) onOpen() }
-                PostAction(if (post.liked) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp, "点赞", post.likes, if (post.liked) colors.primary else colors.onSurfaceVariant, !model.actionBusy) { model.postAction(post, "like") }
-                if (model.bool("menuBottom", true)) PostAction(Icons.Rounded.MoreHoriz, "更多", 0, colors.onSurfaceVariant) { model.actionPost = post }
+            if (!detail) {
+                Spacer(Modifier.height(12.dp))
+                Box(Modifier.height(1.dp), contentAlignment = Alignment.Center) { ReviewDivider() }
+                Spacer(Modifier.height(4.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround, verticalAlignment = Alignment.CenterVertically) {
+                    PostAction(Icons.Rounded.Repeat, "转发", post.shares, colors.onSurfaceVariant) { model.openRepostDraft(post) }
+                    PostAction(Icons.Rounded.ChatBubbleOutline, "评论", post.comments, colors.onSurfaceVariant, action = onOpen)
+                    PostAction(if (post.liked) Icons.Rounded.ThumbUp else Icons.Outlined.ThumbUp, "点赞", post.likes, if (post.liked) colors.primary else colors.onSurfaceVariant, !model.actionBusy) { model.postAction(post, "like") }
+                    if (model.bool("menuBottom", true)) PostAction(Icons.Rounded.MoreHoriz, "更多", 0, colors.onSurfaceVariant) { model.actionPost = post }
+                }
             }
         }
     }

@@ -36,7 +36,7 @@ fun CommentRow(post: Post, comment: Comment, gallery: (List<Media>, Int) -> Unit
     val user = remember(comment.raw) { runCatching { parseUser(JSONObject(comment.raw).optJSONObject("user") ?: JSONObject()) }.getOrNull() }
     Row(Modifier.fillMaxWidth().combinedClickable(hapticFeedbackEnabled = false, onClick = hapticClick { menu = comment }, onLongClick = hapticClick { menu = comment }).padding(horizontal = 16.dp, vertical = if (inThread) 12.dp else 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Box(Modifier.size(48.dp).reviewClickable(onClickLabel = "${comment.author}的头像") { model.openProfile(comment) }, contentAlignment = Alignment.Center) {
-            Avatar(comment.author, comment.avatar, Modifier.size(if (inThread) 40.dp else 36.dp), verified = user?.isVerified == true, verifiedType = user?.verifiedType ?: -1, shareWithProfile = true)
+            Avatar(comment.author, comment.avatar, Modifier.size(if (inThread) 40.dp else 36.dp), verified = user?.isVerified == true, verifiedType = user?.verifiedType ?: -1, shareWithProfile = true, crossfade = false)
         }
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -65,7 +65,7 @@ fun CommentRow(post: Post, comment: Comment, gallery: (List<Media>, Int) -> Unit
                         val childUser = remember(child.raw) { runCatching { parseUser(JSONObject(child.raw).optJSONObject("user") ?: JSONObject()) }.getOrNull() }
                         Row(Modifier.fillMaxWidth().combinedClickable(hapticFeedbackEnabled = false, onClick = hapticClick { menu = child }, onLongClick = hapticClick { menu = child }).padding(vertical = 3.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Box(Modifier.size(48.dp).reviewClickable(onClickLabel = "${child.author}的头像") { model.openProfile(child) }, contentAlignment = Alignment.Center) {
-                                Avatar(child.author, child.avatar, Modifier.size(28.dp), verified = childUser?.isVerified == true, verifiedType = childUser?.verifiedType ?: -1, shareWithProfile = true)
+                                Avatar(child.author, child.avatar, Modifier.size(28.dp), verified = childUser?.isVerified == true, verifiedType = childUser?.verifiedType ?: -1, shareWithProfile = true, crossfade = false)
                             }
                             Column(Modifier.weight(1f)) {
                                 CommentName(post, child, compact = true)

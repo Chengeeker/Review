@@ -21,11 +21,11 @@ import androidx.compose.ui.text.input.TextFieldValue
 import org.json.JSONArray
 
 @Composable
-fun EmojiPanel(backspace: () -> Unit = {}, select: (String) -> Unit) {
+fun EmojiPanel(backspace: () -> Unit = {}, modifier: Modifier = Modifier, select: (String) -> Unit) {
     val context = LocalContext.current
     val groups = remember { context.assets.open("emoji.json").bufferedReader().use { JSONArray(it.readText()).objects() } }
     var index by remember { mutableIntStateOf(0) }
-    Column(Modifier.height(240.dp)) {
+    Column(modifier.height(240.dp)) {
         ReviewDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .3f))
         Row(Modifier.height(36.dp).background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = .3f)), verticalAlignment = Alignment.CenterVertically) {
             groups.forEachIndexed { i, item ->

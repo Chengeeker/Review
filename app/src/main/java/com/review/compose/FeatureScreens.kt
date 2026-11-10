@@ -7,6 +7,7 @@ import android.content.Context
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -32,6 +33,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 
 val LocalReview = staticCompositionLocalOf<ReviewModel> { error("Missing app model") }
@@ -44,6 +46,7 @@ class PagedContentState<T> {
     val refreshing = mutableStateOf(false)
     val error = mutableStateOf<String?>(null)
     var loaded = false
+    internal var loadedReloadKey: Any? = null
     internal var retryRefresh = true
     internal var retryFromPull = false
     internal var stopObservingPosts: (() -> Unit)? = null
@@ -56,7 +59,8 @@ fun <T> PagedContent(identity: String, load: suspend (String) -> Page<T>, itemKe
     empty: (@Composable androidx.compose.foundation.lazy.LazyItemScope.() -> Unit)? = null, retained: PagedContentState<T>? = null,
     loading: (@Composable androidx.compose.foundation.lazy.LazyItemScope.() -> Unit)? = null, showLoadMore: Boolean = true, loadOnScrollOnly: Boolean = false,
     contentPadding: PaddingValues? = null, allowEmptyContinuation: Boolean = false,
-    reloadKey: Any? = null, row: @Composable (T) -> Unit) {
+    reloadKey: Any? = null, endOfList: (@Composable androidx.compose.foundation.lazy.LazyItemScope.() -> Unit)? = null,
+    row: @Composable (T) -> Unit) {
     val scope = rememberCoroutineScope()
     val data = retained ?: remember(identity) { PagedContentState<T>() }
     val model = LocalReview.current
@@ -98,7 +102,7 @@ fun <T> PagedContent(identity: String, load: suspend (String) -> Page<T>, itemKe
             more = canContinuePage(previous, page.next, advanced)
             if (fromPull) state.requestScrollToItem(0)
             else if (refresh && reloadKey != null) state.requestScrollToItem(state.firstVisibleItemIndex, state.firstVisibleItemScrollOffset)
-            rows = merged; cursor = page.next; data.loaded = true
+            rows = merged; cursor = page.next; data.loaded = true; data.loadedReloadKey = reloadKey
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { if (currentIdentity == requestedIdentity && requestGeneration == generation) {
             error = e.message ?: "加载失败"
@@ -106,9 +110,21 @@ fun <T> PagedContent(identity: String, load: suspend (String) -> Page<T>, itemKe
         } }
         finally { if (requestGeneration == generation) { data.busy.value = false; data.refreshing.value = false } }
     }
-    LaunchedEffect(identity, reloadKey) { if (!data.loaded || reloadKey != null) fetch(true, replaceRequest = true) }
-    val end by remember(state, loadOnScrollOnly) { derivedStateOf { (!loadOnScrollOnly || state.isScrollInProgress) && (state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1) >= state.layoutInfo.totalItemsCount - 4 } }
-    LaunchedEffect(identity, reloadKey, end, rows.size) { if (end && rows.isNotEmpty() && error == null) fetch(false) }
+    LaunchedEffect(identity, reloadKey) {
+        if (!data.loaded || data.loadedReloadKey != reloadKey) fetch(true, replaceRequest = true)
+    }
+    val loadNext by rememberUpdatedState<suspend () -> Unit>({ fetch(false) })
+    LaunchedEffect(data, identity, reloadKey, loadOnScrollOnly) {
+        snapshotFlow {
+            val layout = state.layoutInfo
+            val last = layout.visibleItemsInfo.lastOrNull()
+            // Appending replies changes the rows before the list measures the new tail.
+            val atEnd = last != null && last.index >= layout.totalItemsCount - 4 &&
+                (body != null || layout.totalItemsCount >= rows.size)
+            cursor.takeIf { it != "0" && atEnd && (!loadOnScrollOnly || state.isScrollInProgress) &&
+                rows.isNotEmpty() && !busy && more && error == null }
+        }.filterNotNull().collect { loadNext() }
+    }
     ReviewRefresh(data.refreshing.value && rows.isNotEmpty(), onRefresh = { scope.launch { fetch(true, fromPull = true) } }, failed = error != null) {
         LazyColumn(Modifier.fillMaxSize(), state, contentPadding = contentPadding ?: PaddingValues(top = LocalContentTop.current, bottom = 24.dp)) {
             header()
@@ -117,6 +133,7 @@ fun <T> PagedContent(identity: String, load: suspend (String) -> Page<T>, itemKe
             error?.let { message -> item { ErrorNotice(message) { scope.launch { fetch(data.retryRefresh, fromPull = data.retryFromPull) } } } }
             if (rows.isEmpty() && !busy && error == null) item { if (empty == null) EmptyNotice("暂无内容", "下拉刷新") else empty() }
             if (showLoadMore && more && !busy && error == null) item { TextButton(onClick = hapticClick { scope.launch { fetch(false) } }, Modifier.fillMaxWidth()) { Text(if (rows.isEmpty()) "继续筛选" else "加载更多") } }
+            if (endOfList != null && !more && !busy && error == null && rows.isNotEmpty()) item(content = endOfList)
         }
     }
 }
@@ -217,6 +234,7 @@ fun PostActions() {
     val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
     var delete by remember(model.uid) { mutableStateOf<Post?>(null) }
+    var copyPost by remember(model.uid) { mutableStateOf<Post?>(null) }
     fun copy(label: String, value: String, notice: String) {
         (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText(label, value))
         model.actionPost = null
@@ -241,7 +259,7 @@ fun PostActions() {
                 PostActionTile(Icons.Rounded.History, "查看编辑记录", if (editCount > 0) "已编辑 $editCount 次" else null) {
                     model.actionPost = null; model.revisionPost = post
                 }
-                PostActionTile(Icons.Rounded.ContentCopy, "复制微博正文") { copy("正文", fullText, "已复制微博文本至剪贴板") }
+                PostActionTile(Icons.Rounded.ContentCopy, "复制微博正文") { copyPost = post; model.actionPost = null }
                 PostActionTile(if (post.favorited) Icons.Rounded.Star else Icons.Rounded.StarOutline,
                     if (post.favorited) "取消收藏" else "收藏微博", iconColor = if (post.favorited) Color(0xFFFF8200) else colors.onSurfaceVariant,
                     enabled = !model.actionBusy) {
@@ -257,10 +275,54 @@ fun PostActions() {
             }
         }
     }
+    copyPost?.let { post ->
+        CopyPostTextDialog(post, close = { copyPost = null }) { body ->
+            copy("正文", body, "已复制微博文本至剪贴板")
+            copyPost = null
+        }
+    }
     delete?.let { post -> ReviewAlertDialog(onDismissRequest = { delete = null }, title = { Text("确定删除微博？") }, text = { Text("删除后该条微博将不可恢复。") },
         confirmButton = { Button(colors = ButtonDefaults.buttonColors(containerColor = colors.error, contentColor = colors.onError),
             onClick = hapticClick { delete = null; model.postAction(post, "delete") }) { Text("确定删除") } },
         dismissButton = { TextButton(onClick = hapticClick { delete = null }) { Text("取消") } }) }
+}
+
+@Composable
+private fun CopyPostTextDialog(post: Post, close: () -> Unit, copy: (String) -> Unit) {
+    val model = LocalReview.current
+    val cookie = model.sessionCookie
+    var selecting by remember { mutableStateOf(false) }
+    var retry by remember { mutableIntStateOf(0) }
+    val available = remember(post) { post.availableFullText().takeIf(String::isNotBlank) ?: post.text.takeIf { !post.longText || post.demo } }
+    var result by remember(post.id, cookie, retry) { mutableStateOf<Result<String>?>(null) }
+    LaunchedEffect(post.id, cookie, retry) {
+        if (available == null) {
+            try { result = Result.success(model.repository.fullText(cookie, post.id)) }
+            catch (e: CancellationException) { throw e }
+            catch (e: Exception) { result = Result.failure(e) }
+        }
+    }
+    val body = available ?: result?.getOrNull()
+    val failed = result?.isFailure == true
+    ReviewAlertDialog(onDismissRequest = close, title = { Text(if (selecting) "自由复制" else "复制微博正文") }, text = {
+        if (selecting && body != null) {
+            SelectionContainer(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) { Text(body) }
+        } else Text(when {
+            failed -> "未能获取完整正文，请重试。"
+            body == null -> "正在加载全文…"
+            else -> "自由复制时可长按选择要复制的文字。"
+        })
+    }, dismissButton = if (!selecting) {
+        { TextButton(enabled = body != null, onClick = hapticClick { selecting = true }) { Text("自由复制") } }
+    } else null, confirmButton = {
+        TextButton(enabled = selecting || failed || body != null, onClick = hapticClick {
+            when {
+                selecting -> close()
+                failed -> retry++
+                body != null -> copy(body)
+            }
+        }) { Text(if (selecting) "关闭" else if (failed) "重试" else "复制全文") }
+    })
 }
 
 @Composable

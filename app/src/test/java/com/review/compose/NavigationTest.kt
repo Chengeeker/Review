@@ -302,7 +302,7 @@ class NavigationTest {
         ready()
         val model = androidx.lifecycle.ViewModelProvider(compose.activity)[ReviewModel::class.java]
         compose.runOnIdle { model.openPost(model.feed.first()) }
-        val quickComment = compose.onNodeWithText("发送一条友善的评论...")
+        val quickComment = compose.onNodeWithText("说点什么…")
         val start = quickComment.fetchSemanticsNode().boundsInRoot
         fun dispatchIme(bottom: Int) = compose.runOnUiThread {
             val ime = androidx.core.view.WindowInsetsCompat.Type.ime()
@@ -325,11 +325,76 @@ class NavigationTest {
         assertEquals(start, quickComment.fetchSemanticsNode().boundsInRoot)
     }
 
+    @Test fun detailCapsulesReplaceCardActionsAndOpenCommentsAndRepostDraft() {
+        ready()
+        val model = androidx.lifecycle.ViewModelProvider(compose.activity)[ReviewModel::class.java]
+        val post = Post("123", "测试作者", text = (1..45).joinToString("\n") { "正文第 $it 行" },
+            demo = true, comments = 19, likes = 28, shares = 7)
+        compose.runOnIdle { model.openPost(post) }
+        val write = compose.onNodeWithText("说点什么…")
+        val like = compose.onNodeWithContentDescription("点赞")
+        val repost = compose.onNodeWithContentDescription("转发")
+        val comments = compose.onNodeWithContentDescription("评论")
+        val sort = compose.onNodeWithText("按热度")
+        sort.assertIsNotDisplayed()
+        for (node in listOf(write, like, repost, comments)) node.assertIsDisplayed().assertHasClickAction()
+        val centers = listOf(write, like, repost, comments).map { it.fetchSemanticsNode().boundsInRoot.center.x }
+        assertEquals(centers.sorted(), centers)
+        val display = compose.activity.resources.displayMetrics
+        val commentBounds = comments.fetchSemanticsNode().boundsInRoot
+        assertEquals(display.widthPixels - 14f * display.density, commentBounds.right, 2f)
+        for (action in listOf(like, repost, comments)) {
+            val width = action.fetchSemanticsNode().boundsInRoot.width / display.density
+            assertEquals(50f, width, .5f)
+        }
+        val writeBounds = write.fetchSemanticsNode().boundsInRoot
+        assertEquals(14f * display.density, writeBounds.left, 2f)
+        assertEquals(119f * display.density, writeBounds.width, 2f)
+        assertEquals(writeBounds.top, commentBounds.top, 1f)
+        assertEquals(writeBounds.bottom, commentBounds.bottom, 1f)
+        compose.runOnIdle { model.setOption("menuBottom", false) }
+        compose.onNodeWithContentDescription("更多").assertDoesNotExist()
+        compose.onNodeWithContentDescription("更多操作").assertIsDisplayed()
+        comments.performClick()
+        sort.assertIsDisplayed()
+        repost.performClick()
+        compose.runOnIdle {
+            assertEquals("draft", model.screen)
+            assertEquals("//@${post.author}: ${post.text}", model.draft)
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "zh-rCN-w320dp-h710dp-xxhdpi")
+    fun detailBottomBarUsesSystemFontSizeAndFitsOnANarrowScreen() {
+        ready()
+        val model = androidx.lifecycle.ViewModelProvider(compose.activity)[ReviewModel::class.java]
+        val post = model.feed.first().copy(id = "narrow-capsules", likes = 1793)
+        compose.runOnIdle { model.openPost(post) }
+        fun layoutOf(text: String): TextLayoutResult {
+            val layouts = mutableListOf<TextLayoutResult>()
+            compose.onNodeWithText(text, useUnmergedTree = true)
+                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            return layouts.single()
+        }
+        val labels = listOf("说点什么…", compactCount(post.likes))
+        val before = labels.map(::layoutOf)
+        compose.runOnIdle { model.updateTextScale(1.5f) }
+        val after = labels.map(::layoutOf)
+        before.zip(after).forEach { (original, current) ->
+            assertEquals(compose.activity.resources.configuration.fontScale, current.layoutInput.density.fontScale, .001f)
+            assertEquals(original.layoutInput.style.fontSize, current.layoutInput.style.fontSize)
+            assertEquals(original.size, current.size)
+        }
+        assertTrue(!after.first().didOverflowWidth && !after.first().isLineEllipsized(0))
+        listOf("点赞", "转发", "评论").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed() }
+    }
+
     @Test fun commentEditorClosesFromTheScrimAndFromTheEmojiPanel() {
         ready()
         val model = androidx.lifecycle.ViewModelProvider(compose.activity)[ReviewModel::class.java]
         compose.runOnIdle { model.openPost(model.feed.first()) }
-        val entry = compose.onNodeWithText("发送一条友善的评论...")
+        val entry = compose.onNodeWithText("说点什么…")
         entry.performClick()
         focusCommentWindow()
         compose.onNode(hasSetTextAction()).assertIsFocused().performTextInput("测试草稿")
@@ -355,11 +420,42 @@ class NavigationTest {
         compose.runOnIdle { assertEquals("detail", model.screen) }
     }
 
+    @Test fun commentPanelReplacesTheKeyboardSpaceWithoutMovingTheEditor() {
+        ready()
+        val model = androidx.lifecycle.ViewModelProvider(compose.activity)[ReviewModel::class.java]
+        compose.runOnIdle { model.openPost(model.feed.first()) }
+        compose.onNodeWithText("说点什么…").performClick()
+        focusCommentWindow()
+        val host = commentHost()
+        val editorTitle = compose.onNode(hasText("发表评论") and hasAnyAncestor(isDialog()))
+        val ime = androidx.core.view.WindowInsetsCompat.Type.ime()
+        val shown = (300 * compose.activity.resources.displayMetrics.density).toInt()
+        fun applyIme(bottom: Int) = compose.runOnUiThread {
+            androidx.core.view.ViewCompat.dispatchApplyWindowInsets(host, androidx.core.view.WindowInsetsCompat.Builder()
+                .setInsets(ime, androidx.core.graphics.Insets.of(0, 0, 0, bottom)).setVisible(ime, bottom > 0).build())
+        }
+        applyIme(shown)
+        val top = editorTitle.fetchSemanticsNode().boundsInRoot.top
+        compose.onNodeWithContentDescription("插入表情").performClick()
+        assertEquals(top, editorTitle.fetchSemanticsNode().boundsInRoot.top, 2f)
+        applyIme(shown / 2)
+        assertEquals(top, editorTitle.fetchSemanticsNode().boundsInRoot.top, 2f)
+        applyIme(0)
+        compose.onNodeWithContentDescription("[微笑]").assertIsDisplayed().performClick()
+        assertEquals(top, editorTitle.fetchSemanticsNode().boundsInRoot.top, 2f)
+        compose.onNodeWithContentDescription("切换键盘").performClick()
+        assertEquals(top, editorTitle.fetchSemanticsNode().boundsInRoot.top, 2f)
+        applyIme(shown)
+        compose.onNodeWithContentDescription("[微笑]").assertDoesNotExist()
+        compose.onNode(hasSetTextAction() and hasText("[微笑]")).assertIsFocused()
+        assertEquals(top, editorTitle.fetchSemanticsNode().boundsInRoot.top, 2f)
+    }
+
     @Test fun commentAndBothChatComposersHaveUsableOfflineEmoji() {
         ready()
         val model = androidx.lifecycle.ViewModelProvider(compose.activity)[ReviewModel::class.java]
         compose.runOnIdle { model.openPost(model.feed.first()) }
-        compose.onNodeWithText("发送一条友善的评论...").performClick()
+        compose.onNodeWithText("说点什么…").performClick()
         compose.onNodeWithContentDescription("插入表情").performClick()
         compose.onNodeWithContentDescription("[微笑]").assertIsDisplayed()
         compose.onNodeWithText("热门").performClick()
@@ -638,6 +734,42 @@ class NavigationTest {
         capture("post-more-light")
         compose.onNodeWithText("复制微博链接").performClick()
         compose.onNodeWithText("查看编辑记录").assertDoesNotExist()
+    }
+
+    @Test fun postCopyOffersSelectableFullTextAndCopiesTheSameUnabridgedBody() {
+        ready()
+        val model = androidx.lifecycle.ViewModelProvider(compose.activity)[ReviewModel::class.java]
+        val post = Post("13579", "复制菜单测试", text = "正文摘要…", longText = true)
+        val fullText = "第一段正文\n第二段需要选取的文字"
+        val clipboard = compose.activity.getSystemService(android.content.ClipboardManager::class.java)
+        val client = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            check(request.url.encodedPath == "/ajax/statuses/longtext" && request.url.queryParameter("id") == post.id)
+            val payload = org.json.JSONObject().put("ok", 1).put("data", org.json.JSONObject().put("longTextContent_raw", fullText))
+            okhttp3.Response.Builder().request(request).protocol(okhttp3.Protocol.HTTP_1_1).code(200).message("OK")
+                .body(payload.toString().toResponseBody()).build()
+        }.build()
+        val field = ApiClient::class.java.getDeclaredField("client").apply { isAccessible = true }
+        val previous = field.get(model.repository.api)
+        field.set(model.repository.api, client)
+        try {
+            fun openCopyMenu() {
+                compose.runOnIdle { model.actionPost = post }
+                compose.onNodeWithText("复制微博正文").performClick()
+                compose.waitUntil(5000) { compose.onAllNodes(hasText("复制全文") and isEnabled()).fetchSemanticsNodes().isNotEmpty() }
+            }
+            compose.runOnIdle { clipboard.clearPrimaryClip() }
+            openCopyMenu()
+            compose.onNodeWithText("自由复制").performClick()
+            compose.onNodeWithText(fullText).assertIsDisplayed()
+            compose.runOnIdle { assertEquals(null, clipboard.primaryClip) }
+            compose.onNodeWithText("关闭").performClick()
+            openCopyMenu()
+            compose.onNodeWithText("复制全文").performClick()
+            compose.runOnIdle { assertEquals(fullText, clipboard.primaryClip?.getItemAt(0)?.text.toString()) }
+        } finally {
+            field.set(model.repository.api, previous)
+        }
     }
     @Test fun liveGalleryUsesPlaybackLabelAndTracksSelectedThumbnail() {
         ready()

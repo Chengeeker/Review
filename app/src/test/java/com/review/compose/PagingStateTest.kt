@@ -37,7 +37,7 @@ class PagingStateTest {
                     Row { listOf("热门", "最新").forEach { name -> Button(onClick = { channel = name }) { Text(name) } } }
                     Box(Modifier.weight(1f)) {
                         val name = channel
-                        PagedContent(name, { requests[name] = (requests[name] ?: 0) + 1; Page(List(40) { "$name-$it" }) }, { it }, retained = pages.getOrPut(name) { PagedContentState() }) { Text(it) }
+                        PagedContent(name, { requests[name] = (requests[name] ?: 0) + 1; Page(List(40) { "$name-$it" }) }, { it }, retained = pages.getOrPut(name) { PagedContentState() }, reloadKey = 0) { Text(it) }
                     }
                 }
             }
@@ -120,6 +120,45 @@ class PagingStateTest {
         assertEquals(0, data.scroll.firstVisibleItemScrollOffset)
         compose.onNodeWithText("新增0").assertIsDisplayed()
     }
+    @Test fun flingingToTheListEndAndReturningDoesNotCancelOrRepeatThePendingPage() {
+        val data = PagedContentState<String>()
+        val pending = kotlinx.coroutines.CompletableDeferred<Page<String>>()
+        val requests = mutableListOf<String>()
+        compose.setContent { CompositionLocalProvider(LocalReview provides model) {
+            MaterialTheme {
+                Box(Modifier.height(240.dp)) {
+                    PagedContent("thread", { cursor ->
+                        requests += cursor
+                        when (cursor) {
+                            "0" -> Page(List(40) { "回复$it" }, "2")
+                            "2" -> pending.await()
+                            else -> Page(listOf("最后一页"))
+                        }
+                    }, { it }, retained = data) { Text(it, Modifier.height(48.dp)) }
+                }
+            }
+        } }
+        val list = compose.onNode(hasScrollToIndexAction())
+        list.performScrollToIndex(31)
+        compose.runOnIdle { assertEquals(listOf("0"), requests) }
+        list.performTouchInput { swipeUp(startY = height * .93f, endY = height * .07f, durationMillis = 65) }
+        compose.runOnIdle {
+            assertEquals(listOf("0", "2"), requests)
+            assertEquals(true, data.busy.value)
+            assertEquals(false, data.scroll.canScrollForward)
+        }
+        list.performScrollToIndex(0)
+        compose.runOnIdle { assertEquals(true, data.busy.value) }
+        list.performScrollToIndex(39)
+        compose.runOnIdle { assertEquals(listOf("0", "2"), requests) }
+        pending.complete(Page(listOf("下一页回复"), "3"))
+        compose.runOnIdle {
+            assertEquals(listOf("0", "2", "3"), requests)
+            assertEquals("最后一页", data.rows.value.last())
+            assertEquals(false, data.more.value)
+        }
+    }
+
     @Test fun retryingAFailedPullRetriesTheFirstPageAndShowsItsBeginning() {
         val data = PagedContentState<String>()
         val cursors = mutableListOf<String>()

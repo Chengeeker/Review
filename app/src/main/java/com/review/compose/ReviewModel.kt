@@ -207,6 +207,10 @@ class ReviewModel(application: Application) : AndroidViewModel(application) {
         repository.api.configureSession(cookie, mobileOnly)
     }
     fun saveDraft(value: String) { draft = value; prefs.edit().putString("draft-$scopeKey", value).apply() }
+    fun openRepostDraft(post: Post) {
+        saveDraft("//@${post.author}: ${post.text}")
+        navigate("draft")
+    }
     fun bookmark(post: Post) {
         bookmarks = if (bookmarks.any { it.id == post.id }) bookmarks.filterNot { it.id == post.id }
             else (listOf(post) + bookmarks).take(200)

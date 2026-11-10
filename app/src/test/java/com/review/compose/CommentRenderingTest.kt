@@ -37,7 +37,7 @@ class CommentRenderingTest {
         compose.onNodeWithText("共5条回复").assertIsDisplayed()
         compose.onNodeWithText("已有预览").assertIsDisplayed()
         compose.onNodeWithText("原评论内容").assertDoesNotExist()
-        compose.onNodeWithText("没有更多回复").assertIsDisplayed()
+        compose.onNode(hasText("没有更多回复") and hasAnyAncestor(hasScrollToIndexAction())).assertIsDisplayed()
         compose.onNodeWithContentDescription("刷新回复").performClick()
         compose.onNodeWithText("已有预览").assertIsDisplayed()
         compose.onNodeWithContentDescription("关闭").performClick()
