@@ -122,8 +122,11 @@ fun ReviewApp(model: ReviewModel = viewModel()) {
                         "trends", "topics", "video", "browser", "profileSearch", "topicSearch")
                     val behindShellBar = kind in setOf("detail", "article", "profile", "history", "messages", "groupPosts", "groupInfo",
                         "theme", "storage", "refreshRate", "icons", "notifications", "backup")
-                    val backgroundLayer = rememberGraphicsLayer()
-                    val backdrop = remember(backgroundLayer) { ReviewBackdrop(backgroundLayer) }
+                    // The platform WebView draws its own RenderNodes. Do not replay them as a Compose backdrop.
+                    val backdrop = if (kind == "browser" || kind == "webLogin") null else {
+                        val backgroundLayer = rememberGraphicsLayer()
+                        remember(backgroundLayer) { ReviewBackdrop(backgroundLayer) }
+                    }
                 CompositionLocalProvider(LocalBackdrop provides backdrop, LocalGalleryOpenFrom provides { media, index, sources ->
                     openGallery = GalleryRequest(media, index, sources)
                 }) {
@@ -165,7 +168,8 @@ fun ReviewApp(model: ReviewModel = viewModel()) {
                             top = if (root || ownsTopBar || behindShellBar) 0.dp else padding.calculateTopPadding(),
                             bottom = if (root || kind == "video") 0.dp else padding.calculateBottomPadding(),
                         )
-                        Box(Modifier.fillMaxSize().recordBackdrop(backdrop).padding(pagePadding).consumeWindowInsets(pagePadding)) {
+                        Box(Modifier.fillMaxSize().then(if (backdrop != null) Modifier.recordBackdrop(backdrop) else Modifier)
+                            .padding(pagePadding).consumeWindowInsets(pagePadding)) {
                             CompositionLocalProvider(LocalContentTop provides when {
                                 root -> TopAppBarDefaults.windowInsets.asPaddingValues().calculateTopPadding() + 56.dp
                                 behindShellBar -> padding.calculateTopPadding()
@@ -205,6 +209,7 @@ fun ReviewApp(model: ReviewModel = viewModel()) {
                                     "messages" -> MessagesScreen()
                                     "topics" -> TopicsScreen()
                                     "topic" -> TopicScreen(parts.drop(1).joinToString(":"), gallery, route)
+                                    "place" -> PlaceLinkScreen(parts.getOrElse(1) { "" }, android.net.Uri.decode(parts.getOrElse(2) { "" }))
                                     "topicSearch" -> TopicSearchScreen(parts[1], android.net.Uri.decode(parts.drop(2).joinToString(":")), gallery)
                                     "notificationsList" -> NotificationList(parts[1], gallery)
                                     "chat" -> ConversationScreen(parts[1], parts[2].toBoolean(), gallery)
@@ -241,7 +246,7 @@ fun ReviewApp(model: ReviewModel = viewModel()) {
 fun routeTitle(route: String): String = when (route.substringBefore(':')) {
     "detail", "article" -> "文章详情"; "search" -> "搜索"; "advanced" -> "高级搜索"; "draft" -> "发微博"; "edit" -> "编辑微博"
     "account" -> "账号登录"; "favorites" -> "赞和收藏"; "groups" -> "我的分组"; "relations" -> "关注列表"; "history" -> "浏览记录"
-    "messages" -> "我的消息"; "topics" -> "超话中心"; "profile" -> "个人主页"; "theme" -> "个性化"
+    "messages" -> "我的消息"; "topics" -> "超话中心"; "place" -> "地理位置"; "profile" -> "个人主页"; "theme" -> "个性化"
     "style" -> "微博样式"; "storage" -> "存储设置"; "cache" -> "缓存管理"; "backup" -> "WebDAV 云端备份与恢复"; "notifications" -> "订阅消息提醒"
     "icons" -> "自定义应用图标"; "refreshRate" -> "屏幕帧率设置"
     "groupMembers" -> "群成员"; "groupPosts" -> "群微博"; "groupInfo" -> "群信息"

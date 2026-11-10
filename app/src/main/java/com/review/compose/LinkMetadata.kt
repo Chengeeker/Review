@@ -3,6 +3,35 @@ package com.review.compose
 import org.json.JSONArray
 import org.json.JSONObject
 
+private val shortStatusLink = Regex("https?://t\\.cn/[a-zA-Z0-9]+", RegexOption.IGNORE_CASE)
+
+internal fun retainStatusShortLinks(source: Post, fresh: Post): Post {
+    if (source.id != fresh.id) return fresh
+    val quote = fresh.repost?.let { current -> source.repost?.let { retainStatusShortLinks(it, current) } ?: current }
+    val visible = shortStatusLink.findAll(source.text).map { it.value }.distinctBy { it.substringAfter("://") }.toList()
+    if (visible.isEmpty()) return fresh.copy(repost = quote)
+
+    fun restore(body: String): String {
+        val missing = visible.filter { url ->
+            !attachmentLinkPattern(url).containsMatchIn(body) && fresh.images.none { it.card &&
+                it.cardLink.substringAfter("://") == url.substringAfter("://") }
+        }
+        return if (missing.isEmpty()) body else (listOf(body) + missing).filter(String::isNotBlank).joinToString("\n")
+    }
+    val text = restore(fresh.text)
+    val full = fresh.availableFullText()
+    val fullWithLinks = full.takeIf(String::isNotBlank)?.let(::restore)
+    val raw = fresh.data
+    if (fullWithLinks != null && fullWithLinks != full) raw.put("full_text_raw", fullWithLinks)
+    val links = raw.optJSONArray("url_struct").objects()
+    val originalLinks = source.data.optJSONArray("url_struct").objects().filter { link ->
+        val key = link.optString("short_url").substringAfter("://")
+        visible.any { it.substringAfter("://") == key } && links.none { it.optString("short_url").substringAfter("://") == key }
+    }
+    if (originalLinks.isNotEmpty()) raw.put("url_struct", JSONArray(links + originalLinks))
+    return fresh.copy(text = text, raw = raw.toString(), repost = quote)
+}
+
 fun normalizedLinks(status: JSONObject): List<JSONObject> {
     val links = status.optJSONArray("url_struct").objects().map { JSONObject(it.toString()) }.toMutableList()
     status.optJSONArray("url_objects").objects().forEach { entry ->

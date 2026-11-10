@@ -1798,6 +1798,84 @@ class NavigationTest {
         compose.onNodeWithContentDescription("返回").performClick()
         compose.onNodeWithText("记录身边的光影").assertIsDisplayed()
     }
+
+    @Test fun topicCenterRetriesEmptyRecommendationsAndHashtagsOpenExactTopic() {
+        ready()
+        val model = androidx.lifecycle.ViewModelProvider(compose.activity)[ReviewModel::class.java]
+        val firstPage = java.util.concurrent.atomic.AtomicInteger()
+        val id = "100808" + "a".repeat(32)
+        val client = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            val payload = when (request.url.encodedPath) {
+                "/ajax/stopic/list" -> when (request.url.queryParameter("keyword")) {
+                    "超话" -> if (request.url.queryParameter("page") == "1" && firstPage.incrementAndGet() == 2)
+                        """{"ok":1,"data":[{"title":"推荐摄影社区","page_id":"$id"}]}"""
+                    else """{"ok":1,"data":[]}"""
+                    "深空摄影" -> """{"ok":1,"data":[{"title":"深空摄影交流超话","page_id":"100808${"b".repeat(32)}"},{"title":"深空摄影超话","page_id":"$id"}]}"""
+                    else -> error("Unexpected topic query")
+                }
+                "/ajax_proxy/chaohua/page", "/ajax_proxy/chaohua/page/extend" -> """{"ok":1,"data":{}}"""
+                else -> """{"ok":1,"data":[]}"""
+            }
+            okhttp3.Response.Builder().request(request).protocol(okhttp3.Protocol.HTTP_1_1).code(200).message("OK")
+                .body(payload.toResponseBody()).build()
+        }.build()
+        val field = ApiClient::class.java.getDeclaredField("client").apply { isAccessible = true }
+        val previous = field.get(model.repository.api)
+        field.set(model.repository.api, client)
+        try {
+            compose.runOnIdle { model.changeMode(false); model.navigate("topics") }
+            compose.waitUntil(10000) { compose.onAllNodesWithText("推荐摄影社区").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("推荐摄影社区").assertIsDisplayed()
+            assertEquals(2, firstPage.get())
+            val body = "欢迎加入 #深空摄影[超话]#"
+            compose.runOnIdle { model.openPost(Post("741234", "超话直达样本", text = body, demo = true)) }
+            val text = compose.onNodeWithText(body, useUnmergedTree = true).assertIsDisplayed()
+            val layouts = mutableListOf<TextLayoutResult>()
+            text.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            text.performTouchInput { click(layouts.single().getBoundingBox(body.indexOf("深")).center) }
+            compose.waitUntil(10000) { model.routeStack.last().topic?.optString("page_id") == id }
+            compose.onNodeWithText("发帖").assertIsDisplayed()
+            compose.onNodeWithText("深空摄影交流超话").assertDoesNotExist()
+        } finally { field.set(model.repository.api, previous) }
+    }
+
+    @Test fun collapsedPostPreloadsFullTextAndReusesItInDetail() {
+        ready()
+        val model = androidx.lifecycle.ViewModelProvider(compose.activity)[ReviewModel::class.java]
+        val requests = java.util.concurrent.atomic.AtomicInteger()
+        val post = Post("963852741", "预载样本", text = "收起时显示摘要", longText = true)
+        val full = "收起时显示摘要\n\n这是提前加载的第二段正文"
+        val detail = androidx.compose.runtime.mutableStateOf(false)
+        val client = okhttp3.OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            check(request.url.encodedPath == "/ajax/statuses/longtext")
+            requests.incrementAndGet()
+            val payload = org.json.JSONObject().put("data", org.json.JSONObject().put("longTextContent_raw", full))
+            okhttp3.Response.Builder().request(request).protocol(okhttp3.Protocol.HTTP_1_1).code(200).message("OK")
+                .body(payload.toString().toResponseBody()).build()
+        }.build()
+        val field = ApiClient::class.java.getDeclaredField("client").apply { isAccessible = true }
+        val previous = field.get(model.repository.api)
+        field.set(model.repository.api, client)
+        try {
+            compose.activity.setContent {
+                ReviewTheme(false) {
+                    CompositionLocalProvider(LocalReview provides model) {
+                        Column { androidx.compose.runtime.key(detail.value) { PostBody(post, detail.value, { _, _ -> }) } }
+                    }
+                }
+            }
+            compose.onNodeWithText(post.text).assertIsDisplayed()
+            compose.waitUntil(10000) { cachedFullText(model.sessionCookie, post.id) == full }
+            compose.onNodeWithText(full).assertDoesNotExist()
+            compose.onNodeWithText("展开全文").performClick()
+            compose.onNodeWithText(full).assertIsDisplayed()
+            compose.runOnIdle { detail.value = true }
+            compose.onNodeWithText(full).assertIsDisplayed()
+            assertEquals(1, requests.get())
+        } finally { field.set(model.repository.api, previous) }
+    }
     @Test
     @Config(sdk = [35], qualifiers = "zh-rCN-w840dp-h1000dp-xhdpi")
     fun wideWindowPreservesTheOriginalThreeDestinations() {

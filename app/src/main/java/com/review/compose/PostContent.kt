@@ -32,24 +32,35 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
 
 @Composable
 internal fun HdrBadge(modifier: Modifier = Modifier, description: String = "HDR 图片", compact: Boolean = false) {
     Text("HDR", modifier.semantics { contentDescription = description }
-        .background(Color.Black.copy(alpha = .4f), RoundedCornerShape(6.dp))
-        .padding(if (compact) 3.dp else 6.dp),
-        color = Color.White, fontSize = if (compact) 8.sp else 11.sp, fontWeight = FontWeight.Normal)
+        .background(Color.Black.copy(alpha = .4f), RoundedCornerShape(4.dp))
+        .padding(horizontal = if (compact) 3.dp else 6.dp, vertical = if (compact) 1.dp else 2.dp),
+        color = Color.White, fontSize = if (compact) 8.sp else 10.sp, lineHeight = if (compact) 9.sp else 12.sp,
+        fontWeight = FontWeight.Normal)
 }
 
 @Composable
 fun PostBody(post: Post, detail: Boolean, gallery: (List<Media>, Int) -> Unit, quoted: Boolean = false) {
     val model = LocalReview.current
-    val scope = rememberCoroutineScope()
+    val cookie = model.sessionCookie
     var expanded by rememberSaveable(post.id) { mutableStateOf(false) }
-    var full by remember(post.id, post.raw) { mutableStateOf(post.availableFullText()) }
-    var loading by remember(post.id) { mutableStateOf(false) }
-    var error by remember(post.id) { mutableStateOf<String?>(null) }
+    var full by remember(post.id, post.raw, cookie) {
+        mutableStateOf(post.availableFullText().ifBlank { if (post.longText) cachedFullText(cookie, post.id) else "" })
+    }
+    var loading by remember(post.id, cookie) { mutableStateOf(false) }
+    var error by remember(post.id, cookie) { mutableStateOf<String?>(null) }
+    var retry by remember(post.id, cookie) { mutableIntStateOf(0) }
+    LaunchedEffect(post.id, post.raw, post.longText, cookie, model.restoringWebSession, retry) {
+        if (!post.longText || post.demo || full.isNotBlank() || model.restoringWebSession) return@LaunchedEffect
+        loading = true; error = null
+        try { full = model.repository.fullText(cookie, post.id) }
+        catch (e: CancellationException) { throw e }
+        catch (e: Exception) { if (expanded) error = e.message ?: "全文加载失败"; expanded = false }
+        finally { loading = false }
+    }
     val font = model.number("postFont", 16f) - if (quoted) 1f else 0f
     val body = if ((detail || expanded) && full.isNotBlank()) full else post.text
     val caption = post.images.singleOrNull()?.birthdayCaption().orEmpty()
@@ -64,8 +75,8 @@ fun PostBody(post: Post, detail: Boolean, gallery: (List<Media>, Int) -> Unit, q
     if (!detail && post.longText && (full.isBlank() || full.trim().length > post.text.trim().length)) {
         TextButton(onClick = hapticClick {
             if (full.isNotBlank()) expanded = !expanded
-            else if (!loading) { loading = true; scope.launch { try { full = model.repository.fullText(model.sessionCookie, post.id); expanded = true; error = null } catch (e: CancellationException) { throw e } catch (e: Exception) { error = e.message } finally { loading = false } } }
-        }, contentPadding = PaddingValues(0.dp)) { Text(if (loading) "加载中…" else if (expanded && full.isNotBlank()) "收起全文" else "展开全文") }
+            else { expanded = true; if (!loading) retry++ }
+        }, contentPadding = PaddingValues(0.dp)) { Text(if (loading && expanded) "加载中…" else if (expanded && full.isNotBlank()) "收起全文" else "展开全文") }
     }
     error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }
     if (post.images.isNotEmpty()) {

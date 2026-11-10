@@ -114,7 +114,6 @@ fun DetailScreen(model: ReviewModel, gallery: (List<Media>, Int) -> Unit, source
                 item("detail-post") {
                     Column {
                         PostCard(post, post.favorited, {}, { model.postAction(post, "favorite") }, gallery, model::openPost, detail = true)
-                        if (active && model.detailLoading) LinearProgressIndicator(Modifier.fillMaxWidth())
                         if (active) model.detailError?.let { ErrorNotice(it, model::reloadDetail) }
                     }
                 }

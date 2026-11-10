@@ -32,19 +32,35 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import org.json.JSONObject
 import java.io.IOException
 
 suspend fun Repository.topics(cookie: String, query: String, page: Int): Page<JSONObject> {
     val root = get("/ajax/stopic/list", cookie, mapOf("keyword" to query, "page" to "$page"))
-    val topics = responseArray(root, "data").objects()
+    val topics = responseArray(root, "list", "data").objects()
+        .filter { it.optString("title").isNotBlank() && topicId(it).isNotBlank() }
     return Page(topics, if (topics.isEmpty()) "0" else "${page + 1}")
 }
 @Composable
 fun TopicResults(query: String) {
     val model = LocalReview.current
     val colors = MaterialTheme.colorScheme
-    PagedContent("topics:$query:${model.uid}", { if (model.demo) Page(emptyList()) else model.repository.topics(model.sessionCookie, query, it.toInt().coerceAtLeast(1)) }, ::topicId, empty = {
+    val cookie = model.sessionCookie
+    if (model.restoringWebSession && cookie.isBlank()) {
+        Box(Modifier.fillMaxSize().padding(top = LocalContentTop.current), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        return
+    }
+    PagedContent("topics:$query:${model.uid}:${model.demo}:${cookie.isNotBlank()}", { cursor ->
+        if (model.demo) Page(emptyList()) else {
+            val page = cursor.toInt().coerceAtLeast(1)
+            val result = model.repository.topics(cookie, query, page)
+            if (page == 1 && query == "超话" && result.items.isEmpty()) {
+                delay(300)
+                model.repository.topics(cookie, query, page)
+            } else result
+        }
+    }, ::topicId, empty = {
         Column(Modifier.fillMaxWidth().heightIn(min = 420.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
             Icon(Icons.Outlined.Diamond, null, Modifier.size(56.dp), tint = colors.outlineVariant)
             Spacer(Modifier.height(12.dp)); Text("暂未找到相关超话", fontSize = 15.sp, color = colors.onSurfaceVariant)
@@ -114,8 +130,9 @@ fun TopicsScreen() {
 @Composable
 fun TopicScreen(requestedId: String, gallery: (List<Media>, Int) -> Unit, route: ReviewRoute) {
     val model = LocalReview.current
-    var id by remember(requestedId) { mutableStateOf(requestedId) }
-    var resolving by remember(requestedId) { mutableStateOf(!Regex("100808[0-9a-f]{32}", RegexOption.IGNORE_CASE).matches(requestedId)) }
+    var id by rememberSaveable(requestedId) { mutableStateOf(topicPageId(requestedId) ?: requestedId) }
+    val resolving = topicPageId(id) == null
+    var resolveRetry by remember(requestedId) { mutableIntStateOf(0) }
     val colors = MaterialTheme.colorScheme
     var header by remember(id) { mutableStateOf(route.topic ?: JSONObject()) }
     val title = header.optString("title").ifBlank { header.optString("nick") }
@@ -129,19 +146,18 @@ fun TopicScreen(requestedId: String, gallery: (List<Media>, Int) -> Unit, route:
     var headerHeight by remember { mutableStateOf(0.dp) }
     val density = LocalDensity.current
     val feeds = remember(id, model.uid) { mutableMapOf<String, PagedContentState<Post>>() }
-    LaunchedEffect(id, model.uid) {
+    LaunchedEffect(id, model.uid, model.sessionCookie.isNotBlank(), resolveRetry) {
         if (model.demo) return@LaunchedEffect
+        headerError = null
         try {
             if (resolving) {
-                val query = title.replace("[超话]", "").replace("超话", "").trim()
+                val query = topicName(title).ifBlank { title.trim() }
                 check(query.isNotBlank()) { "超话信息不完整，请从超话中心重新进入" }
-                val item = model.repository.topics(model.sessionCookie, query, 1).items.firstOrNull() ?: error("暂未找到相关超话")
-                val resolved = topicId(item)
-                check(Regex("100808[0-9a-f]{32}", RegexOption.IGNORE_CASE).matches(resolved)) { "超话信息不完整，请重试" }
-                header = item; route.topic = item; resolving = false
-                channels = listOf("热门" to "${resolved}_-_recommend", "最新" to "${resolved}_-_feed", "精华" to "${resolved}_-_soul")
-                channel = channels.first().second
-                id = resolved
+                val item = model.repository.topics(model.sessionCookie, query, 1).items.firstOrNull {
+                    topicPageId(topicId(it)) != null && topicName(it.optString("title")).equals(query, ignoreCase = true)
+                } ?: error("暂未找到「$query」超话")
+                route.topic = item
+                id = checkNotNull(topicPageId(topicId(item)))
                 return@LaunchedEffect
             }
             val root = model.repository.api.get(ApiClient.DESKTOP + "/ajax_proxy/chaohua/page/extend", model.sessionCookie, mapOf("page_id" to id, "show_recommend" to "1"))
@@ -149,11 +165,19 @@ fun TopicScreen(requestedId: String, gallery: (List<Media>, Int) -> Unit, route:
             followed = data.optBoolean("is_followed"); checked = data.optBoolean("is_checked")
         } catch (e: CancellationException) { throw e } catch (e: Exception) { headerError = e.message }
     }
+    if (resolving) {
+        Box(Modifier.fillMaxSize().padding(top = LocalContentTop.current), contentAlignment = Alignment.Center) {
+            val failure = headerError
+            if (failure != null || model.demo) ErrorNotice(failure ?: "预览模式暂无法查询超话") { resolveRetry++ }
+            else CircularProgressIndicator()
+        }
+        return
+    }
     BoxWithConstraints(Modifier.fillMaxSize()) {
     val available = maxHeight
     PagedContent("topic:$id:$channel:${model.uid}", { cursor ->
         val page = cursor.toInt().coerceAtLeast(1)
-        if (model.demo || resolving) Page(emptyList()) else {
+        if (model.demo) Page(emptyList()) else {
             val root = model.repository.api.get(ApiClient.DESKTOP + "/ajax_proxy/chaohua/page", model.sessionCookie, mapOf("containerid" to channel, "page" to "$page"))
             root.optJSONObject("header")?.optJSONObject("data")?.let { data ->
                 val merged = JSONObject(header.toString())

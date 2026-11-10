@@ -14,7 +14,7 @@ data class ApiResponse(val text: String, val headers: Headers) {
     fun json(): JSONObject = runCatching { JSONObject(text) }.getOrElse { throw IOException("服务返回了非数据页面，请检查登录状态") }
 }
 
-internal class ApiHttpFailure(val status: Int, message: String) : IOException(message)
+internal class ApiHttpFailure(val status: Int, message: String, val redirect: String? = null) : IOException(message)
 
 class ApiClient {
     companion object {
@@ -94,7 +94,9 @@ class ApiClient {
                 override fun onResponse(call: Call, response: Response) {
                     try {
                         val result = response.use {
-                            if (it.code in 300..399 || it.code == 401 || it.code == 403) throw ApiHttpFailure(it.code, "会话失效或访问受限，请重新登录")
+                            if (it.code in 300..399 || it.code == 401 || it.code == 403) {
+                                throw ApiHttpFailure(it.code, "会话失效或访问受限，请重新登录", if (it.isRedirect) it.header("Location") else null)
+                            }
                             if (!it.isSuccessful) throw IOException("请求失败（HTTP ${it.code}）")
                             val source = it.body?.source() ?: throw IOException("服务器没有返回内容")
                             source.request(maxBytes + 1)

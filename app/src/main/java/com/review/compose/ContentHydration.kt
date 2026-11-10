@@ -81,13 +81,22 @@ suspend fun Repository.hydrateCards(cookie: String, source: Post): Post {
     }
     return post.copy(repost = source.repost?.let { hydrateCards(cookie, it) })
 }
-suspend fun Repository.fullText(cookie: String, id: String): String {
+private fun fullTextKey(cookie: String, id: String): String {
     val scope = java.security.MessageDigest.getInstance("SHA-256").digest(cookie.toByteArray()).joinToString("") { "%02x".format(it) }
-    val key = "$scope:$id"
+    return "$scope:$id"
+}
+
+internal fun cachedFullText(cookie: String, id: String): String = texts.get(fullTextKey(cookie, id)).orEmpty()
+
+suspend fun Repository.fullText(cookie: String, id: String): String {
+    val key = fullTextKey(cookie, id)
     return textLocks[(key.hashCode() and Int.MAX_VALUE) % textLocks.size].withLock {
         texts.get(key)?.let { return@withLock it }
-        val data = textGate.withPermit { get("/ajax/statuses/longtext", cookie, mapOf("id" to id)).optJSONObject("data") }
-        val raw = listOf("longTextContent_raw", "longTextContent", "text_raw").firstNotNullOfOrNull { data?.optString(it)?.takeIf(String::isNotBlank) }.orEmpty()
+        val data = textGate.withPermit {
+            if (mobileOnly) api.get(ApiClient.MOBILE + "/statuses/extend", cookie, mapOf("id" to id)).optJSONObject("data")
+            else get("/ajax/statuses/longtext", cookie, mapOf("id" to id)).optJSONObject("data")
+        }
+        val raw = listOf("longTextContent_raw", "longTextContent", "longText", "text_raw").firstNotNullOfOrNull { data?.optString(it)?.takeIf(String::isNotBlank) }.orEmpty()
         val clean = cleanLongText(raw)
         check(clean.isNotBlank()) { "暂未返回完整正文，请重试" }
         texts.put(key, clean); clean

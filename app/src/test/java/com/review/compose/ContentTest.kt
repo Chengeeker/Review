@@ -11,6 +11,32 @@ import java.time.LocalDateTime
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class ContentTest {
+    @Test fun officialWebLinksReuseNativeDestinations() {
+        assertEquals("place:8008644030000000000", officialWebRoute("https://weibo.com/p/1001018008644030000000000"))
+        assertEquals("place:B2094653D36BA1FB409B", officialWebRoute("https://m.weibo.cn/p/index?containerid=100101B2094653D36BA1FB409B"))
+        assertEquals("440300", placeRegionCode("8008644030000000000"))
+        assertEquals("trends", officialWebRoute("https://weibo.com/hot/search/"))
+        assertEquals("messages", officialWebRoute("https://api.weibo.com/chat/#/chat"))
+        assertEquals("relations:123:false", officialWebRoute("https://weibo.com/u/123/fans"))
+        assertEquals("searchResults:night%20sky", officialWebRoute("https://s.weibo.com/weibo?q=night%20sky"))
+        assertNull(officialWebRoute("https://weibo.com.example.com/p/1001018008644030000000000"))
+        assertNull(officialWebRoute("https://weibo.com/u/123/unrelated"))
+    }
+
+    @Test fun detailRetainsVisibleShortLinksOnlyOnTheMatchingStatus() {
+        val url = "http://t.cn/R2WxEin"
+        val oldQuote = Post("12", "原作者", text = "原帖\n$url")
+        val newQuote = oldQuote.copy(text = "更新正文", images = listOf(Media(artwork = 1), Media(artwork = 2)))
+        val source = Post("13", "转发作者", text = "转发内容", repost = oldQuote)
+        val fresh = source.copy(repost = newQuote)
+        val retained = retainStatusShortLinks(source, fresh)
+        assertEquals("转发内容", retained.text)
+        assertEquals("更新正文\n$url", retained.repost?.text)
+        assertEquals(2, retained.repost?.images?.size)
+        assertEquals(retained, retainStatusShortLinks(source, retained))
+        assertEquals(newQuote.copy(id = "14"), retainStatusShortLinks(oldQuote, newQuote.copy(id = "14")))
+    }
+
     @Test fun photoPreviewGeometryUsesFlutterMetadataWithoutChangingTheFullImage() {
         val info = JSONObject("""{"largest":{"width":743,"height":1210},"large":{"url":"https://wx1.sinaimg.cn/large/a.jpg"}}""")
         val photo = pictureMedia(info, "https://wx1.sinaimg.cn/large/a.jpg")

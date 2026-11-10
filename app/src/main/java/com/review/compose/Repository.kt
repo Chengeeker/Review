@@ -322,9 +322,10 @@ class Repository(
         result = result.copy(images = images, text = result.text.ifBlank { post.text }.withoutWebCardLinks(images))
         val detail = hydrateText(cookie, hydrateCards(cookie, result))
         val sourceFull = post.availableFullText()
-        return if (detail.id == post.id && detail.longText && sourceFull.length > detail.text.length && detail.availableFullText().isBlank())
+        val complete = if (detail.id == post.id && detail.longText && sourceFull.length > detail.text.length && detail.availableFullText().isBlank())
             detail.copy(raw = JSONObject(detail.raw).put("full_text_raw", sourceFull).toString())
         else detail
+        return retainStatusShortLinks(post, complete)
     }
     suspend fun comments(cookie: String, post: Post, cursor: String): Page<Comment> {
         val root = get("/ajax/statuses/buildComments", cookie, mapOf("id" to post.id, "uid" to post.uid,

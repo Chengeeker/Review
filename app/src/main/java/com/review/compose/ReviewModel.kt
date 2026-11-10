@@ -37,7 +37,8 @@ class ReviewModel(application: Application) : AndroidViewModel(application) {
     private val webRecoveryLock = Mutex()
     val nativeAuth = com.review.weiboauth.WeiboAuthManager(application)
     val repository = Repository(nativeAuth)
-    private var cookie = ""
+    private var cookie by mutableStateOf("")
+    var restoringWebSession by mutableStateOf(false); private set
     private var epoch = 0
     private var feedJob: Job? = null
     private var detailJob: Job? = null
@@ -163,6 +164,7 @@ class ReviewModel(application: Application) : AndroidViewModel(application) {
             catch (_: Exception) { accountError = "保存的会话无法读取，请重新登录" }
             configureWebSession(prefs.getBoolean("mobileOnly", false))
             demo = BuildConfig.DEBUG && prefs.getBoolean("demo", false)
+            restoringWebSession = !demo && uid.isNotEmpty() && cookie.isBlank()
             if (demo) feed = PreviewContent.posts
             loadLocal()
             ready = true
@@ -170,7 +172,10 @@ class ReviewModel(application: Application) : AndroidViewModel(application) {
             viewModelScope.launch { try { maintainImageCache(application, number("cacheLimit", 200f).toInt()) } catch (e: CancellationException) { throw e } catch (_: Exception) { } }
             if (!demo && uid.isNotEmpty()) {
                 val owner = uid
-                if (cookie.isBlank()) messagePoll { recoverCurrentWebSession() }
+                if (restoringWebSession) {
+                    try { messagePoll { recoverCurrentWebSession() } }
+                    finally { restoringWebSession = false }
+                }
                 if (uid == owner && !demo) { refreshFeed(); loadGroups(); loadMe() }
             }
         }
@@ -561,9 +566,42 @@ class ReviewModel(application: Application) : AndroidViewModel(application) {
     fun clearHistory() { history = emptyList(); prefs.edit().remove("history-$scopeKey").apply() }
     fun openTopic(item: org.json.JSONObject) {
         val id = topicId(item)
-        if (id.isBlank()) { notice = "当前超话暂无可用入口"; return }
+        if (id.isBlank() && item.optString("title").isBlank()) { notice = "当前超话暂无可用入口"; return }
         navigate("topic:$id")
         routeStack.last().topic = org.json.JSONObject(item.toString())
+    }
+    private var shortLinkJob: Job? = null
+    fun openShortLink(url: String, title: String) {
+        val route = routeStack.lastOrNull() ?: return
+        val generation = routeKey
+        val owner = uid
+        shortLinkJob?.cancel()
+        shortLinkJob = viewModelScope.launch {
+            val target = repository.api.shortLinkTarget(url)
+            if (routeStack.lastOrNull() !== route || routeKey != generation || uid != owner) return@launch
+            if (target == null || !runCatching { openNativeLink(target, title) }.getOrDefault(false)) {
+                navigate("browser:${android.net.Uri.encode(target ?: url)}")
+            }
+        }
+    }
+    internal suspend fun verifiedBrowserCookie(domain: String, existing: String): String {
+        val owner = uid
+        val saved = cookie
+        val mobile = domain == "weibo.cn"
+        if (owner.isBlank() || domain !in setOf("weibo.cn", "weibo.com")) return ""
+        if (saved.isNotBlank() && repository.mobileOnly == mobile) return saved
+        return withTimeoutOrNull(6500) {
+            val native = withContext(Dispatchers.IO) { nativeAuth.restoreSession() }.takeIf { it?.get("uid") == owner }
+            val scoped = native?.get(if (mobile) "mobileCookie" else "desktopCookie") as? String ?: ""
+            for (candidate in listOf(existing, scoped, saved.takeIf { mobile }.orEmpty()).filter(String::isNotBlank).distinct()) {
+                val session = try {
+                    repository.verifyWebSession(owner, "", desktopCookie = if (mobile) "" else candidate,
+                        mobileCookie = if (mobile) candidate else "")
+                } catch (_: IllegalArgumentException) { null } catch (_: java.io.IOException) { null }
+                if (session != null && session.mobileOnly == mobile && uid == owner && cookie == saved) return@withTimeoutOrNull session.cookie
+            }
+            ""
+        }.orEmpty()
     }
     var messagesRevision by mutableStateOf(0); private set
     fun refreshMessages() { messagesRevision++ }

@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.webkit.*
+import android.widget.FrameLayout
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -25,22 +26,33 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
-internal fun browserCookieWrites(url: String, cookie: String, existing: String): List<Pair<String, String>> {
-    val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return emptyList()
-    val host = uri.host?.lowercase() ?: return emptyList()
-    val domain = listOf("weibo.com", "weibo.cn").firstOrNull { host == it || host.endsWith(".$it") } ?: return emptyList()
-    if (uri.scheme != "https" || uri.userInfo != null || cookie.length > 32768 || cookie.any { it !in ' '..'~' }) return emptyList()
-    fun pairs(value: String) = value.split(';').mapNotNull {
+internal fun browserCookieDomain(url: String): String? {
+    val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return null
+    val host = uri.host?.lowercase() ?: return null
+    if (uri.scheme != "https" || uri.userInfo != null || uri.port !in setOf(-1, 443)) return null
+    return listOf("weibo.com", "weibo.cn").firstOrNull { host == it || host.endsWith(".$it") }
+}
+
+private fun browserCookiePairs(value: String): Map<String, String> = value.split(';').mapNotNull {
         val name = it.substringBefore('=').trim()
         val content = it.substringAfter('=', "").trim()
         if ('=' in it && name.matches(Regex("[A-Za-z0-9_!#$%&'*+.^`|~-]+"))) name to content else null
-    }.toMap()
-    val current = pairs(cookie)
-    val names = pairs(existing).keys + current.keys
+}.toMap()
+
+internal fun browserCookieWrites(url: String, cookie: String, existing: String): List<Pair<String, String>> {
+    val domain = browserCookieDomain(url) ?: return emptyList()
+    if (cookie.length > 32768 || cookie.any { it !in ' '..'~' }) return emptyList()
+    val current = browserCookiePairs(cookie)
+    val present = browserCookiePairs(existing)
+    val known = current["SUB"]?.takeIf(String::isNotBlank)
+    // Keep tickets and preferences the site set for the current session.
+    if (known != null && present["SUB"] == known && current.all { (name, value) -> present[name] == value }) return emptyList()
+    val names = present.keys + current.keys
     return names.flatMap { name ->
         val value = current[name]
         val setting = if (value == null) "$name=; Max-Age=0" else "$name=$value"
@@ -62,31 +74,51 @@ fun BrowserScreen(url: String) {
     var error by remember(url) { mutableStateOf<String?>(null) }
     var menu by remember { mutableStateOf(false) }
     val active = LocalPageActive.current
+    val route = LocalReviewRoute.current
+    val currentActive by rememberUpdatedState(active)
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    val preparedHosts = remember(url, model.uid) { mutableSetOf<String>() }
-    val web = remember(url, model.uid) { WebView(context).apply {
-        settings.javaScriptEnabled = true
-        settings.domStorageEnabled = true
-        settings.allowFileAccess = false
-        settings.allowContentAccess = false
-        settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-        settings.userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
-        CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
-    } }
-    suspend fun load(target: String) {
-        val manager = CookieManager.getInstance()
-        val cookie = model.repository.api.cookieFor(target, model.sessionCookie)
-        for ((address, value) in browserCookieWrites(target, cookie, manager.getCookie(target).orEmpty())) {
-            suspendCancellableCoroutine<Unit> { continuation ->
-                manager.setCookie(address, value) { if (continuation.isActive) continuation.resume(Unit) }
+    var revision by remember(url) { mutableIntStateOf(0) }
+    val web = remember(url, model.uid, model.sessionCookie, revision) {
+        runCatching {
+            WebView(context).apply {
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
+                settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                if (browserCookieDomain(secureImage(url)) == "weibo.com") settings.userAgentString = ApiClient.USER_AGENT
+                CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
             }
-        }
-        manager.flush()
-        preparedHosts += Uri.parse(target).host.orEmpty()
-        error = null
-        web.loadUrl(target)
+        }.getOrNull()
     }
-    DisposableEffect(web) {
+    var rendererGone by remember(web) { mutableStateOf(false) }
+    val preparedDomains = remember(web) { mutableSetOf<String>() }
+    var redirect by remember(web) { mutableStateOf<Pair<Int, String>?>(null) }
+    suspend fun load(target: String) {
+        if (web == null || rendererGone) return
+        try {
+            val domain = browserCookieDomain(target)
+            if (domain != null && domain !in preparedDomains) {
+                val owner = model.uid
+                val source = model.sessionCookie
+                val manager = CookieManager.getInstance()
+                val existing = manager.getCookie(target).orEmpty()
+                val cookie = model.verifiedBrowserCookie(domain, existing)
+                if (rendererGone || model.uid != owner || model.sessionCookie != source) return
+                for ((address, value) in browserCookieWrites(target, cookie, existing)) {
+                    suspendCancellableCoroutine<Unit> { continuation ->
+                        manager.setCookie(address, value) { if (continuation.isActive) continuation.resume(Unit) }
+                    }
+                }
+                preparedDomains += domain
+            }
+            if (rendererGone) return
+            current = target; progress = 0; loading = true; error = null
+            web.loadUrl(target)
+        } catch (e: CancellationException) { throw e }
+        catch (_: RuntimeException) { error = "网页暂时无法打开"; loading = false }
+    }
+    if (web != null) DisposableEffect(web) {
         web.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView, newProgress: Int) { progress = newProgress }
             override fun onReceivedTitle(view: WebView, value: String?) { if (!value.isNullOrBlank() && !value.contains("404")) title = value }
@@ -100,21 +132,54 @@ fun BrowserScreen(url: String) {
                 if (!request.isForMainFrame) return request.url.scheme !in setOf("http", "https")
                 val target = secureImage(request.url.toString())
                 if (target.isBlank()) return true
-                if (model.openNativeLink(target)) return true
-                if (target != request.url.toString() || request.url.host !in preparedHosts) {
-                    scope.launch { load(target) }; return true
+                if (currentActive && (route == null || model.routeStack.lastOrNull() === route) &&
+                    runCatching { model.openNativeLink(target) }.getOrDefault(false)) {
+                    if (route != null) model.routeStack.remove(route)
+                    return true
+                }
+                val domain = browserCookieDomain(target)
+                if (target != request.url.toString() || (domain != null && domain !in preparedDomains)) {
+                    redirect = (1 + (redirect?.first ?: 0)) to target
+                    return true
                 }
                 return false
             }
             override fun onReceivedError(view: WebView, request: WebResourceRequest, failure: WebResourceError) {
                 if (request.isForMainFrame) { error = "页面加载失败"; loading = false }
             }
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                rendererGone = true; error = "网页浏览已中断，请重试"; loading = false
+                (view.parent as? FrameLayout)?.removeView(view)
+                view.destroy()
+                return true
+            }
         }
-        onDispose { web.stopLoading(); web.webChromeClient = null; web.webViewClient = WebViewClient(); web.destroy() }
+        onDispose {
+            if (!rendererGone) {
+                (web.parent as? FrameLayout)?.removeView(web)
+                web.stopLoading(); web.webChromeClient = null; web.webViewClient = WebViewClient(); web.destroy()
+            }
+        }
     }
-    LaunchedEffect(web) { if (current.isBlank()) { error = "页面地址无效"; loading = false } else load(current) }
-    LaunchedEffect(web, active, lifecycle) { if (active && lifecycle.isAtLeast(Lifecycle.State.STARTED)) web.onResume() else web.onPause() }
-    BackHandler(active) { if (web.canGoBack()) web.goBack() else model.back() }
+    LaunchedEffect(web, redirect) {
+        val target = redirect?.second ?: current.ifBlank { secureImage(url) }
+        when {
+            web == null -> { error = "系统网页组件暂不可用"; loading = false }
+            target.isBlank() -> { error = "页面地址无效"; loading = false }
+            else -> load(target)
+        }
+    }
+    LaunchedEffect(web, active, lifecycle, rendererGone) {
+        if (web != null && !rendererGone) {
+            if (active && lifecycle.isAtLeast(Lifecycle.State.STARTED)) web.onResume() else web.onPause()
+        }
+    }
+    fun retry() {
+        error = null
+        if (web == null || rendererGone) revision++
+        else scope.launch { load(current.ifBlank { secureImage(url) }) }
+    }
+    BackHandler(active) { if (web != null && !rendererGone && web.canGoBack()) web.goBack() else model.back() }
     Column(Modifier.fillMaxSize()) {
         TopAppBar(title = {
             Column(Modifier.padding(start = 16.dp)) {
@@ -124,7 +189,7 @@ fun BrowserScreen(url: String) {
         }, modifier = Modifier.frostedBackdrop(colors.background), expandedHeight = 56.dp,
             colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
             navigationIcon = { IconButton(onClick = hapticClick(model::back)) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回") } }, actions = {
-                IconButton(onClick = hapticClick { error = null; web.reload() }) { Icon(Icons.Rounded.Refresh, "刷新") }
+                IconButton(onClick = hapticClick { retry() }) { Icon(Icons.Rounded.Refresh, "刷新") }
                 Box {
                     IconButton(onClick = hapticClick { menu = true }) { Icon(Icons.Rounded.MoreVert, "更多") }
                     DropdownMenu(menu, { menu = false }) {
@@ -141,7 +206,10 @@ fun BrowserScreen(url: String) {
                 }
             })
         if (loading) LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth().height(2.dp), trackColor = Color.Transparent, gapSize = 0.dp, drawStopIndicator = {})
-        error?.let { ErrorNotice(it) { error = null; web.reload() } }
-        AndroidView({ web }, Modifier.weight(1f).fillMaxWidth())
+        error?.let { ErrorNotice(it, ::retry) }
+        if (web != null && !rendererGone) key(web) {
+            AndroidView({ ctx -> FrameLayout(ctx).apply { addView(web, FrameLayout.LayoutParams(-1, -1)) } },
+                Modifier.weight(1f).fillMaxWidth())
+        }
     }
 }

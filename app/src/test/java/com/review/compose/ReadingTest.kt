@@ -314,6 +314,29 @@ class ReadingTest {
         assertEquals(listOf("weibo.com" to "SUB=other-account", "m.weibo.cn" to "SUB=same-account"), requests)
     }
 
+    @Test fun shortLinksResolveWithoutAccountCredentialsAndLocationsRequireAnExactId() = runBlocking {
+        val api = ApiClient()
+        val requests = mutableListOf<Request>()
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            val request = chain.request()
+            requests += request
+            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(301).message("Redirect")
+                .header("Location", "http://weibo.com/p/1001018008644030000000000")
+                .body("".toResponseBody()).build()
+        }.build()
+        ApiClient::class.java.getDeclaredField("client").apply { isAccessible = true }.set(api, client)
+        assertNull(api.shortLinkTarget("https://t.cn.example.com/R2WxEin"))
+        assertEquals("https://weibo.com/p/1001018008644030000000000", api.shortLinkTarget("https://t.cn/R2WxEin"))
+        assertNull(requests.single().header("Cookie"))
+
+        val repository = sessionRepository { request ->
+            assertEquals("/ajax/statuses/place", request.url.encodedPath)
+            assertEquals("深圳市", request.url.queryParameter("q"))
+            """{"ok":1,"data":{"pois":[{"poiid":"B20912345678","title":"深圳乐高乐园"},{"poiid":"8008644030000000000","title":"深圳"}]}}"""
+        }
+        assertEquals("深圳", repository.linkedPlace("SUB=active", "8008644030000000000", listOf("深圳市")).optString("title"))
+    }
+
     private fun sessionRepository(status: (Request) -> Int = { 200 }, body: (Request) -> String): Repository {
         val repository = Repository()
         val client = OkHttpClient.Builder().addInterceptor { chain ->

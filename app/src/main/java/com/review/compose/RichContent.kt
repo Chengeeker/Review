@@ -23,6 +23,32 @@ private var emojiData: JSONObject? = null
 private var softbankData: JSONObject? = null
 private val hiddenLinkChars = Regex("[\\u200B\\u200C\\u200D\\uFEFF]")
 private fun richLinkKey(url: String): String = secureImage(url.replace(hiddenLinkChars, "").replace("&amp;", "&").trim())
+private val topicPagePattern = Regex("100808[0-9a-f]{32}", RegexOption.IGNORE_CASE)
+private val topicWebHosts = setOf("weibo.com", "www.weibo.com", "weibo.cn", "m.weibo.cn")
+
+internal fun topicPageId(value: String): String? = value.trim().removePrefix("1022:")
+    .takeIf(topicPagePattern::matches)
+
+internal fun topicName(value: String): String {
+    val title = value.trim().trim('#').trim()
+    return (if (title.endsWith("[超话]")) title.removeSuffix("[超话]") else title.removeSuffix("超话")).trim()
+}
+
+private fun topicUrlId(value: String): String? {
+    val uri = Uri.parse(value.trim().replace("&amp;", "&"))
+    if (!uri.isHierarchical || uri.userInfo != null) return null
+    val web = uri.scheme in setOf(null, "https", "http") && uri.host in topicWebHosts
+    val native = uri.scheme == "sinaweibo" && uri.host in setOf("pageinfo", "cardlist")
+    if (!web && !native) return null
+    return sequenceOf(uri.path.orEmpty().takeIf { it.startsWith("/p/") }?.split('/')?.getOrNull(2),
+        uri.getQueryParameter("page_id"), uri.getQueryParameter("pageid"), uri.getQueryParameter("containerid"))
+        .filterNotNull().firstNotNullOfOrNull { topicPageId(it.substringBefore("_-_")) }
+}
+
+private fun linkTopicId(item: JSONObject): String? = sequenceOf("page_id", "oid", "topic_id")
+    .firstNotNullOfOrNull { topicPageId(item.optString(it)) }
+    ?: sequenceOf("long_url", "ori_url", "h5_target_url", "scheme", "url")
+        .firstNotNullOfOrNull { topicUrlId(item.optString(it)) }
 fun encodedEmoji(token: String, mapping: JSONObject): String? {
     val hex = Regex("^\\[/?([a-fA-F0-9]{6,32})\\.(?:png|gif)]$", RegexOption.IGNORE_CASE).matchEntire(token)?.groupValues?.get(1) ?: return null
     if (hex.length % 2 != 0) return null
@@ -42,24 +68,71 @@ fun articleId(url: String): String? {
     return Regex("/article/m/show/id/(\\d+)").find(uri.path.orEmpty())?.groupValues?.get(1)
 }
 
-fun ReviewModel.openLink(raw: String) {
+fun ReviewModel.openLink(raw: String, title: String = "") {
     val url = richLinkKey(raw)
     if (url.isBlank()) { notice = "链接地址不可用"; return }
-    if (!openNativeLink(url)) navigate("browser:${Uri.encode(url)}")
+    if (runCatching { openNativeLink(url, title) }.getOrDefault(false)) return
+    if (isWeiboShortLink(url)) openShortLink(url, title)
+    else navigate("browser:${Uri.encode(url)}")
 }
 
-fun ReviewModel.openNativeLink(url: String): Boolean {
+internal fun isWeiboShortLink(url: String): Boolean = runCatching { java.net.URI(url) }.getOrNull()?.let {
+    it.scheme == "https" && it.userInfo == null && it.port in setOf(-1, 443) && it.host in setOf("t.cn", "www.t.cn") &&
+        it.path.orEmpty().matches(Regex("/[A-Za-z0-9]+"))
+} == true
+
+internal suspend fun ApiClient.shortLinkTarget(url: String): String? {
+    if (!isWeiboShortLink(url)) return null
+    return try { raw(url, timeoutSeconds = 6, maxBytes = 64 * 1024); null }
+    catch (e: ApiHttpFailure) {
+        e.redirect?.let { runCatching { secureImage(java.net.URI(url).resolve(it).toString()) }.getOrNull() }
+            ?.takeIf(String::isNotBlank)
+    } catch (_: java.io.IOException) { null }
+}
+
+internal fun officialWebRoute(url: String): String? {
+    val uri = Uri.parse(url)
+    if (!uri.isHierarchical || uri.scheme !in setOf("https", "http") || uri.userInfo != null || uri.port !in setOf(-1, 443)) return null
+    val path = uri.path.orEmpty().trimEnd('/')
+    if (uri.host == "api.weibo.com" && path == "/chat") return "messages"
+    if (uri.host in setOf("weibo.com", "www.weibo.com") && path == "/hot/search") return "trends"
+    if (uri.host in setOf("weibo.com", "www.weibo.com")) {
+        when (path) {
+            "/fav", "/u/page/fav" -> return "favorites"
+            "/super" -> return "topics"
+        }
+    }
+    if (uri.host !in topicWebHosts && uri.host != "s.weibo.com") return null
+    if (uri.host == "s.weibo.com" && path == "/weibo" || uri.host == "m.weibo.cn" && path == "/search") {
+        return uri.getQueryParameter("q")?.trim()?.takeIf(String::isNotBlank)?.let { "searchResults:${Uri.encode(it)}" }
+    }
+    if (uri.host !in topicWebHosts) return null
+    val container = path.removePrefix("/p/").substringBefore('/').takeIf { path.startsWith("/p/") && it != "index" }
+        ?: uri.getQueryParameter("containerid").takeIf { path == "/p/index" }
+    container?.takeIf { Regex("100101[A-Za-z0-9]{8,48}").matches(it) }?.let { return "place:${it.removePrefix("100101")}" }
+    Regex("^/(?:u|profile)/([1-9][0-9]{0,19})/(follow|fans)$").matchEntire(path)?.let {
+        return "relations:${it.groupValues[1]}:${it.groupValues[2] == "follow"}"
+    }
+    Regex("^/(?:u|profile)/([1-9][0-9]{0,19})$").matchEntire(path)?.let { return "profile:${it.groupValues[1]}" }
+    Regex("^/n/([^/?#]+)$").matchEntire(path)?.let { return "profile:${it.groupValues[1]}" }
+    return null
+}
+
+fun ReviewModel.openNativeLink(url: String, title: String = ""): Boolean {
     articleId(url)?.let { navigate("article:$it"); return true }
     if (videoObjectId(url) != null || liveRoomId(url) != null || (Uri.parse(url).host.orEmpty().endsWith(".weibocdn.com") && Regex("\\.(mp4|m3u8|webm|mov|flv)([?#]|$)", RegexOption.IGNORE_CASE).containsMatchIn(url))) { navigate("video:${Uri.encode(url)}"); return true }
+    topicUrlId(url)?.let { navigate("topic:$it"); return true }
+    officialWebRoute(url)?.let {
+        navigate(if (it.startsWith("place:")) "$it:${Uri.encode(title)}" else it)
+        return true
+    }
     val uri = Uri.parse(url)
     val official = uri.host in setOf("weibo.com", "www.weibo.com", "m.weibo.cn", "weibo.cn")
     if (official) {
-        Regex("^/(?:status/|detail/|[0-9]+/)([a-zA-Z0-9]+)$").find(uri.path.orEmpty())?.let { openPost(Post(it.groupValues[1], "", text = "")); return true }
-        Regex("^/(?:u|profile)/(\\d+)").find(uri.path.orEmpty())?.let { navigate("profile:${it.groupValues[1]}"); return true }
-        Regex("^/p/(100808[a-zA-Z0-9]+)").find(uri.path.orEmpty())?.let { navigate("topic:${it.groupValues[1]}"); return true }
-        if (uri.path.orEmpty().startsWith("/n/")) { navigate("profile:${Uri.decode(uri.lastPathSegment.orEmpty())}"); return true }
+        Regex("^/(?:status/|detail/|[0-9]+/)([a-zA-Z0-9]{1,32})/?$").matchEntire(uri.path.orEmpty())?.let {
+            openPost(Post(numericStatusId(it.groupValues[1]), "", text = "")); return true
+        }
     }
-    if (uri.host == "s.weibo.com" && uri.path.orEmpty().startsWith("/weibo")) { openSearchResults(uri.getQueryParameter("q").orEmpty()); return true }
     return false
 }
 
@@ -73,6 +146,7 @@ fun RichText(value: String, post: Post? = null, modifier: Modifier = Modifier, s
     val raw = post?.data ?: JSONObject()
     val markup = remember(post?.raw) { Jsoup.parse(raw.optString("text")) }
     val links = remember(post?.raw) { raw.optJSONArray("url_struct").objects().map { richLinkKey(it.optString("short_url")) to it } }
+    val topics = remember(post?.raw) { raw.optJSONArray("topic_struct").objects() }
     val videoLinks = remember(markup) {
         buildMap {
             for (anchor in markup.select("a[href]")) {
@@ -122,17 +196,30 @@ fun RichText(value: String, post: Post? = null, modifier: Modifier = Modifier, s
                     title.isNotBlank() -> title
                     else -> token
                 }
-                val hot = link?.optString("url_type") == "2" || (token.startsWith('#') && raw.optJSONArray("topic_struct").objects().any { it.optString("topic_title") == token.trim('#') && it.optBoolean("is_hot") })
+                val hot = link?.optString("url_type") == "2" || (token.startsWith('#') && topics.any { it.optString("topic_title") == token.trim('#') && it.optBoolean("is_hot") })
                 withLink(LinkAnnotation.Clickable(token, TextLinkStyles(SpanStyle(color = if (hot && linkColor == Color.Unspecified) Color(0xFFFF8200) else color, fontWeight = linkWeight, textDecoration = if (linkColor != Color.Unspecified) androidx.compose.ui.text.style.TextDecoration.Underline else null))) {
                     pulse()
                     when {
                         token.startsWith('@') -> model.navigate("profile:${token.drop(1)}")
                         token.startsWith('#') -> {
-                            val topic = raw.optJSONArray("topic_struct").objects().firstOrNull { it.optString("topic_title") == token.trim('#') }
-                            val id = topic?.optString("topic_id").orEmpty()
-                            if (id.startsWith("100808")) model.navigate("topic:$id") else { model.openSearchResults(token) }
+                            val label = token.trim('#').trim()
+                            val name = topicName(label)
+                            val id = topics.firstNotNullOfOrNull { if (topicName(it.optString("topic_title")) == name) linkTopicId(it) else null }
+                                ?: links.firstNotNullOfOrNull { (_, item) -> if (topicName(item.optString("url_title")) == name) linkTopicId(item) else null }
+                                ?: markup.select("a[href]").firstNotNullOfOrNull { if (topicName(it.text()) == name) topicUrlId(it.attr("href")) else null }
+                            if (name.isNotBlank() && (id != null || name != label)) {
+                                model.openTopic(JSONObject().put("page_id", id.orEmpty()).put("title", name))
+                            } else model.openSearchResults(token)
                         }
-                        else -> model.openLink(video?.second ?: link?.optString("long_url").orEmpty().ifBlank { token })
+                        else -> {
+                            val id = link?.let(::linkTopicId)
+                            if (id != null) model.openTopic(JSONObject().put("page_id", id).put("title", topicName(title)))
+                            else {
+                                val target = sequenceOf("long_url", "ori_url", "h5_target_url")
+                                    .firstNotNullOfOrNull { field -> richLinkKey(link?.optString(field).orEmpty()).takeIf(String::isNotBlank) }
+                                model.openLink(video?.second ?: target ?: token, title)
+                            }
+                        }
                     }
                 }) { append(display) }
             }
