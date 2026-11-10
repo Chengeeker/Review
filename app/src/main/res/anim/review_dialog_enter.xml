@@ -1,0 +1,2 @@
+<alpha xmlns:android="http://schemas.android.com/apk/res/android"
+    android:duration="60" android:fromAlpha="0" android:toAlpha="1" />

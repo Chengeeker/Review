@@ -1,0 +1,6 @@
+* text=auto
+gradlew text eol=lf
+*.bat text eol=crlf
+app/src/main/assets/cfg.json -text
+app/src/main/assets/glass/*.agsl -text whitespace=-trailing-space
+app/src/main/assets/glass/*.frag -text whitespace=-trailing-space

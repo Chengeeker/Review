@@ -1,0 +1,12 @@
+<resources>
+    <style name="ReviewDialogAnimation">
+        <item name="android:windowEnterAnimation">@anim/review_dialog_enter</item>
+        <item name="android:windowExitAnimation">@anim/review_dialog_exit</item>
+    </style>
+    <style name="Theme.Review.Base" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+    <style name="Theme.Review" parent="Theme.Review.Base" />
+</resources>

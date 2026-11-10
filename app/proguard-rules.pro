@@ -1,0 +1,3 @@
+-keep class com.sina.** { *; }
+-keep class com.hengye.** { *; }
+-keep class com.review.weiboauth.** { *; }
