@@ -35,7 +35,7 @@ class StorageService {
   static const String keyUseCustomFontWeight = 'key_use_custom_font_weight';
   static const String keyCustomFontWeightDelta = 'key_custom_font_weight_delta';
   static const String keyAppTextScale = 'app_text_scale';
-  static const double defaultAppTextScale = 0.95;
+  static const double defaultAppTextScale = 1.0;
   static const String keyScreenRefreshRateMode =
       'key_screen_refresh_rate_mode'; // 0~8
   static const String keyCurrentPresetAppIconId =

@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+import '../../../../core/theme/app_theme.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 
@@ -306,7 +309,9 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
         if (streamUrl != null &&
             streamUrl.isNotEmpty &&
             !_isLiveRoomPageUrl(streamUrl)) {
-          await _initPlayer(overrideUrl: _qualityMap[_currentQuality] ?? streamUrl);
+          await _initPlayer(
+            overrideUrl: _qualityMap[_currentQuality] ?? streamUrl,
+          );
           return true;
         }
 
@@ -611,6 +616,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
   // 弹出倍速选择菜单
   void _showSpeedMenu() {
     showModalBottomSheet(
+      isScrollControlled: true,
       context: context,
       backgroundColor: Colors.grey[900],
       shape: const RoundedRectangleBorder(
@@ -618,7 +624,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
       ),
       builder: (ctx) {
         return SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(vertical: 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -678,12 +684,10 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
 
   // 弹出画质选择菜单
   void _showQualityMenu() {
-    if (_qualityMap.isEmpty) {
-      AppToast.show(context, '暂无其他清晰度可选');
-      return;
-    }
+    if (_qualityMap.values.toSet().length < 2) return;
 
     showModalBottomSheet(
+      isScrollControlled: true,
       context: context,
       backgroundColor: Colors.grey[900],
       shape: const RoundedRectangleBorder(
@@ -691,7 +695,7 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
       ),
       builder: (ctx) {
         return SafeArea(
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(vertical: 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -765,6 +769,13 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
 
   @override
   Widget build(BuildContext context) {
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: AppTheme.systemBars(Brightness.dark),
+      child: _buildPlayer(context),
+    );
+  }
+
+  Widget _buildPlayer(BuildContext context) {
     return PopScope(
       canPop: !_isLandscape,
       onPopInvokedWithResult: (didPop, _) {
@@ -832,7 +843,9 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                             setState(() {
                               _hasError = false;
                             });
-                            _initPlayer(overrideUrl: _qualityMap[_currentQuality]);
+                            _initPlayer(
+                              overrideUrl: _qualityMap[_currentQuality],
+                            );
                           },
                           child: const Text('重试'),
                         ),
@@ -1256,34 +1269,36 @@ class _WeiboVideoPlayerPageState extends ConsumerState<WeiboVideoPlayerPage> {
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 8),
-                                // 画质选择按钮
-                                InkWell(
-                                  borderRadius: BorderRadius.circular(12),
-                                  onTap: _showQualityMenu,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white12,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: Colors.white24,
-                                        width: 0.6,
+                                if (_qualityMap.values.toSet().length > 1) ...[
+                                  const SizedBox(width: 8),
+                                  // 画质选择按钮
+                                  InkWell(
+                                    borderRadius: BorderRadius.circular(12),
+                                    onTap: _showQualityMenu,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 4,
                                       ),
-                                    ),
-                                    child: Text(
-                                      _currentQuality,
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white12,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: Colors.white24,
+                                          width: 0.6,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        _currentQuality,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
+                                ],
                                 const SizedBox(width: 8),
                                 // 画质右侧最右边：横屏显示开关 (全屏切换)
                                 InkWell(

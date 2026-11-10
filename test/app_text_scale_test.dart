@@ -9,14 +9,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   test(
-    'default scale is 95 percent and explicit saved choices survive',
+    'default scale is 100 percent and explicit saved choices survive',
     () async {
       SharedPreferences.setMockInitialValues({});
       final storage = await StorageService.init();
-      expect(storage.getAppTextScale(), 0.95);
-      expect(const ThemeState().appTextScale, 0.95);
-      expect(const AppTextScaler(TextScaler.noScaling, 0.95).scale(16), 15.2);
-      for (final savedScale in [1.0, 1.2]) {
+      expect(storage.getAppTextScale(), 1.0);
+      expect(const ThemeState().appTextScale, 1.0);
+      expect(const AppTextScaler(TextScaler.noScaling, 1.0).scale(16), 16.0);
+      for (final savedScale in [0.95, 1.2]) {
         await storage.setAppTextScale(savedScale);
         final notifier = ThemeNotifier(storage);
         expect(notifier.state.appTextScale, savedScale);
@@ -65,16 +65,16 @@ void main() {
       ),
     );
 
-    final sectionTitle = find.text('字体大小');
-    await tester.scrollUntilVisible(sectionTitle, 300);
-    expect(sectionTitle, findsOneWidget);
-
     final slider = find.byKey(const ValueKey('app-text-scale-slider'));
-    await tester.scrollUntilVisible(slider, 160);
+    await tester.scrollUntilVisible(
+      slider,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('应用字体大小'), findsOneWidget);
-    expect(find.text('95%'), findsOneWidget);
+    expect(find.text('100%'), findsOneWidget);
     expect(tester.widget<Slider>(slider).divisions, 12);
   });
 }

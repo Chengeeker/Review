@@ -18,6 +18,9 @@ import 'package:flutter/gestures.dart'
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderImage, RenderClipRRect;
 import 'package:flutter/services.dart';
+
+import '../../../../core/theme/app_theme.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:video_player/video_player.dart';
@@ -286,8 +289,10 @@ class _HeroReturnPainter extends CustomPainter {
     final distance = useWidth
         ? size.width - source.viewport.width
         : size.height - source.viewport.height;
-    final t = (extent == 0 ? 1 - animation.value : distance / extent)
-        .clamp(0.0, 1.0);
+    final t = (extent == 0 ? 1 - animation.value : distance / extent).clamp(
+      0.0,
+      1.0,
+    );
     final rect = Rect.lerp(source.rect, target.rect, t)!;
     final radius = BorderRadius.lerp(source.radius, target.radius, t)!;
     canvas.save();
@@ -1809,7 +1814,10 @@ class _ImageGalleryPageState extends ConsumerState<ImageGalleryPage>
         ),
       ),
     );
-    return galleryPage;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: AppTheme.systemBars(Brightness.dark),
+      child: galleryPage,
+    );
   }
 }
 

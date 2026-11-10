@@ -116,7 +116,6 @@ class ThemeSettingsPage extends ConsumerWidget {
               children: [
                 ReviewChoiceTile<ThemeMode>(
                   title: '跟随系统',
-                  summary: '自动匹配系统深色/浅色设置',
                   value: ThemeMode.system,
                   groupValue: themeState.themeMode,
                   onSelected: () => ref
@@ -177,8 +176,7 @@ class ThemeSettingsPage extends ConsumerWidget {
                       Icons.auto_awesome_outlined,
                       color: colorScheme.primary,
                     ),
-                    title: 'Material You (Monet) 动态取色',
-                    summary: '从 Android 12+ 壁纸自动提取主色调',
+                    title: '动态取色',
                     value: themeState.useDynamicColor,
                     onChanged: (val) {
                       HapticFeedbackUtil.light();

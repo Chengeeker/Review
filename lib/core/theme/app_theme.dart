@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show PredictiveBackEvent;
+import 'package:flutter/services.dart'
+    show PredictiveBackEvent, SystemUiOverlayStyle;
 
 import '../utils/haptic_feedback_util.dart';
 
@@ -206,6 +207,16 @@ class _PredictiveBackRouteObserverState
 
 /// Material Design 3 Palette and OLED Pure Black Definition
 class AppTheme {
+  static SystemUiOverlayStyle systemBars(Brightness brightness) =>
+      SystemUiOverlayStyle(
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarDividerColor: Colors.transparent,
+        systemNavigationBarIconBrightness: brightness == Brightness.dark
+            ? Brightness.light
+            : Brightness.dark,
+        systemNavigationBarContrastEnforced: false,
+      );
+
   AppTheme._();
 
   // Preset Theme Color Palettes

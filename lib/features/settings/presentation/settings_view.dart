@@ -9,6 +9,7 @@ import '../../../core/constants/api_constants.dart';
 import '../../../core/storage/storage_service.dart';
 import '../../../core/theme/theme_provider.dart';
 import '../../../core/utils/app_dialog.dart';
+import '../../../core/widgets/app_section_card.dart';
 import '../../../core/utils/app_toast.dart';
 import '../../../core/utils/haptic_feedback_util.dart';
 import '../../auth/presentation/login_page.dart';
@@ -52,7 +53,7 @@ class SettingsView extends ConsumerWidget {
           _buildSectionTitle(context, '偏好与功能'),
           const SizedBox(height: 12),
           // 个性化与样式管理
-          _SettingsSectionCard(
+          AppSectionCard(
             child: Column(
               children: [
                 // 个性化 (明暗、颜色、导航、触感)
@@ -112,7 +113,7 @@ class SettingsView extends ConsumerWidget {
           const SizedBox(height: 12),
 
           // 2. 存储设置与 WebDAV 备份
-          _SettingsSectionCard(
+          AppSectionCard(
             child: Column(
               children: [
                 // 存储设置 (图片与视频存储路径)
@@ -171,7 +172,7 @@ class SettingsView extends ConsumerWidget {
           _buildSectionTitle(context, '账号设置'),
           const SizedBox(height: 12),
           // 账号管理
-          _SettingsSectionCard(
+          AppSectionCard(
             child: Column(
               children: [
                 if (!isLoggedIn)
@@ -400,7 +401,7 @@ class SettingsView extends ConsumerWidget {
           const SizedBox(height: 32),
           _buildSectionTitle(context, '关于与支持'),
           const SizedBox(height: 12),
-          _SettingsSectionCard(
+          AppSectionCard(
             child: ReviewPreferenceTile(
               leading: Icon(
                 Icons.info_outline_rounded,
@@ -779,31 +780,6 @@ class SettingsView extends ConsumerWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _SettingsSectionCard extends StatelessWidget {
-  final Widget child;
-
-  const _SettingsSectionCard({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Card(
-      margin: EdgeInsets.zero,
-      elevation: 0,
-      shadowColor: Colors.transparent,
-      surfaceTintColor: Colors.transparent,
-      color: colorScheme.surface == Colors.black
-          ? colorScheme.surfaceContainer
-          : colorScheme.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
-        side: BorderSide.none,
-      ),
-      child: child,
     );
   }
 }

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Low-emphasis, flush surface for grouped settings and utility actions.
+/// Flush surface for grouped settings and utility actions.
 class AppSectionCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry? margin;
@@ -9,10 +9,15 @@ class AppSectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final color = scheme.surface == Colors.black
-        ? scheme.surfaceContainer
-        : scheme.surfaceContainerLow;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final pageColor = theme.scaffoldBackgroundColor;
+    final page = pageColor.computeLuminance() + .05;
+    final card = scheme.surfaceContainerHigh.computeLuminance() + .05;
+    final separated = card >= page * 1.12 || page >= card * 1.12;
+    final color = separated
+        ? scheme.surfaceContainerHigh
+        : Color.alphaBlend(scheme.onSurface.withValues(alpha: .10), pageColor);
     return Card(
       margin: margin ?? EdgeInsets.zero,
       color: color,

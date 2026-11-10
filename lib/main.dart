@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:easy_refresh/easy_refresh.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
@@ -21,6 +22,7 @@ import 'features/home/presentation/main_scaffold.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   await LiquidGlassWidgets.initialize(enablePerformanceMonitor: false);
 
   FlutterError.onError = (details) {
@@ -115,10 +117,14 @@ class WBTestApp extends ConsumerWidget {
                   themeState.appTextScale,
                 ),
               ),
-              child: DefaultTextStyle(
-                style:
-                    Theme.of(context).textTheme.bodyMedium ?? const TextStyle(),
-                child: child ?? const SizedBox.shrink(),
+              child: AnnotatedRegion<SystemUiOverlayStyle>(
+                value: AppTheme.systemBars(Theme.of(context).brightness),
+                child: DefaultTextStyle(
+                  style:
+                      Theme.of(context).textTheme.bodyMedium ??
+                      const TextStyle(),
+                  child: child ?? const SizedBox.shrink(),
+                ),
               ),
             );
           },
