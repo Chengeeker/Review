@@ -9,9 +9,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.platform.ViewConfiguration
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.DpSize
 import coil.compose.AsyncImage
 import org.json.JSONObject
 import org.jsoup.Jsoup
@@ -227,7 +230,19 @@ fun RichText(value: String, post: Post? = null, modifier: Modifier = Modifier, s
         }
         append(value.substring(position))
     }
-    Text(annotated, modifier, style = style, inlineContent = inline)
+    InlineLinkTargets { Text(annotated, modifier, style = style, inlineContent = inline) }
+}
+
+@Composable
+internal fun InlineLinkTargets(content: @Composable () -> Unit) {
+    val configuration = LocalViewConfiguration.current
+    val exactTargets = remember(configuration) {
+        object : ViewConfiguration by configuration {
+            // Expanded touch targets can hit the empty rectangle between wrapped link fragments.
+            override val minimumTouchTargetSize = DpSize.Zero
+        }
+    }
+    CompositionLocalProvider(LocalViewConfiguration provides exactTargets, content = content)
 }
 
 fun postTime(raw: String, relative: Boolean, weekday: Boolean, year: Boolean, timezone: Boolean, seconds: Boolean,

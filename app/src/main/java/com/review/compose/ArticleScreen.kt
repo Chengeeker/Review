@@ -183,7 +183,7 @@ fun ArticleScreen(id: String, gallery: (List<Media>, Int) -> Unit) {
                                 else withLink(LinkAnnotation.Clickable(part.url, TextLinkStyles(SpanStyle(color = MaterialTheme.colorScheme.primary))) { pulse(); model.openLink(part.url) }) { append(part.text) }
                             }
                         }
-                        Text(text, Modifier.padding(bottom = 14.dp).articleLineHeight(29.75.sp), fontSize = 17.sp, lineHeight = 29.75.sp)
+                        InlineLinkTargets { Text(text, Modifier.padding(bottom = 14.dp).articleLineHeight(29.75.sp), fontSize = 17.sp, lineHeight = 29.75.sp) }
                     }
                 }
             }
