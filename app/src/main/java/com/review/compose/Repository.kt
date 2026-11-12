@@ -37,29 +37,49 @@ class ReviewApplication : Application(), ImageLoaderFactory {
         }.build() }.crossfade(true).build()
 }
 
-class SessionStore(context: Context, private val namespace: String = "session") {
+class SessionStore(private val context: Context, private val namespace: String = "session", private val keyProvider: ((Boolean)->SecretKey)? = null) {
     private val prefs = context.getSharedPreferences(namespace, Context.MODE_PRIVATE)
-    private fun key(): SecretKey {
+    private fun key(create: Boolean = true): SecretKey {
+        keyProvider?.let { return it(create) }
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         (store.getKey("compose-$namespace", null) as? SecretKey)?.let { return it }
+        if(!create)throw SecretReadFailure(SecretFailureKind.MISSING_KEY)
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
             init(KeyGenParameterSpec.Builder("compose-$namespace", KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
         }.generateKey()
     }
-    fun save(cookie: String) {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
-        check(prefs.edit().putString("iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
-            .putString("data", Base64.encodeToString(cipher.doFinal(cookie.toByteArray()), Base64.NO_WRAP)).commit())
-    }
-    fun load(): String {
-        val data = prefs.getString("data", null) ?: return ""
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
-            init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, Base64.decode(prefs.getString("iv", ""), Base64.NO_WRAP)))
+    fun save(cookie: String, recoverUnreadable: Boolean = false) {
+        try {load()}catch(e:SecretReadFailure){
+            if(!recoverUnreadable || !e.recoverable)throw e
+            archiveEncryptedFile(context,java.io.File(context.applicationInfo.dataDir,"shared_prefs/$namespace.xml"))
         }
-        return String(cipher.doFinal(Base64.decode(data, Base64.NO_WRAP)), Charsets.UTF_8)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
+        val original=snapshot()
+        val committed=prefs.edit().putString("iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
+            .putString("data", Base64.encodeToString(cipher.doFinal(cookie.toByteArray()), Base64.NO_WRAP)).commit()
+        if(!committed){val failure=java.io.IOException("加密资料写入失败");try{rollback(snapshot(),original)}catch(e:Exception){failure.addSuppressed(e)};throw failure}
+        if(namespace=="session")revision.incrementAndGet()
     }
-    fun clear() { check(prefs.edit().clear().commit()) }
+    fun load(): String = readEncrypted {
+        val data = prefs.getString("data", null) ?: return@readEncrypted ""
+        require(Base64.decode(data,Base64.NO_WRAP).size in 16..(16*1024*1024) && Base64.decode(prefs.getString("iv",""),Base64.NO_WRAP).size==12)
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply {
+            init(Cipher.DECRYPT_MODE, key(false), GCMParameterSpec(128, Base64.decode(prefs.getString("iv", ""), Base64.NO_WRAP)))
+        }
+        String(cipher.doFinal(Base64.decode(data, Base64.NO_WRAP)), Charsets.UTF_8)
+    }
+    fun clear() { check(prefs.edit().clear().commit());if(namespace=="session")revision.incrementAndGet() }
+    internal fun snapshot():Map<String,*> = prefs.all.toMap()
+    internal fun rollback(expected:Map<String,*>, original:Map<String,*>) {
+        check(prefs.all==expected){"账号资料已改变，保留最新资料"}
+        check(prefs.edit().clear().also { edit->original.forEach{(key,value)->if(value is String)edit.putString(key,value)} }.commit())
+        if(namespace=="session")revision.incrementAndGet()
+    }
+    companion object {
+        internal val accountWrites=kotlinx.coroutines.sync.Mutex()
+        internal val revision=java.util.concurrent.atomic.AtomicLong()
+    }
 }
 
 data class VerifiedWebSession(val cookie: String, val mobileOnly: Boolean, val uid: String)

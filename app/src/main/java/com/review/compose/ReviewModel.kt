@@ -33,7 +33,7 @@ class ReviewRoute(val key: Long, val name: String, post: Post? = null) {
 class ReviewModel(application: Application) : AndroidViewModel(application) {
     private val prefs = application.getSharedPreferences("preferences", 0)
     private val session = SessionStore(application)
-    private val accountCommitLock = Mutex()
+    private val accountCommitLock = SessionStore.accountWrites
     private val webRecoveryLock = Mutex()
     val nativeAuth = com.review.weiboauth.WeiboAuthManager(application)
     val repository = Repository(nativeAuth)
@@ -195,17 +195,19 @@ class ReviewModel(application: Application) : AndroidViewModel(application) {
         val storedUid = prefs.getString("uid", "").orEmpty()
         val (storedCookie, loggedIn) = withContext(Dispatchers.IO) {
             val webCookie = session.load()
-            webCookie to (webCookie.isNotBlank() || nativeAuth.hasNativeSessionFor(storedUid))
+            val nativeSession=nativeAuth.hasNativeSessionFor(storedUid)
+            if(webCookie.isBlank() && !nativeSession)nativeAuth.sessionReadError?.let{error(it)}
+            webCookie to (webCookie.isNotBlank() || nativeSession)
         }
         cookie = storedCookie
         uid = if (loggedIn) storedUid else ""
     }
-    suspend fun reloadPreferences(reloadAccount: Boolean = true) {
+    suspend fun reloadPreferences(reloadAccount: Boolean = true, preserveNavigation: Boolean = false) {
         if (reloadAccount) restoreAccount()
         theme = prefs.getInt("theme", 0); dynamicColor = prefs.getBoolean("dynamic", false); textScale = prefs.getFloat("textScale", 1f).coerceIn(.8f, 1.5f)
         configureWebSession(prefs.getBoolean("mobileOnly", false))
         optionsVersion++
-        if (reloadAccount) changeMode(false) else loadLocal()
+        if (reloadAccount) changeMode(false,preserveNavigation) else loadLocal()
     }
     private fun configureWebSession(mobileOnly: Boolean) {
         repository.mobileOnly = mobileOnly
@@ -221,7 +223,7 @@ class ReviewModel(application: Application) : AndroidViewModel(application) {
             else (listOf(post) + bookmarks).take(200)
         prefs.edit().putString("saved-$scopeKey", JSONArray(bookmarks.map(Post::snapshot)).toString()).apply()
     }
-    fun changeMode(preview: Boolean) {
+    fun changeMode(preview: Boolean, preserveNavigation: Boolean = false) {
         epoch++
         actionPost = null; actionBusy = false; actionError = null
         feedGeneration++
@@ -233,7 +235,7 @@ class ReviewModel(application: Application) : AndroidViewModel(application) {
         selected = null; revisionPost = null; searchResults = emptyList(); submittedQuery = ""; query = ""; comments = emptyList()
         feedError = null; searchError = null; feedMore = false
         groups = emptyList(); group = FeedGroup("friends", "最新微博"); groupsError = null
-        loadLocal(); resetNavigation()
+        loadLocal(); if(!preserveNavigation)resetNavigation()
         scheduleNotifications(getApplication())
         me = null
         if (!preview && uid.isNotEmpty()) { refreshFeed(); loadGroups(); loadMe() }

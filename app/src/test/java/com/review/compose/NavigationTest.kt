@@ -966,7 +966,7 @@ class NavigationTest {
                 @Suppress("UNCHECKED_CAST")
                 val owner = ReviewModel::class.java.getDeclaredField("uid\$delegate").apply { isAccessible = true }.get(model) as androidx.compose.runtime.MutableState<String>
                 owner.value = "42"
-                ReviewModel::class.java.getDeclaredField("cookie").apply { isAccessible = true }.set(model, "SUB=fixture; XSRF-TOKEN=fixture")
+                (ReviewModel::class.java.getDeclaredField("cookie\$delegate").apply { isAccessible = true }.get(model) as androidx.compose.runtime.MutableState<String>).value = "SUB=fixture; XSRF-TOKEN=fixture"
                 model.saveDraft("修改后正文")
                 model.navigate("edit:12345", Post("12345", "本人", text = "原文", raw = """{"visible":{"type":1}}"""))
             }
@@ -1312,7 +1312,7 @@ class NavigationTest {
         full.performClick().assertIsSelected()
         safe.assertIsNotSelected()
         compose.onNodeWithText("从云端恢复备份").performScrollTo().performClick()
-        compose.onNodeWithText("全量备份会替换登录凭据和 WebDAV 密码。", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("全量备份会恢复 WebDAV 密码，登录凭据验证通过后才替换当前会话。", substring = true).assertIsDisplayed()
         compose.onNodeWithText("取消").performClick()
     }
     @Test fun settingsKeepsTheOriginalGroupsAndDarkMode() {

@@ -39,37 +39,43 @@ fun BackupScreen() {
     var busy by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     var confirm by remember { mutableStateOf(false) }
+    var resultTitle by remember { mutableStateOf("连接测试结果") }
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
     LaunchedEffect(Unit) { try { password = withContext(Dispatchers.IO) { store.password() } } catch (_: Exception) { error = "保存的授权密码无法读取，请重新填写" } }
     fun execute(kind: String) {
         if (busy.isNotBlank()) return
+        focus.clearFocus()
+        resultTitle = when (kind) { "test" -> "连接测试结果"; "backup" -> "备份结果"; else -> "恢复结果" }
         busy = kind; error = null
         scope.launch {
             try {
                 val config = DavConfig(server.trim(), username.trim(), password, directory.trim().ifBlank { "Review" })
                 config.folder()
-                withContext(Dispatchers.IO) { store.savePassword(password) }
-                model.setOption("webdav_url", config.server); model.setOption("webdav_username", config.username); model.setOption("webdav_directory", config.directory)
+                if (kind != "restore") {
+                    withContext(Dispatchers.IO) { store.savePassword(password) }
+                    model.setOption("webdav_url", config.server); model.setOption("webdav_username", config.username); model.setOption("webdav_directory", config.directory)
+                }
                 when (kind) {
-                    "test" -> { client.test(config); model.notice = "🎉 WebDAV 服务器连接成功！" }
+                    "test" -> { client.test(config); error = "🎉 WebDAV 服务器连接成功！" }
                     "backup" -> {
                         val historySaved = client.upload(config, store.export(full))
-                        model.notice = if (historySaved) "🎉 应用设置已成功备份到 WebDAV 云盘！" else "最新备份已保存，历史副本上传失败"
+                        error = if (historySaved) "🎉 应用设置已成功备份到 WebDAV 云盘！" else "最新备份已保存，历史副本上传失败"
                     }
                     "restore" -> {
                         val backup = client.download(config)
-                        store.restore(backup)
-                        model.reloadPreferences(reloadAccount = backup.optString("version") == "2.0" && backup.optString("backup_mode") == "full")
+                        val restored=store.restore(backup)
+                        model.reloadPreferences(reloadAccount = backup.optString("version") == "2.0" && backup.optString("backup_mode") == "full", preserveNavigation = true)
                         server = model.option("webdav_url"); username = model.option("webdav_username"); directory = model.option("webdav_directory", "Review")
                         password = withContext(Dispatchers.IO) { store.password() }
-                        model.notice = "🎉 备份已成功恢复！重启应用可应用全部设置，登录有效性以服务端校验为准"
+                        error = restored
                     }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) { throw e }
-            catch (e: Exception) { error = e.message ?: "操作未完成，请检查备份与服务器设置" }
+            catch (e: Exception) { error = webDavError(e) }
             finally { busy = "" }
         }
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 14.dp + LocalContentTop.current, bottom = 14.dp)) {
+    Column(Modifier.fillMaxSize().imePadding().verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 14.dp + LocalContentTop.current, bottom = 14.dp)) {
         Surface(color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .4f), shape = RoundedCornerShape(16.dp)) {
             Row(Modifier.padding(14.dp)) {
                 Icon(Icons.Outlined.CloudSync, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(12.dp))
@@ -137,10 +143,15 @@ fun BackupScreen() {
             }
         }
         if (busy.isNotBlank()) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 12.dp))
-        error?.let { Text(it, Modifier.padding(top = 12.dp), color = MaterialTheme.colorScheme.error) }
+
+    }
+    if (busy.isBlank()) error?.let { message ->
+        ReviewAlertDialog(onDismissRequest = { error = null }, title = { Text(resultTitle) },
+            text = { Text(message, Modifier.verticalScroll(rememberScrollState())) },
+            confirmButton = { TextButton(onClick = hapticClick { error = null }) { Text("知道了") } })
     }
     if (confirm) ReviewAlertDialog(onDismissRequest = { confirm = false }, title = { Text("从 WebDAV 恢复备份？") },
-        text = { Text("将覆盖备份中包含的设置和历史。全量备份会替换登录凭据和 WebDAV 密码。安全备份保留本机凭据。") },
+        text = { Text("将覆盖备份中包含的设置和历史。全量备份会恢复 WebDAV 密码，登录凭据验证通过后才替换当前会话。旧密钥不可用时先保留并核对原密文。安全备份保留本机凭据。") },
         confirmButton = { Button(onClick = hapticClick { confirm = false; execute("restore") }) { Text("确定恢复") } },
         dismissButton = { TextButton(onClick = hapticClick { confirm = false }) { Text("取消") } })
 }

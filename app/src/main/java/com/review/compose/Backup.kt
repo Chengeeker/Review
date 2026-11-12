@@ -3,6 +3,8 @@ package com.review.compose
 import android.content.Context
 import android.content.SharedPreferences
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -47,6 +49,10 @@ fun validateBackup(data: JSONObject): JSONObject {
             else -> value is String
         }) { "无效的备份设置：$key" }
     }
+    val ranges=mapOf("theme_mode" to 0.0..2.0,"key_theme_color_index" to 0.0..7.0,"key_custom_font_weight_delta" to -300.0..300.0,
+        "key_screen_refresh_rate_mode" to 0.0..8.0,"image_save_path_type" to 0.0..2.0,"video_save_path_type" to 0.0..2.0,"app_text_scale" to .8..1.5,
+        "auto_clear_image_cache_threshold_mb" to 0.0..16384.0,"weibo_font_size" to 10.0..32.0,"weibo_font_line_height" to 1.0..3.0)
+    ranges.forEach{(key,range)->if(values.has(key))require((values.get(key) as Number).toDouble() in range){"备份设置范围无效：$key"}}
     if (data.optString("backup_mode") == "full" && !data.isNull("native_session")) {
         require(data.get("native_session") is String) { "无效的原生会话" }
         val native = JSONObject(data.getString("native_session"))
@@ -59,14 +65,14 @@ fun validateBackup(data: JSONObject): JSONObject {
     return values
 }
 
-class BackupStore(private val context: Context, private val native: com.review.weiboauth.WeiboAuthManager) {
+class BackupStore(private val context: Context, private val native: com.review.weiboauth.WeiboAuthManager,
+    private val session:SessionStore=SessionStore(context),private val secret:SessionStore=SessionStore(context,"webdav")) {
     private val prefs = context.getSharedPreferences("preferences", 0)
-    private val session = SessionStore(context)
-    private val secret = SessionStore(context, "webdav")
     fun password() = secret.load()
     fun savePassword(value: String) = secret.save(value)
 
     suspend fun export(full: Boolean): JSONObject = withContext(Dispatchers.IO) {
+        val revision=SessionStore.revision.get()
         val uid = prefs.getString("uid", "").orEmpty()
         val values = JSONObject()
         for (key in BackupSchema.safe) {
@@ -90,26 +96,37 @@ class BackupStore(private val context: Context, private val native: com.review.w
             if (value != null) values.put(key, value)
         }
         if (full) {
-            val cookie = session.load()
+            val cookie = if(uid.isNotEmpty())session.load()else ""
             values.put("user_uid", uid).put("is_logged_in", uid.isNotEmpty() && (cookie.isNotEmpty() || native.hasNativeSessionFor(uid)))
                 .put("weibo_full_cookie", cookie).put(if (prefs.getBoolean("mobileOnly", false)) "weibo_mobile_cookie" else "weibo_desktop_cookie", cookie)
                 .put("webdav_password", password())
         }
         JSONObject().put("app", "Review").put("version", "2.0").put("backup_mode", if (full) "full" else "safe")
             .put("exported_at", Instant.now().toString()).put("preferences", values).apply {
-                if (full) put("native_session", native.exportBackupSession(uid) ?: JSONObject.NULL)
+                if (full) put("native_session", if(uid.isNotEmpty())native.exportBackupSession(uid) ?: JSONObject.NULL else JSONObject.NULL)
+                put("accountMode",if(uid.isEmpty())"GUEST"else"COOKIE")
+                check(revision==SessionStore.revision.get()&&uid==prefs.getString("uid","").orEmpty()){ "账号已改变，请重新备份" }
             }
     }
 
-    suspend fun restore(data: JSONObject) = withContext(Dispatchers.IO) {
+    suspend fun restore(data: JSONObject,verifyWeb:suspend (String,String)->VerifiedWebSession={cookie,uid->Repository().importWebSession(cookie,uid)}): String = withContext(Dispatchers.IO) {
         val values = validateBackup(data)
         val full = data.optString("version") == "2.0" && data.optString("backup_mode") == "full"
         val oldPrefs = prefs.all.toMap()
         val oldUid = prefs.getString("uid", "").orEmpty()
-        val oldCookie = if (full) session.load() else ""
-        val oldNative = if (full) native.exportBackupSession(oldUid) else null
-        val oldPassword = if (full) password() else ""
+        val revision=SessionStore.revision.get()
+        val oldCookie=session.snapshot();val oldPassword=secret.snapshot()
+        val oldNative=if(full)native.encryptedBackupSnapshot()else null
         val uid = if (full) values.optString("user_uid") else oldUid
+        var verifiedWeb:VerifiedWebSession?=null
+        var verifiedNative:String?=null
+        val candidate=values.optString("weibo_desktop_cookie").ifBlank{values.optString("weibo_mobile_cookie")}.ifBlank{values.optString("weibo_full_cookie")}
+        if(full && uid.isNotBlank()) {
+            if(candidate.isNotBlank())try{verifiedWeb=verifyWeb(candidate,uid).also{check(it.uid==uid){"登录验证账号不匹配"}}}catch(e:kotlinx.coroutines.CancellationException){throw e}catch(_:Exception){}
+            if(!data.isNull("native_session"))try{verifiedNative=native.verifyBackupSession(data.getString("native_session"),uid)}catch(e:kotlinx.coroutines.CancellationException){throw e}catch(_:Exception){}
+        }
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        val restoreLogin=verifiedWeb!=null || verifiedNative!=null
         val editor = prefs.edit()
         for (key in values.keys()) {
             if (key !in BackupSchema.safe) continue
@@ -138,36 +155,47 @@ class BackupStore(private val context: Context, private val native: com.review.w
                 else -> putPreference(editor, backupNames[key] ?: key, value)
             }
         }
-        // Commit credentials and settings together; cancellation cannot strand half an account.
-        withContext(NonCancellable) {
-            try {
-                if (full) {
-                    check(native.restoreBackupSession(if (data.isNull("native_session")) null else data.getString("native_session"), uid))
-                    val desktop = values.optString("weibo_desktop_cookie")
-                    val mobile = values.optString("weibo_mobile_cookie")
-                    val cookie = desktop.ifBlank { mobile }.ifBlank { values.optString("weibo_full_cookie") }
-                    if (cookie.isEmpty()) session.clear() else session.save(cookie)
-                    editor.putString("uid", uid).putBoolean("mobileOnly", desktop.isBlank() && mobile.isNotBlank())
-                    secret.save(values.optString("webdav_password"))
-                }
-                check(editor.commit()) { "备份设置写入失败" }
-            } catch (failure: Exception) {
+        SessionStore.accountWrites.withLock {
+            check(SessionStore.revision.get()==revision && session.snapshot()==oldCookie && secret.snapshot()==oldPassword && prefs.all==oldPrefs) { "账号或设置已改变，请重新恢复" }
+            withContext(NonCancellable) { synchronized(native) {
+                check(oldNative==null || native.encryptedBackupSnapshot()==oldNative){"原生会话已改变，请重新恢复"}
+                var appliedCookie:Map<String,*>?=null;var appliedPassword:Map<String,*>?=null;var appliedPrefs:Map<String,*>?=null;var appliedNative=false
                 try {
                     if (full) {
-                        native.restoreBackupSession(oldNative, oldUid)
-                        if (oldCookie.isEmpty()) session.clear() else session.save(oldCookie)
-                        secret.save(oldPassword)
-                    }
-                    check(prefs.edit().clear().also { edit -> oldPrefs.forEach { (key, value) ->
-                        when (value) {
-                            is Int -> edit.putInt(key, value)
-                            is Long -> edit.putLong(key, value)
-                            else -> if (value != null) putPreference(edit, key, value)
+                        if(restoreLogin) {
+                            check(native.restoreBackupSession(verifiedNative,uid));appliedNative=true
+                            session.save(verifiedWeb?.cookie.orEmpty(),recoverUnreadable=true);appliedCookie=session.snapshot()
+                            editor.putString("uid",uid).putBoolean("mobileOnly",verifiedWeb?.mobileOnly?:false)
                         }
-                    } }.commit())
-                } catch (rollback: Exception) { failure.addSuppressed(rollback) }
-                throw failure
-            }
+                        secret.save(values.optString("webdav_password"),recoverUnreadable=true);appliedPassword=secret.snapshot()
+                    }else if(listOf("webdav_url","webdav_username").any{values.has(it)&&values.opt(it)!=oldPrefs[it]}) {
+                        secret.save("");appliedPassword=secret.snapshot()
+                    }
+                    val committed=editor.commit();appliedPrefs=prefs.all.toMap()
+                    check(committed){"备份设置写入失败"}
+                }catch(failure:Exception){
+                    try {
+                        appliedCookie?.let{session.rollback(it,oldCookie)}
+                        appliedPassword?.let{secret.rollback(it,oldPassword)}
+                        if(appliedNative && oldNative!=null)native.restoreEncryptedBackupSnapshot(oldNative)
+                        appliedPrefs?.let { applied ->
+                            val rollback=prefs.edit()
+                            (applied.keys+oldPrefs.keys).filter{applied[it]!=oldPrefs[it]&&prefs.all[it]==applied[it]}.forEach{key->
+                                val value=oldPrefs[key]
+                                when(value){null->rollback.remove(key);is Int->rollback.putInt(key,value);is Long->rollback.putLong(key,value);else->putPreference(rollback,key,value)}
+                            }
+                            check(rollback.commit())
+                        }
+                    }catch(rollback:Exception){failure.addSuppressed(rollback)}
+                    throw failure
+                }
+            } }
+        }
+        when {
+            restoreLogin -> "设置和本地资料已恢复，账号登录已通过验证并恢复。"
+            full && (candidate.isNotBlank() || !data.isNull("native_session")) -> "资料已恢复，但账号登录未恢复，请重试或重新登录。当前会话保持不变。"
+            full -> "设置和本地资料已恢复。备份未包含有效登录凭据，当前会话保持不变。"
+            else -> "设置和本地资料已恢复，当前账号登录保持不变。"
         }
     }
 }
@@ -193,28 +221,10 @@ data class DavConfig(val server: String, val username: String, val password: Str
 }
 
 class DavClient {
-    private val client = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false).callTimeout(60, TimeUnit.SECONDS).build()
-    private suspend fun request(config: DavConfig, url: HttpUrl, method: String, body: String? = null, accepted: Set<Int>): String = suspendCancellableCoroutine { continuation ->
-        val request = Request.Builder().url(url).header("Authorization", Credentials.basic(config.username, config.password, Charsets.UTF_8))
-            .header("Depth", "0").method(method, body?.toRequestBody("application/json; charset=utf-8".toMediaType()) ?: if (method in setOf("MKCOL", "PROPFIND")) ByteArray(0).toRequestBody() else null).build()
-        val call = client.newCall(request)
-        continuation.invokeOnCancellation { call.cancel() }
-        call.enqueue(object : Callback {
-            override fun onFailure(call: Call, e: IOException) { if (!continuation.isCancelled) continuation.resumeWithException(IOException("WebDAV 连接失败，请检查网络与服务器设置")) }
-            override fun onResponse(call: Call, response: Response) {
-                try {
-                    val text = response.use {
-                        check(it.code in accepted) { "WebDAV 请求失败（HTTP ${it.code}）" }
-                        val source = it.body?.source() ?: return@use ""
-                        source.request(16L * 1024 * 1024 + 1)
-                        check(source.buffer.size <= 16L * 1024 * 1024) { "备份文件超过大小上限" }
-                        source.readUtf8()
-                    }
-                    if (!continuation.isCancelled) continuation.resume(text)
-                } catch (e: Exception) { if (!continuation.isCancelled) continuation.resumeWithException(e) }
-            }
-        })
-    }
+    private val transport = WebDavTransport(OkHttpClient(), 16L * 1024 * 1024)
+    private suspend fun request(config: DavConfig, url: HttpUrl, method: String, body: String? = null, accepted: Set<Int>): String =
+        transport.request(url, method, Credentials.basic(config.username, config.password, Charsets.UTF_8), body?.toByteArray(Charsets.UTF_8))
+            .requireStatus(if (method == "GET") "下载" else method, accepted).bytes.toString(Charsets.UTF_8)
     suspend fun test(config: DavConfig) { request(config, config.base(), "PROPFIND", accepted = setOf(200, 207)) }
     suspend fun upload(config: DavConfig, data: JSONObject): Boolean {
         val folder = config.folder()
@@ -225,5 +235,6 @@ class DavClient {
             request(config, folder.newBuilder().addPathSegment("backup_review_${System.currentTimeMillis()}.json").build(), "PUT", body, setOf(200, 201, 204)); true
         } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { false }
     }
-    suspend fun download(config: DavConfig) = JSONObject(request(config, config.folder().newBuilder().addPathSegment("backup_review_latest.json").build(), "GET", accepted = setOf(200)))
+    suspend fun download(config: DavConfig) = transport.request(config.folder().newBuilder().addPathSegment("backup_review_latest.json").build(), "GET",
+        Credentials.basic(config.username, config.password, Charsets.UTF_8)).requireStatus("下载", setOf(200)).json().also(::validateBackup)
 }

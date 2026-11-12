@@ -13,6 +13,7 @@ public final class WeiboAuthManager {
     private WeiboSession pendingSession;
     private WeiboSession activeSession;
     private long readRetryAt;
+    private String sessionReadError;
     private WeiboSession oauthVerifiedSession;
     private long oauthVerifiedUntil;
     private long oauthRenewRetryAt;
@@ -27,11 +28,15 @@ public final class WeiboAuthManager {
         if (activeSession != null) return activeSession;
         try {
             activeSession = sessionStore.load();
+            sessionReadError = null;
         } catch (Throwable t) {
-            Log.w(TAG, "Failed to load active session", t);
+            sessionReadError = t.getMessage();
+            Log.w(TAG, "Native encrypted session unavailable (" + t.getClass().getSimpleName() + ")");
         }
         return activeSession;
     }
+
+    public synchronized String getSessionReadError() { return sessionReadError; }
 
     public synchronized boolean hasNativeSession() {
         WeiboSession session = getActiveSession();
@@ -225,13 +230,28 @@ public final class WeiboAuthManager {
 
     public synchronized String exportBackupSession(String uid) {
         WeiboSession session = getActiveSession();
+        if (sessionReadError != null) throw new IllegalStateException(sessionReadError);
         if (session == null) return null;
         if (!session.uid.equals(uid)) throw new IllegalArgumentException("备份账号与原生会话不一致");
         return session.toJson().toString();
     }
 
+    public synchronized String encryptedBackupSnapshot() { return sessionStore.encryptedSnapshot(); }
+    public synchronized void restoreEncryptedBackupSnapshot(String value) throws Exception {
+        sessionStore.restoreEncryptedSnapshot(value); activeSession = null; oauthVerifiedSession = null; pendingSession = null;
+    }
+
+    public String verifyBackupSession(String json, String uid) throws Exception {
+        WeiboSession candidate = WeiboSession.fromJson(new org.json.JSONObject(json));
+        if (!candidate.hasRequiredFields() || !candidate.uid.equals(uid)) throw new IllegalArgumentException("无效的备份原生会话");
+        WeiboSession verified = api().verifyNativeSession(candidate);
+        if (verified == null || !verified.hasRequiredFields() || !verified.uid.equals(uid)) throw new IllegalArgumentException("备份账号校验不匹配");
+        return verified.toJson().toString();
+    }
+
     public synchronized boolean restoreBackupSession(String json, String uid) throws Exception {
         if (json == null) {
+            sessionStore.preserveBeforeReplacement(true);
             logout();
             return true;
         }
@@ -239,7 +259,8 @@ public final class WeiboAuthManager {
         if (!session.hasRequiredFields() || !session.uid.equals(uid)) {
             throw new IllegalArgumentException("无效的备份原生会话");
         }
-        sessionStore.save(session);
+        sessionStore.save(session, true);
+        sessionReadError = null;
         activeSession = session;
         oauthVerifiedSession = null;
         oauthRenewRetryAt = 0;

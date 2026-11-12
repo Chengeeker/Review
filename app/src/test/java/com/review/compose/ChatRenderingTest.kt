@@ -179,7 +179,7 @@ class ChatRenderingTest {
             org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
             model.ready
         }
-        ReviewModel::class.java.getDeclaredField("cookie").apply { isAccessible = true }.set(model, "SUB=fixture")
+        (ReviewModel::class.java.getDeclaredField("cookie\$delegate").apply { isAccessible = true }.get(model) as androidx.compose.runtime.MutableState<String>).value = "SUB=fixture"
         val messages = AtomicInteger()
         val groups = AtomicInteger()
         val senders = AtomicInteger()

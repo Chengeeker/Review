@@ -103,7 +103,7 @@ class NotificationRenderingTest {
     @Test fun mentionTabsSwipeAndKeepTheirOwnRowsAndScrollPositions() {
         compose.waitUntil(15000) { androidx.lifecycle.ViewModelProvider(compose.activity)[ReviewModel::class.java].ready }
         val model = androidx.lifecycle.ViewModelProvider(compose.activity)[ReviewModel::class.java]
-        ReviewModel::class.java.getDeclaredField("cookie").apply { isAccessible = true }.set(model, "SUB=fixture")
+        (ReviewModel::class.java.getDeclaredField("cookie\$delegate").apply { isAccessible = true }.get(model) as androidx.compose.runtime.MutableState<String>).value = "SUB=fixture"
         val firstPages = java.util.concurrent.ConcurrentHashMap<String, Int>()
         val client = OkHttpClient.Builder().addInterceptor { chain ->
             val request = chain.request()
