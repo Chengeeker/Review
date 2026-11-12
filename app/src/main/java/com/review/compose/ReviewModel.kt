@@ -248,22 +248,27 @@ class ReviewModel(application: Application) : AndroidViewModel(application) {
             catch (_: Exception) { }
         }
     }
-    private suspend fun commitAccount(newCookie: String, newUid: String, mobile: Boolean, acceptNative: Boolean,
-        expectedCookie: String? = null): Boolean = accountCommitLock.withLock { withContext(NonCancellable + Dispatchers.IO) {
-        val oldCookie = session.load()
+    internal suspend fun commitAccount(newCookie: String, newUid: String, mobile: Boolean, acceptNative: Boolean,
+        expectedCookie: String? = null, freshLogin: Boolean = false): Boolean = accountCommitLock.withLock { withContext(NonCancellable + Dispatchers.IO) {
+        val oldCookie = if (freshLogin) null else session.load()
         val oldUid = prefs.getString("uid", "").orEmpty()
         if (expectedCookie != null && (oldUid != newUid || oldCookie != expectedCookie)) return@withContext false
         val oldMobile = prefs.getBoolean("mobileOnly", false)
-        val oldNative = nativeAuth.exportBackupSession(oldUid)
+        val oldWeb = session.snapshot()
+        val oldNative = nativeAuth.encryptedBackupSnapshot()
+        val unreadableNative = if (freshLogin) {
+            session.preserveBeforeReplacement(true)
+            nativeAuth.preserveBeforeLogin()
+        } else { nativeAuth.exportBackupSession(oldUid); false }
         try {
             if (acceptNative) check(nativeAuth.acceptPendingSession()) { "加密会话保存失败" }
-            else if (newUid.isEmpty() || newUid != oldUid) nativeAuth.logout()
-            if (newCookie.isBlank()) session.clear() else session.save(newCookie)
+            else if (newUid.isEmpty() || newUid != oldUid || unreadableNative) nativeAuth.logout()
+            if (newCookie.isBlank()) session.clear() else session.save(newCookie, recoverUnreadable = freshLogin)
             check(prefs.edit().putString("uid", newUid).putBoolean("mobileOnly", mobile).commit()) { "会话保存失败" }
         } catch (failure: Exception) {
             try {
-                nativeAuth.restoreBackupSession(oldNative, oldUid)
-                if (oldCookie.isBlank()) session.clear() else session.save(oldCookie)
+                nativeAuth.restoreEncryptedBackupSnapshot(oldNative)
+                session.rollback(session.snapshot(), oldWeb)
                 check(prefs.edit().putString("uid", oldUid).putBoolean("mobileOnly", oldMobile).commit())
             } catch (rollback: Exception) { failure.addSuppressed(rollback) }
             throw failure
@@ -277,7 +282,7 @@ class ReviewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val expectedUid = uid.takeIf { it.isNotEmpty() && cookie.isBlank() }
                 val verified = repository.importWebSession(value, expectedUid)
-                commitAccount(verified.cookie, verified.uid, verified.mobileOnly, false)
+                commitAccount(verified.cookie, verified.uid, verified.mobileOnly, false, freshLogin = true)
                 cookie = verified.cookie; uid = verified.uid
                 configureWebSession(verified.mobileOnly)
                 changeMode(false)
@@ -391,7 +396,7 @@ class ReviewModel(application: Application) : AndroidViewModel(application) {
                 val newCookie = web?.cookie.orEmpty()
                 failureMessage = "会话校验已通过，但加密保存失败，请重试"
                 val mobileOnly = web?.mobileOnly == true
-                commitAccount(newCookie, newUid, mobileOnly, true)
+                commitAccount(newCookie, newUid, mobileOnly, true, freshLogin = true)
                 cookie = newCookie; uid = newUid
                 configureWebSession(mobileOnly)
                 failureMessage = "已保存登录会话，打开关注流失败，请重新打开应用"

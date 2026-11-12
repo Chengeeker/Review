@@ -49,11 +49,14 @@ class SessionStore(private val context: Context, private val namespace: String =
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
         }.generateKey()
     }
-    fun save(cookie: String, recoverUnreadable: Boolean = false) {
-        try {load()}catch(e:SecretReadFailure){
-            if(!recoverUnreadable || !e.recoverable)throw e
-            archiveEncryptedFile(context,java.io.File(context.applicationInfo.dataDir,"shared_prefs/$namespace.xml"))
+    internal fun preserveBeforeReplacement(recoverUnreadable: Boolean) {
+        try { load() } catch (e: SecretReadFailure) {
+            if (!recoverUnreadable || !e.recoverable) throw e
+            archiveEncryptedFile(context, java.io.File(context.applicationInfo.dataDir, "shared_prefs/$namespace.xml"))
         }
+    }
+    fun save(cookie: String, recoverUnreadable: Boolean = false) {
+        preserveBeforeReplacement(recoverUnreadable)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
         val original=snapshot()
         val committed=prefs.edit().putString("iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))

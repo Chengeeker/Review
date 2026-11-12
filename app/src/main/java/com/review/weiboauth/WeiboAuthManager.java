@@ -186,7 +186,8 @@ public final class WeiboAuthManager {
 
     public synchronized boolean acceptPendingSession() throws Exception {
         if (pendingSession == null) return false;
-        sessionStore.save(pendingSession);
+        sessionStore.save(pendingSession, true);
+        sessionReadError = null;
         activeSession = pendingSession;
         oauthVerifiedSession = null;
         oauthRenewRetryAt = 0;
@@ -226,6 +227,7 @@ public final class WeiboAuthManager {
         readRetryAt = 0;
         pendingSession = null;
         sessionStore.clear();
+        sessionReadError = null;
     }
 
     public synchronized String exportBackupSession(String uid) {
@@ -234,6 +236,10 @@ public final class WeiboAuthManager {
         if (session == null) return null;
         if (!session.uid.equals(uid)) throw new IllegalArgumentException("备份账号与原生会话不一致");
         return session.toJson().toString();
+    }
+
+    public synchronized boolean preserveBeforeLogin() throws Exception {
+        return sessionStore.preserveBeforeReplacement(true);
     }
 
     public synchronized String encryptedBackupSnapshot() { return sessionStore.encryptedSnapshot(); }

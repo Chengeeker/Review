@@ -84,13 +84,15 @@ final class EncryptedSessionStore {
         }
     }
 
-    void preserveBeforeReplacement(boolean allowed) throws Exception {
+    boolean preserveBeforeReplacement(boolean allowed) throws Exception {
         try { load(); }
         catch (com.review.compose.SecretReadFailure failure) {
             if (!allowed || !failure.getRecoverable()) throw failure;
             com.review.compose.SecretProtectionKt.archiveEncryptedFile(context,
                     new java.io.File(context.getApplicationInfo().dataDir, "shared_prefs/" + PREFS + ".xml"));
+            return true;
         }
+        return false;
     }
 
     String encryptedSnapshot() { return new JSONObject(preferences().getAll()).toString(); }

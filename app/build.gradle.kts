@@ -17,8 +17,8 @@ android {
         applicationId = "com.review"
         minSdk = 26
         targetSdk = 36
-        versionCode = 276
-        versionName = "3.17.3"
+        versionCode = 277
+        versionName = "3.17.4"
         ndk { abiFilters += "arm64-v8a" }
     }
     signingConfigs {
