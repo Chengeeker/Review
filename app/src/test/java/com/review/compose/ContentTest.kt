@@ -11,6 +11,16 @@ import java.time.LocalDateTime
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class ContentTest {
+    @Test fun commentPhotoPagesResolveOnlyTrustedImages() {
+        val page = "https://photo.weibo.com/h5/comment/compic_id/1022:2305974e19620d09b6e958141338527c378046"
+        assertTrue(isCommentPhotoPage(page))
+        assertFalse(isCommentPhotoPage(page.replace("photo.weibo.com", "photo.weibo.com.example.org")))
+        assertFalse(isCommentPhotoPage("https://photo.weibo.com/h5/comment/compic_id/invalid"))
+        val image = "https://wx1.sinaimg.cn/bmiddle/006AMmvKgy1ij1y25qoijj32c0340npd.jpg"
+        assertEquals(image, commentPhotoImage("<div class='img-box'><img src='$image'></div>"))
+        assertNull(commentPhotoImage("<div class='img-box'><img src='https://evil.example/a.jpg'></div>"))
+        assertNull(commentPhotoImage("<title>登录</title>"))
+    }
     @Test fun officialWebLinksReuseNativeDestinations() {
         assertEquals("place:8008644030000000000", officialWebRoute("https://weibo.com/p/1001018008644030000000000"))
         assertEquals("place:B2094653D36BA1FB409B", officialWebRoute("https://m.weibo.cn/p/index?containerid=100101B2094653D36BA1FB409B"))

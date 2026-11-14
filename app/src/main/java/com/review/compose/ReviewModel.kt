@@ -59,6 +59,7 @@ class ReviewModel(application: Application) : AndroidViewModel(application) {
     var uid by mutableStateOf(""); private set
     var tab by mutableStateOf(0)
     var feedTopRequest by mutableStateOf(0); private set
+    var feedRefreshTopRequest by mutableStateOf(0); private set
     var feedToggleRequest by mutableStateOf(0); private set
     var feedSaveTopRequest by mutableStateOf(0); private set
     var trendsTopRequest by mutableStateOf(0); private set
@@ -85,7 +86,7 @@ class ReviewModel(application: Application) : AndroidViewModel(application) {
         tabTapJob?.cancel()
         if (lastTappedTab == index && now - lastTabTap < 300) {
             lastTappedTab = -1; tabTapJob = null
-            if (index == 0) { feedTopRequest++; refreshFeed() }
+            if (index == 0) { feedTopRequest++; feedRefreshTopRequest++; refreshFeed() }
             else { trendsTopRequest++; trendsRefreshRequest++ }
         } else {
             lastTabTap = now; lastTappedTab = index
@@ -578,6 +579,19 @@ class ReviewModel(application: Application) : AndroidViewModel(application) {
         routeStack.last().topic = org.json.JSONObject(item.toString())
     }
     private var shortLinkJob: Job? = null
+    var linkedCommentPhoto by mutableStateOf<String?>(null)
+    fun openCommentPhoto(url: String) {
+        val route = routeStack.lastOrNull() ?: return
+        val generation = routeKey
+        val owner = uid
+        shortLinkJob?.cancel()
+        shortLinkJob = viewModelScope.launch {
+            val image = try { commentPhotoImage(repository.api.raw(url, timeoutSeconds = 6, maxBytes = 64 * 1024, html = true).text) }
+                catch (_: java.io.IOException) { null }
+            if (routeStack.lastOrNull() !== route || routeKey != generation || uid != owner) return@launch
+            if (image == null) navigate("browser:${android.net.Uri.encode(url)}") else linkedCommentPhoto = image
+        }
+    }
     fun openShortLink(url: String, title: String) {
         val route = routeStack.lastOrNull() ?: return
         val generation = routeKey
@@ -586,6 +600,7 @@ class ReviewModel(application: Application) : AndroidViewModel(application) {
         shortLinkJob = viewModelScope.launch {
             val target = repository.api.shortLinkTarget(url)
             if (routeStack.lastOrNull() !== route || routeKey != generation || uid != owner) return@launch
+            if (target != null && isCommentPhotoPage(target)) { openCommentPhoto(target); return@launch }
             if (target == null || !runCatching { openNativeLink(target, title) }.getOrDefault(false)) {
                 navigate("browser:${android.net.Uri.encode(target ?: url)}")
             }

@@ -66,6 +66,12 @@ fun ReviewApp(model: ReviewModel = viewModel()) {
     val dark = when (model.theme) { 1 -> false; 2 -> true; else -> isSystemInDarkTheme() }
     val activity = androidx.activity.compose.LocalActivity.current
     var openGallery by remember { mutableStateOf<GalleryRequest?>(null) }
+    LaunchedEffect(model.linkedCommentPhoto) {
+        model.linkedCommentPhoto?.let { url ->
+            openGallery = GalleryRequest(listOf(Media(url)), 0)
+            model.linkedCommentPhoto = null
+        }
+    }
     val darkBars = dark || model.screen.startsWith("video:") || openGallery?.sources?.isNotEmpty() == true
     val hapticsEnabled = remember(model) { { model.bool("haptics", true) } }
     LaunchedEffect(activity, darkBars) {
@@ -97,14 +103,17 @@ fun ReviewApp(model: ReviewModel = viewModel()) {
             val gallery: (List<Media>, Int) -> Unit = { media, index ->
                 if (media.isNotEmpty()) openGallery = GalleryRequest(media, index)
             }
-            PredictiveBackHandler(model.screen != "root" && openGallery == null && !drawer.isOpen && !groupsOpen) { progress ->
+            val canReturn = model.screen != "root" && openGallery == null && !drawer.isOpen && !groupsOpen
+            val predictive = android.os.Build.VERSION.SDK_INT >= 34 && model.bool("predictiveBack") && android.animation.ValueAnimator.areAnimatorsEnabled()
+            val previewEnabled by rememberUpdatedState(canReturn && predictive)
+            BackHandler(canReturn && !predictive) { model.back() }
+            PredictiveBackHandler(canReturn && predictive) { progress ->
                 val route = model.routeStack.last()
                 try {
                     progress.collect { event ->
-                        if (model.routeStack.lastOrNull() === route && openGallery == null && !drawer.isOpen &&
-                            !groupsOpen && android.animation.ValueAnimator.areAnimatorsEnabled()) route.backProgress = event.progress
+                        if (previewEnabled && model.routeStack.lastOrNull() === route) route.backProgress = event.progress
                     }
-                    if (openGallery == null && !drawer.isOpen && !groupsOpen) model.backFrom(route)
+                    if (previewEnabled && model.routeStack.lastOrNull() === route) model.backFrom(route)
                 } finally { route.backProgress = null }
             }
             BackHandler(drawer.isOpen) { scope.launch { drawer.close() } }

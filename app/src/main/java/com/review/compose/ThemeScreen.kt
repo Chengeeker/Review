@@ -82,6 +82,9 @@ fun ThemeScreen() {
         }
         SettingsSection("应用图标") { Preference("自定义应用图标", Icons.Outlined.AppShortcut, appIconName(model.number("icon", 0f).toInt())) { model.navigate("icons") } }
         SettingsSection("屏幕显示") { Preference("屏幕帧率设置", Icons.Outlined.Speed, refreshModeLabel(model.number("refreshRate", 0f).toInt())) { model.navigate("refreshRate") } }
+        if (Build.VERSION.SDK_INT >= 34) SettingsSection("手势与动效") {
+            ThemeToggle("可预测性返回", "应用内页面随系统返回手势预览上一页", Icons.Outlined.Swipe, model.bool("predictiveBack")) { model.setOption("predictiveBack", it) }
+        }
         SettingsSection("触感与震动") { ThemeToggle("触感与震动反馈", "点击、长按和完成指定手势时轻振一次", Icons.Outlined.Vibration, model.bool("haptics", true)) { model.setOption("haptics", it) } }
     }
 }

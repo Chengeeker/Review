@@ -26,6 +26,15 @@ class BackupTest {
             assertThrows(IllegalArgumentException::class.java) { validateBackup(data) }
         }
     }
+    @Test fun predictiveBackIsAValidatedSafePreference() {
+        assertTrue("predictive_back" in BackupSchema.safe)
+        assertEquals("predictiveBack", backupNames["predictive_back"])
+        val data = backup()
+        data.getJSONObject("preferences").put("predictive_back", true)
+        validateBackup(data)
+        data.getJSONObject("preferences").put("predictive_back", "true")
+        assertThrows(IllegalArgumentException::class.java) { validateBackup(data) }
+    }
     @Test fun nativeSessionCannotCrossAccounts() {
         val data = backup().put("backup_mode", "full").put("native_session", """{"uid":"100"}""")
         data.getJSONObject("preferences").put("user_uid", "200")

@@ -23,7 +23,7 @@ import kotlin.coroutines.resumeWithException
 internal val backupNames = mapOf(
     "key_theme_color_index" to "palette", "key_is_pure_black_dark" to "pureBlack", "theme_mode" to "theme",
     "use_dynamic_color" to "dynamic", "use_floating_nav_bar" to "floating", "use_liquid_glass_effect" to "liquidGlass", "translucentNavigationGlass" to "translucentNavigationGlass",
-    "key_enable_haptics" to "haptics", "key_use_custom_font_weight" to "customWeight", "key_custom_font_weight_delta" to "weight",
+    "key_enable_haptics" to "haptics", "predictive_back" to "predictiveBack", "key_use_custom_font_weight" to "customWeight", "key_custom_font_weight_delta" to "weight",
     "app_text_scale" to "textScale", "key_screen_refresh_rate_mode" to "refreshRate", "auto_clear_image_cache_threshold_mb" to "cacheLimit",
     "time_display_mode" to "timeMode", "show_weekday" to "weekday", "show_year" to "year", "show_timezone" to "timezone",
     "show_seconds" to "seconds", "show_source" to "source", "show_region" to "region", "weibo_suffix" to "suffix",

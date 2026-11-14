@@ -32,18 +32,13 @@ fun AboutDialog(close: () -> Unit) {
                     Text("Review", fontSize = 21.sp, fontWeight = reviewWeight(FontWeight.Bold), letterSpacing = .2.sp); Spacer(Modifier.width(8.dp))
                     Text("v${BuildConfig.VERSION_NAME}", Modifier.background(colors.primaryContainer, RoundedCornerShape(8.dp)).padding(horizontal = 8.dp, vertical = 2.5.dp), color = colors.onPrimaryContainer, fontSize = 12.sp, fontWeight = reviewWeight(FontWeight.Bold))
                 }
-                Spacer(Modifier.height(6.dp)); Text("纯原生 Material You 极简客户端", fontSize = 13.sp, color = colors.onSurfaceVariant)
-                Spacer(Modifier.height(30.dp))
-                listOf(Icons.Outlined.Palette to "100% 纯原生 Compose 与 MD3 动态主题配色", Icons.Outlined.Sync to "自动同步关注流、超话与云端自定义分组", Icons.Outlined.PhotoLibrary to "自适应九宫格、长图标记与高清画廊浏览").forEachIndexed { index, (image, text) ->
-                    if (index > 0) Spacer(Modifier.height(8.dp))
-                    Row(verticalAlignment = Alignment.Top) { Icon(image, null, Modifier.size(16.dp), colors.primary); Spacer(Modifier.width(8.dp)); Text(text, Modifier.weight(1f), fontSize = 12.5.sp, lineHeight = 16.875.sp, color = colors.onSurfaceVariant) }
-                }
+                Spacer(Modifier.height(6.dp)); Text("基于 Lucent UI 的原生客户端", fontSize = 13.sp, color = colors.onSurfaceVariant)
                 Spacer(Modifier.height(26.dp))
                 Row(Modifier.fillMaxWidth().background(colors.surfaceContainerHighest.copy(alpha = .5f), RoundedCornerShape(12.dp)).border(1.dp, colors.outlineVariant.copy(alpha = .4f), RoundedCornerShape(12.dp)).reviewClickable {
                     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Chengeeker/Review"))) }.onFailure { model.notice = "没有可打开链接的应用" }
                 }.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.Code, null, Modifier.size(20.dp), colors.primary); Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) { Text("GitHub 开源地址", fontSize = 13.sp, fontWeight = reviewWeight(FontWeight.Bold)); Text("github.com/Chengeeker/Review", fontSize = 11.sp, color = colors.onSurfaceVariant) }
+                    Text("GitHub 开源地址", Modifier.weight(1f), fontSize = 13.sp, fontWeight = reviewWeight(FontWeight.Bold))
                     Icon(Icons.Outlined.OpenInNew, null, Modifier.size(16.dp), colors.primary)
                 }
                 Spacer(Modifier.height(24.dp)); Button(onClick = hapticClick(close), shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 24.dp, vertical = 10.dp)) { Text("我知道了") }

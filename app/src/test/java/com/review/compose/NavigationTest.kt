@@ -1535,6 +1535,35 @@ class NavigationTest {
         assertEquals(0f, scroll.value(), .001f)
         compose.onNodeWithText(PreviewContent.posts.first().author).assertIsDisplayed()
     }
+    @Test fun doubleTapRefreshReturnsToNewTopWithoutPullIndicator() {
+        ready()
+        val model = androidx.lifecycle.ViewModelProvider(compose.activity)[ReviewModel::class.java]
+        @Suppress("UNCHECKED_CAST")
+        val rows = ReviewModel::class.java.getDeclaredField("feed${'$'}delegate").apply { isAccessible = true }
+            .get(model) as androidx.compose.runtime.MutableState<List<Post>>
+        @Suppress("UNCHECKED_CAST")
+        val loading = ReviewModel::class.java.getDeclaredField("feedLoading${'$'}delegate").apply { isAccessible = true }
+            .get(model) as androidx.compose.runtime.MutableState<Boolean>
+        @Suppress("UNCHECKED_CAST")
+        val demo = ReviewModel::class.java.getDeclaredField("demo${'$'}delegate").apply { isAccessible = true }
+            .get(model) as androidx.compose.runtime.MutableState<Boolean>
+        @Suppress("UNCHECKED_CAST")
+        val uid = ReviewModel::class.java.getDeclaredField("uid${'$'}delegate").apply { isAccessible = true }
+            .get(model) as androidx.compose.runtime.MutableState<String>
+        val posts = (0 until 25).map { PreviewContent.posts.first().copy(id = "test-$it", author = "测试作者 $it") }
+        compose.runOnIdle { uid.value = "123"; demo.value = false; rows.value = posts }
+        val list = compose.onNodeWithTag("feed-list")
+        list.performScrollToIndex(15)
+        compose.runOnIdle { loading.value = true; val before = model.feedRefreshTopRequest; model.tapTab(0); model.tapTab(0); assertEquals(before + 1, model.feedRefreshTopRequest); assertTrue(model.feedRefreshing) }
+        compose.waitForIdle()
+        compose.onNodeWithText("正在刷新...", useUnmergedTree = true).assertDoesNotExist()
+        compose.runOnIdle { rows.value = listOf(posts.first().copy(id = "new-first", author = "刷新后最新")) + posts; loading.value = false }
+        compose.waitForIdle()
+        val scroll = list.fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange]
+        assertEquals("Double-tap refresh must show the new first item", 0f, scroll.value(), .001f)
+        compose.onNodeWithText("刷新后最新").assertIsDisplayed()
+        compose.onNodeWithText("刷新成功", useUnmergedTree = true).assertDoesNotExist()
+    }
     @Test fun searchResultsShowCardsAboveTabsWhenFirstPageArrives() {
         ready()
         val model = androidx.lifecycle.ViewModelProvider(compose.activity)[ReviewModel::class.java]
@@ -1694,6 +1723,17 @@ class NavigationTest {
         compose.onNodeWithText("Caij").assertIsDisplayed()
         compose.onNodeWithText("确定").performClick()
         compose.onNodeWithText("个性化").performClick()
+        compose.onNodeWithText("可预测性返回").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("触感与震动", substring = false).performScrollTo()
+        val motionTop = compose.onNodeWithText("手势与动效", substring = false).fetchSemanticsNode().boundsInRoot.top
+        val hapticsTop = compose.onNodeWithText("触感与震动", substring = false).fetchSemanticsNode().boundsInRoot.top
+        assertTrue(motionTop < hapticsTop)
+        val model = androidx.lifecycle.ViewModelProvider(compose.activity)[ReviewModel::class.java]
+        assertTrue(!model.bool("predictiveBack"))
+        compose.onNodeWithText("可预测性返回").performClick()
+        compose.runOnIdle { assertTrue(model.bool("predictiveBack")) }
+        compose.onNodeWithText("可预测性返回").performClick()
+        compose.runOnIdle { assertTrue(!model.bool("predictiveBack")) }
         compose.onNodeWithContentDescription("字体粗细").performScrollTo()
             .performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.SetProgress) { it(200f) }
         compose.onNodeWithText("个性化", substring = false).assertIsDisplayed()
@@ -1701,6 +1741,8 @@ class NavigationTest {
         compose.onNodeWithContentDescription("返回").performClick()
         compose.onNodeWithText("关于 Review").performScrollTo().performClick()
         compose.onNodeWithText("GitHub 开源地址").assertIsDisplayed()
+        compose.onNodeWithText("基于 Lucent UI 的原生客户端").assertIsDisplayed()
+        compose.onNodeWithText("github.com/Chengeeker/Review").assertDoesNotExist()
         capture("about")
         compose.onNodeWithText("我知道了").performClick()
     }

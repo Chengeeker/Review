@@ -28,22 +28,31 @@ fun FeedScreen(model: ReviewModel, gallery: (List<Media>, Int) -> Unit) {
     val state = rememberLazyListState()
     var savedPosition by remember(model.uid, model.group.id) { mutableStateOf<Pair<Int, Int>?>(null) }
     var pullRefreshPending by remember(model.uid, model.group.id) { mutableStateOf(false) }
-    LaunchedEffect(pullRefreshPending, model.feedLoading, model.feedError) {
-        if (pullRefreshPending && !model.feedLoading && model.feedError == null) {
-            state.requestScrollToItem(0)
-            savedPosition = null
+    var topRefreshPending by remember(model.uid, model.group.id) { mutableStateOf(false) }
+    LaunchedEffect(pullRefreshPending, topRefreshPending, model.feedLoading, model.feedError) {
+        if ((pullRefreshPending || topRefreshPending) && !model.feedLoading) {
+            if (model.feedError == null) {
+                withFrameNanos { }
+                state.scrollToItem(0)
+                savedPosition = null
+            }
             pullRefreshPending = false
+            topRefreshPending = false
         }
     }
     val topThreshold = with(LocalDensity.current) { 50.dp.toPx() }
     var topHandled by remember { mutableIntStateOf(model.feedTopRequest) }
     var toggleHandled by remember { mutableIntStateOf(model.feedToggleRequest) }
     var saveHandled by remember { mutableIntStateOf(model.feedSaveTopRequest) }
-    LaunchedEffect(model.feedTopRequest, model.feedToggleRequest, model.feedSaveTopRequest) {
+    var refreshHandled by remember { mutableIntStateOf(model.feedRefreshTopRequest) }
+    LaunchedEffect(model.feedTopRequest, model.feedToggleRequest, model.feedSaveTopRequest, model.feedRefreshTopRequest) {
         val toggle = toggleHandled != model.feedToggleRequest
         val save = saveHandled != model.feedSaveTopRequest
         val force = topHandled != model.feedTopRequest
+        val refresh = refreshHandled != model.feedRefreshTopRequest
+        refreshHandled = model.feedRefreshTopRequest
         topHandled = model.feedTopRequest; toggleHandled = model.feedToggleRequest; saveHandled = model.feedSaveTopRequest
+        if ((refresh || save) && model.feedRefreshing) topRefreshPending = true
         val away = state.firstVisibleItemIndex > 0 || state.firstVisibleItemScrollOffset > topThreshold
         if (toggle && away || save && away) savedPosition = state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset
         if (toggle && !away && savedPosition != null) {
@@ -68,7 +77,7 @@ fun FeedScreen(model: ReviewModel, gallery: (List<Media>, Int) -> Unit) {
         }
         return
     }
-    ReviewRefresh(model.feedRefreshing && model.feed.isNotEmpty(), onRefresh = {
+    ReviewRefresh(pullRefreshPending && model.feedRefreshing && model.feed.isNotEmpty(), onRefresh = {
         if (!model.feedLoading) { pullRefreshPending = true; model.refreshFeed() }
     }, failed = model.feedError != null) {
         LazyColumn(Modifier.fillMaxSize().testTag("feed-list"), state, contentPadding = if (model.feed.isEmpty()) PaddingValues(top = LocalContentTop.current) else PaddingValues(top = LocalContentTop.current + 4.dp, bottom = rootScrollBottom(model))) {

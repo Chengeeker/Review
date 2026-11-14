@@ -74,10 +74,23 @@ fun articleId(url: String): String? {
 fun ReviewModel.openLink(raw: String, title: String = "") {
     val url = richLinkKey(raw)
     if (url.isBlank()) { notice = "链接地址不可用"; return }
+    if (isCommentPhotoPage(url)) { openCommentPhoto(url); return }
     if (runCatching { openNativeLink(url, title) }.getOrDefault(false)) return
     if (isWeiboShortLink(url)) openShortLink(url, title)
     else navigate("browser:${Uri.encode(url)}")
 }
+
+internal fun isCommentPhotoPage(url: String): Boolean = runCatching { java.net.URI(url) }.getOrNull()?.let {
+    it.scheme == "https" && it.host == "photo.weibo.com" && it.userInfo == null && it.port in setOf(-1, 443) &&
+        it.path.orEmpty().matches(Regex("/h5/comment/compic_id/1022:230597[0-9a-fA-F]{32}/?"))
+} == true
+
+internal fun commentPhotoImage(html: String): String? = Jsoup.parse(html).select(".img-box img[src]")
+    .asSequence().map { secureImage(it.attr("src")) }.firstOrNull { value ->
+        runCatching { java.net.URI(value) }.getOrNull()?.let { uri ->
+            uri.host?.endsWith(".sinaimg.cn") == true && uri.path.orEmpty().matches(Regex("/[^?#]+\\.(jpg|jpeg|png|gif|webp)", RegexOption.IGNORE_CASE))
+        } == true
+    }
 
 internal fun isWeiboShortLink(url: String): Boolean = runCatching { java.net.URI(url) }.getOrNull()?.let {
     it.scheme == "https" && it.userInfo == null && it.port in setOf(-1, 443) && it.host in setOf("t.cn", "www.t.cn") &&
