@@ -60,6 +60,18 @@ class ReadingTest {
         assertEquals(1f, galleryDoubleTapScale(6f, false), 0f)
     }
 
+    @Test fun galleryDoubleTapOutsideDisplayedImageUsesViewportCenter() {
+        val viewport = androidx.compose.ui.geometry.Size(1000f, 1000f)
+        val image = androidx.compose.ui.geometry.Size(500f, 1000f)
+        assertEquals(androidx.compose.ui.geometry.Offset.Zero,
+            galleryDoubleTapFocus(viewport, image, 1f, androidx.compose.ui.geometry.Offset.Zero, 0f, androidx.compose.ui.geometry.Offset(100f, 500f)))
+        assertEquals(androidx.compose.ui.geometry.Offset(-100f, 0f),
+            galleryDoubleTapFocus(viewport, image, 1f, androidx.compose.ui.geometry.Offset.Zero, 0f, androidx.compose.ui.geometry.Offset(400f, 500f)))
+        assertEquals(androidx.compose.ui.geometry.Offset.Zero,
+            galleryDoubleTapFocus(viewport, androidx.compose.ui.geometry.Size(3000f, 1000f), 1f,
+                androidx.compose.ui.geometry.Offset.Zero, 0f, androidx.compose.ui.geometry.Offset(500f, 100f)))
+    }
+
     @Test fun galleryLongImageUsesFullSourceAndPhysicalScreenPlane() {
         val media = Media("https://wx1.sinaimg.cn/large/long.jpg", width = 1000, height = 5000,
             preview = "https://wx1.sinaimg.cn/bmiddle/long.jpg")
