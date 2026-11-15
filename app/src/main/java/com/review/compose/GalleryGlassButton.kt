@@ -47,7 +47,7 @@ fun GalleryGlassButton(icon: ImageVector, label: String, enabled: Boolean = true
     if (!liquid) {
         PlainGalleryControl(label, enabled, hapticClick(click)) {
             if (busy) CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
-            else Icon(icon, null, Modifier.size(24.dp), tint = Color.White.copy(alpha = if (enabled) 1f else .38f))
+            else Icon(icon, null, Modifier.size(22.dp), tint = Color.White.copy(alpha = if (enabled) 1f else .38f))
         }
         return
     }

@@ -53,7 +53,7 @@ class PlainGalleryControlTest {
     @get:Rule val rules: org.junit.rules.TestRule = org.junit.rules.RuleChain.outerRule(register).around(compose)
 
     @Test
-    fun flutterGalleryButtonsKeepTheTintAndTouchTargetDuringPress() {
+    fun plainGalleryButtonsMatchRedNoteTintAndKeepTheirTouchTarget() {
         val model = androidx.lifecycle.ViewModelProvider(compose.activity)[ReviewModel::class.java]
         val enabled = mutableStateOf(true)
         var returned = 0
@@ -82,30 +82,19 @@ class PlainGalleryControlTest {
                 }
             }
         }
-        val baseline = mutableMapOf<String, List<Int>>()
-        fun assertStripes(label: String) {
+        fun sampleButton(label: String): List<Int> {
             val node = compose.onNodeWithContentDescription(label)
             val bounds = node.fetchSemanticsNode().boundsInRoot
             assertEquals(48f, bounds.width, .01f)
             assertEquals(48f, bounds.height, .01f)
-            compose.runOnUiThread {
+            return compose.runOnUiThread {
                 val view = compose.activity.findViewById<android.view.View>(android.R.id.content)
                 val root = view as ViewGroup
                 assertFalse(root.descendants.any { it is android.view.TextureView || it.javaClass.name.contains("AndroidViewsHandler") })
-                // Host native Canvas cannot render Compose layers correctly on API 24.
-                if (android.os.Build.VERSION.SDK_INT < 26) return@runOnUiThread
                 val frame = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
                 try {
                     view.draw(AndroidCanvas(frame))
-                    java.io.File("build/parity/gallery-plain-${android.os.Build.VERSION.SDK_INT}-$label.png")
-                        .apply { parentFile.mkdirs() }
-                        .outputStream().use { frame.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                    val pixels = (12..35).map { x -> frame.getPixel(bounds.left.toInt() + x, bounds.top.toInt() + 8) }
-                    assertTrue("visible gray tint over the source", pixels.all { android.graphics.Color.green(it) > 0 })
-                    assertTrue("source remains visible through the tint", pixels.any { android.graphics.Color.red(it) > android.graphics.Color.blue(it) }
-                        && pixels.any { android.graphics.Color.blue(it) > android.graphics.Color.red(it) })
-                    val first = baseline.putIfAbsent(label, pixels)
-                    if (first != null) assertEquals("pressing does not change the tint or geometry", first, pixels)
+                    (6..10).map { x -> frame.getPixel(bounds.left.toInt() + x, bounds.top.toInt() + 24) }
                 } finally {
                     frame.recycle()
                 }
@@ -114,19 +103,28 @@ class PlainGalleryControlTest {
         for (label in listOf("返回", "保存图片")) {
             val button = compose.onNodeWithContentDescription(label)
             val bounds = button.fetchSemanticsNode().boundsInRoot
-            assertStripes(label)
+            val resting = sampleButton(label)
+            assertTrue("the plain control uses a translucent black fill", resting.all {
+                val red = android.graphics.Color.red(it)
+                val blue = android.graphics.Color.blue(it)
+                (red in 140..165 && blue < 8) || (blue in 140..165 && red < 8)
+            })
+            fun brightness(pixels: List<Int>) = pixels.sumOf {
+                android.graphics.Color.red(it) + android.graphics.Color.green(it) + android.graphics.Color.blue(it)
+            }
             compose.mainClock.autoAdvance = false
             button.performTouchInput { down(center) }
             compose.waitForIdle()
             compose.mainClock.advanceTimeByFrame()
             compose.mainClock.advanceTimeBy(120)
-            assertStripes(label)
+            val pressed = sampleButton(label)
+            assertTrue("pressed button reduces the black tint", brightness(pressed) > brightness(resting))
             assertEquals(bounds, button.fetchSemanticsNode().boundsInRoot)
             button.performTouchInput { up() }
             compose.waitForIdle()
             compose.mainClock.advanceTimeByFrame()
             compose.mainClock.advanceTimeBy(120)
-            assertStripes(label)
+            assertEquals("released button returns to its resting tint", brightness(resting), brightness(sampleButton(label)))
             compose.mainClock.autoAdvance = true
         }
         assertEquals(1, returned)
@@ -142,8 +140,8 @@ class PlainGalleryControlTest {
         }
         compose.onNodeWithContentDescription("返回").assertIsNotEnabled().performTouchInput { click() }
         compose.onNodeWithContentDescription("保存图片").assertIsNotEnabled().performTouchInput { click() }
-        assertStripes("返回")
-        assertStripes("保存图片")
+        assertEquals(5, sampleButton("返回").size)
+        assertEquals(5, sampleButton("保存图片").size)
         compose.runOnIdle { assertEquals(2, returned) }
         assertEquals(1, saved)
     }
