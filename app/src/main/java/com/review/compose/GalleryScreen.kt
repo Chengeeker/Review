@@ -382,7 +382,7 @@ internal fun GalleryThumbnails(media: List<Media>, pager: androidx.compose.found
     }
     BoxWithConstraints(modifier) {
         val cell = maxWidth * .16f
-        HorizontalPager(thumbnails, pageSize = PageSize.Fixed(cell),
+        HorizontalPager(thumbnails, overscrollEffect = null, pageSize = PageSize.Fixed(cell),
             contentPadding = PaddingValues(horizontal = (maxWidth - cell) / 2),
             modifier = Modifier.height(64.dp)) { index ->
                 val item = media[index]
