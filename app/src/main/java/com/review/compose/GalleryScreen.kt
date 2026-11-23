@@ -11,6 +11,18 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.gestures.FlingBehavior
+import androidx.compose.foundation.gestures.ScrollScope
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.calculateTargetValue
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.rememberSplineBasedDecay
+import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.sign
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -349,7 +361,7 @@ private fun galleryRatio(media: Media): Float = if (media.width > 0 && media.hei
 
 @Composable
 internal fun GalleryThumbnails(media: List<Media>, pager: androidx.compose.foundation.pager.PagerState, modifier: Modifier, onScrolling: (Boolean) -> Unit, onUserDrag: () -> Unit) {
-    val thumbnails = rememberPagerState(pager.currentPage) { media.size }
+    val thumbnails = rememberLazyListState(pager.currentPage)
     val dragged by thumbnails.interactionSource.collectIsDraggedAsState()
     val mainDragged by pager.interactionSource.collectIsDraggedAsState()
     var scrollOwner by remember { mutableIntStateOf(1) }
@@ -363,39 +375,85 @@ internal fun GalleryThumbnails(media: List<Media>, pager: androidx.compose.found
         if (dragged) { scrollOwner = 2; pager.stopScroll() }
         else if (mainDragged) { scrollOwner = 1; thumbnails.stopScroll() }
     }
-    LaunchedEffect(scrollOwner) {
-        val source = if (scrollOwner == 1) pager else thumbnails
-        val target = if (scrollOwner == 1) thumbnails else pager
-        var previousPage = source.currentPage
-        var lastTick = 0L
-        snapshotFlow { source.currentPage to source.currentPageOffsetFraction }.collect { (page, offset) ->
-            val position = (page + offset).coerceIn(0f, target.pageCount - 1f)
-            val nearest = position.roundToInt()
-            val fraction = position - nearest
-            if (scrollOwner == 2 && page != previousPage) {
-                val now = android.os.SystemClock.uptimeMillis()
-                if (now - lastTick >= 12L) { tick(); lastTick = now }
-            }
-            previousPage = page
-            if (target.currentPage != nearest || abs(target.currentPageOffsetFraction - fraction) > .001f) {
-                target.requestScrollToPage(nearest, fraction)
-            }
-        }
-    }
     BoxWithConstraints(modifier) {
         val cell = maxWidth * .16f
-        HorizontalPager(thumbnails, overscrollEffect = null,
-            flingBehavior = PagerDefaults.flingBehavior(thumbnails, pagerSnapDistance = PagerSnapDistance.atMost(media.size.coerceAtLeast(1))),
-            pageSize = PageSize.Fixed(cell),
+        val density = LocalDensity.current
+        val cellPixels = with(density) { cell.toPx() }
+        val decay = rememberSplineBasedDecay<Float>()
+        var dragDirection by remember { mutableFloatStateOf(0f) }
+        LaunchedEffect(dragged) {
+            if (dragged) {
+                dragDirection = 0f
+                var previous: Float? = null
+                snapshotFlow { thumbnails.firstVisibleItemIndex * cellPixels + thumbnails.firstVisibleItemScrollOffset }
+                    .collect { position ->
+                        previous?.let { if (abs(position - it) > .1f) dragDirection = (position - it).sign }
+                        previous = position
+                    }
+            }
+        }
+        val direction by rememberUpdatedState(dragDirection)
+        val fling = remember(thumbnails, cellPixels, media.size, decay) {
+            object : FlingBehavior {
+                override suspend fun ScrollScope.performFling(initialVelocity: Float): Float {
+                    val layout = thumbnails.layoutInfo
+                    val center = (layout.viewportStartOffset + layout.viewportEndOffset) / 2f
+                    val item = layout.visibleItemsInfo.minByOrNull { abs(it.offset + it.size / 2f - center) } ?: return initialVelocity
+                    val position = (item.index + (center - item.offset - item.size / 2f) / cellPixels).coerceIn(0f, media.lastIndex.toFloat())
+                    val projected = (position + decay.calculateTargetValue(0f, initialVelocity) / cellPixels).coerceIn(0f, media.lastIndex.toFloat())
+                    val motion = if (abs(initialVelocity) > 1f) initialVelocity.sign else direction
+                    val target = when { motion > 0f -> ceil(projected); motion < 0f -> floor(projected); else -> projected.roundToInt().toFloat() }.coerceIn(0f, media.lastIndex.toFloat())
+                    val distance = (target - position) * cellPixels
+                    if (abs(distance) < .5f) return 0f
+                    val duration = (abs(distance) / abs(initialVelocity).coerceAtLeast(cellPixels * 2f) * 2000f).roundToInt().coerceIn(180, 700)
+                    var consumed = 0f
+                    animate(0f, distance, animationSpec = tween(duration, easing = LinearOutSlowInEasing)) { value, _ ->
+                        consumed += scrollBy(value - consumed)
+                    }
+                    return 0f
+                }
+            }
+        }
+        LaunchedEffect(scrollOwner, cellPixels) {
+            if (scrollOwner == 1) {
+                snapshotFlow { pager.currentPage to pager.currentPageOffsetFraction }
+                    .collect { (page, fraction) -> thumbnails.requestScrollToItem(page, (fraction * cellPixels).roundToInt()) }
+            } else {
+                var previousPage = -1
+                var lastTick = 0L
+                snapshotFlow {
+                    val layout = thumbnails.layoutInfo
+                    val center = (layout.viewportStartOffset + layout.viewportEndOffset) / 2f
+                    layout.visibleItemsInfo.minByOrNull { abs(it.offset + it.size / 2f - center) }
+                        ?.let { it.index + (center - it.offset - it.size / 2f) / cellPixels }
+                }.collect { rawPosition ->
+                    if (rawPosition != null) {
+                        val position = rawPosition.coerceIn(0f, media.lastIndex.toFloat())
+                        val page = position.roundToInt()
+                        val fraction = position - page
+                        if (page != previousPage) {
+                            val now = android.os.SystemClock.uptimeMillis()
+                            if (now - lastTick >= 12L) { tick(); lastTick = now }
+                            previousPage = page
+                        }
+                        if (pager.currentPage != page || abs(pager.currentPageOffsetFraction - fraction) > .001f) {
+                            pager.requestScrollToPage(page, fraction)
+                        }
+                    }
+                }
+            }
+        }
+        LazyRow(state = thumbnails, flingBehavior = fling, overscrollEffect = null,
             contentPadding = PaddingValues(horizontal = (maxWidth - cell) / 2),
-            modifier = Modifier.height(64.dp)) { index ->
+            modifier = Modifier.height(64.dp)) {
+            items(media.size) { index ->
                 val item = media[index]
                 LaunchedEffect(item.url, item.canHaveHdrBadge) {
                     if (item.canHaveHdrBadge) MediaFiles.probeHdr(item.url)
                 }
                 val selected = pager.currentPage == index
                 val outline = RoundedCornerShape(8.dp)
-                Box(Modifier.fillMaxSize().padding(horizontal = 3.dp, vertical = 2.dp)
+                Box(Modifier.width(cell).fillMaxHeight().padding(horizontal = 3.dp, vertical = 2.dp)
                     .then(if (selected) Modifier.border(2.dp, Color.White, outline) else Modifier)
                     .semantics { this.selected = selected }
                     .reviewClickable { scrollOwner = 1; scope.launch { pager.scrollToPage(index) } }) {
@@ -409,6 +467,7 @@ internal fun GalleryThumbnails(media: List<Media>, pager: androidx.compose.found
                             description = "第 ${index + 1} 张 HDR 图片", compact = true)
                     }
                 }
+            }
             }
     }
 }
