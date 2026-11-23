@@ -19,3 +19,7 @@ Windows 在仓库根目录运行以下命令。其他系统使用 `./gradlew`。
 Windows 安装 Python 3 并设置 `ANDROID_HOME` 后运行 `.\build.ps1`。脚本构建 ARM64 Release APK，运行测试和 Lint，核对应用标识、版本、签名、原生库架构、16 KiB 对齐和 ZIP 完整性，再复制为 `Review_v<版本>.apk`。
 
 签名配置、私钥、构建输出和内部开发记录均保存在本机。
+
+## 2026-11-23 Review 3.18.7+287
+
+Short, untruncated text in large photo galleries no longer displays a full-text control when no additional body is available. The gallery thumbnail strip keeps its multi-page fling behavior. `ContentTest` (30 cases), the ARM64 Release build, Lint, signing, ABI, archive integrity, and 16 KiB alignment checks passed. Device interaction was not validated.

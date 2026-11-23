@@ -111,6 +111,13 @@ internal fun cleanLongText(value: String): String {
 internal fun Post.availableFullText(): String = listOf("full_text_raw", "longTextContent_raw", "longTextContent")
     .firstNotNullOfOrNull { data.optString(it).takeIf(String::isNotBlank) }?.let(::cleanLongText).orEmpty()
 
+internal fun Post.shouldShowLongTextToggle(fullText: String = availableFullText()): Boolean {
+    if (!longText) return false
+    val preview = text.trim()
+    if (fullText.isNotBlank()) return fullText.trim().length > preview.length
+    return images.size <= 9 || preview.length >= 140 || preview.endsWith("…") || preview.endsWith("...") || preview.endsWith("全文")
+}
+
 fun cleanRichHtml(html: String, preserveLineBreaks: Boolean = false): String {
     val doc = org.jsoup.Jsoup.parseBodyFragment(html)
     doc.select("img[alt]").forEach { it.replaceWith(org.jsoup.nodes.TextNode(it.attr("alt"))) }

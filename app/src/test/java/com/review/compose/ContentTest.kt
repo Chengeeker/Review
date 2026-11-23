@@ -283,6 +283,14 @@ class ContentTest {
         val post = parsePost(JSONObject("""{"id":"1","isLongText":true,"text_raw":"第一段。","longTextContent":"第一段。<br><br>第二段。"}"""))
         assertEquals("第一段。\n\n第二段。", post.availableFullText())
     }
+    @Test fun shortTextWithOverNinePhotosDoesNotClaimMissingFullText() {
+        val gallery = (1..10).map { Media("https://example.invalid/$it.jpg") }
+        val post = Post("1", "作者", text = "发不完根本发不完", images = gallery, longText = true)
+        assertFalse(post.shouldShowLongTextToggle())
+        assertTrue(post.shouldShowLongTextToggle("发不完根本发不完……更多内容"))
+        assertTrue(post.copy(images = gallery.take(9)).shouldShowLongTextToggle())
+        assertTrue(post.copy(text = "正文".repeat(70)).shouldShowLongTextToggle())
+    }
     @Test fun mixedMediaOrderAndCardMetadataSurviveSnapshots() {
         val post = parsePost(JSONObject("""{"id":"1","text_raw":"Text","user":{"screen_name":"A"},"mix_media_info":{"items":[{"type":"video","data":{"page_pic":"https://example.com/cover.jpg","media_info":{"stream_url":"https://example.com/video.mp4"}}},{"type":"pic","data":{"pic_info":{"largest":{"url":"https://example.com/photo.jpg","width":100,"height":200}}}}]},"url_struct":[{"url_type":39,"pic_url":"https://example.com/card.png","media_pic_url":"https://example.com/background.jpg","url_title":"Birthday"}]}"""))
         assertTrue(post.images[0].video.isNotBlank()); assertEquals(200, post.images[1].height)

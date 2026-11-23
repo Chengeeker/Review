@@ -53,8 +53,8 @@ fun PostBody(post: Post, detail: Boolean, gallery: (List<Media>, Int) -> Unit, q
     var loading by remember(post.id, cookie) { mutableStateOf(false) }
     var error by remember(post.id, cookie) { mutableStateOf<String?>(null) }
     var retry by remember(post.id, cookie) { mutableIntStateOf(0) }
-    LaunchedEffect(post.id, post.raw, post.longText, cookie, model.restoringWebSession, retry) {
-        if (!post.longText || post.demo || full.isNotBlank() || model.restoringWebSession) return@LaunchedEffect
+    LaunchedEffect(post.id, post.raw, post.longText, cookie, model.restoringWebSession, retry, detail) {
+        if (!post.longText || post.demo || full.isNotBlank() || model.restoringWebSession || (!detail && !post.shouldShowLongTextToggle(full))) return@LaunchedEffect
         loading = true; error = null
         try { full = model.repository.fullText(cookie, post.id) }
         catch (e: CancellationException) { throw e }
@@ -72,7 +72,7 @@ fun PostBody(post: Post, detail: Boolean, gallery: (List<Media>, Int) -> Unit, q
         }
     }
     if (quoted || text.isNotBlank()) RichText(if (quoted) "@${post.author}：$text" else text, post, style = MaterialTheme.typography.bodyLarge.copy(fontSize = font.sp, lineHeight = (font * model.number("postLine", 1.3f)).sp, color = if (quoted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface))
-    if (!detail && post.longText && (full.isBlank() || full.trim().length > post.text.trim().length)) {
+    if (!detail && post.shouldShowLongTextToggle(full)) {
         TextButton(onClick = hapticClick {
             if (full.isNotBlank()) expanded = !expanded
             else { expanded = true; if (!loading) retry++ }
