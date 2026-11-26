@@ -77,7 +77,7 @@ internal fun NavigationGlassChoice(
                 GlassChoiceIcon(GLASS_CHOICE_BLUR, MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
-                    GlassChoiceText("底栏玻璃样式", style = typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                    GlassChoiceText("液态玻璃样式", style = typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                     GlassChoiceText(if (translucent) "经典玻璃" else "通透磨砂", style = typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -93,7 +93,7 @@ internal fun NavigationGlassChoice(
                         window?.setWindowAnimations(R.style.UnifiedGlassChoiceAnimation)
                         window?.setDimAmount(.5f)
                     }
-                    GlassChoiceText("底栏玻璃样式", style = typography.headlineSmall)
+                    GlassChoiceText("液态玻璃样式", style = typography.headlineSmall)
                 },
                 text = {
                     Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()).selectableGroup()) {

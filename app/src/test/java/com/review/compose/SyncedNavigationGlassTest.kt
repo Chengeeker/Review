@@ -37,7 +37,7 @@ class SyncedNavigationGlassTest {
     fun glassNamesOrderAndSelectionMatchMaterials() {
         var clear by mutableStateOf(false)
         compose.setContent { androidx.compose.material3.MaterialTheme { NavigationGlassChoice(clear) { clear = it } } }
-        compose.onNodeWithText("底栏玻璃样式").performClick()
+        compose.onNodeWithText("液态玻璃样式").performClick()
         val frosted = compose.onNode(hasText("通透磨砂") and hasAnyAncestor(isDialog()))
         val classic = compose.onNode(hasText("经典玻璃") and hasAnyAncestor(isDialog()))
         frosted.assertIsSelected()
@@ -46,7 +46,7 @@ class SyncedNavigationGlassTest {
         compose.onNode(hasText("经典玻璃") and hasText("更多背景透出，对比度更低")).assertIsDisplayed()
         classic.performClick()
         compose.runOnIdle { assertTrue(clear) }
-        compose.onNodeWithText("底栏玻璃样式").performClick()
+        compose.onNodeWithText("液态玻璃样式").performClick()
         compose.onNode(hasText("经典玻璃") and hasAnyAncestor(isDialog())).assertIsSelected()
         compose.onNode(hasText("通透磨砂") and hasAnyAncestor(isDialog())).performClick()
         compose.runOnIdle { assertFalse(clear) }

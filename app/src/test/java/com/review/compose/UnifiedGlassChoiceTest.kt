@@ -63,7 +63,7 @@ class UnifiedGlassChoiceTest {
             textNode(text).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { assertTrue(it(layouts)) }
             assertEquals(expected * scale, layouts.single().layoutInput.style.fontSize.value, .01f)
         }
-        textStyle("底栏玻璃样式", 24f)
+        textStyle("液态玻璃样式", 24f)
         textStyle("通透磨砂", 16f)
         textStyle("经典玻璃", 16f)
         textStyle("底色更厚实，可读性更高", 14f)
@@ -83,7 +83,7 @@ class UnifiedGlassChoiceTest {
         for (night in listOf(false, true)) {
             compose.runOnIdle { dark = night }
             val metrics = JSONObject()
-            for (label in listOf("底栏玻璃样式", "通透磨砂", "经典玻璃", "底色更厚实，可读性更高", "更多背景透出，对比度更低", "取消")) {
+            for (label in listOf("液态玻璃样式", "通透磨砂", "经典玻璃", "底色更厚实，可读性更高", "更多背景透出，对比度更低", "取消")) {
                 val b = textNode(label).fetchSemanticsNode().boundsInRoot
                 metrics.put(label, listOf(b.left, b.top, b.right, b.bottom).joinToString(","))
             }
