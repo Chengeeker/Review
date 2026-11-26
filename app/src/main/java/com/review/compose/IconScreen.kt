@@ -27,7 +27,6 @@ import kotlinx.coroutines.launch
 private val iconResources = listOf(R.mipmap.ic_launcher, R.mipmap.ic_launcher_alias1, R.mipmap.ic_launcher_alias2)
 private val iconNames = listOf("官方默认", "质感经典", "活力新潮")
 fun appIconName(index: Int) = iconNames[index.coerceIn(0, 2)]
-private val iconDescriptions = listOf("Review 官方标准应用图标", "深邃内敛，经典雅致视觉", "灵动纯粹，现代美学设计")
 private fun iconComponents(context: Context) = listOf(".MainActivity", ".MainActivityAlias1", ".MainActivityAlias2").map { ComponentName(context.packageName, context.packageName + it) }
 
 fun switchAppIcon(context: Context, index: Int) {
@@ -68,7 +67,6 @@ fun IconScreen() {
                         Text("Review", fontSize = 18.sp, fontWeight = reviewWeight(FontWeight.Bold), letterSpacing = .2.sp); Spacer(Modifier.width(8.dp))
                         Text(iconNames[active], Modifier.background(colors.primaryContainer, RoundedCornerShape(6.dp)).padding(horizontal = 7.dp, vertical = 2.dp), color = colors.onPrimaryContainer, fontSize = 11.sp, fontWeight = reviewWeight(FontWeight.Bold))
                     }
-                    Spacer(Modifier.height(4.dp)); Text(iconDescriptions[active], fontSize = 14.sp, lineHeight = 18.2.sp, color = colors.onSurfaceVariant)
                 }
             }
         }
@@ -78,7 +76,7 @@ fun IconScreen() {
             Surface(Modifier.padding(bottom = 10.dp), color = colors.surfaceContainerLow, shape = RoundedCornerShape(24.dp), border = if (selected) BorderStroke(1.5.dp, colors.primary) else null) {
                 Row(Modifier.fillMaxWidth().heightIn(min = 84.dp).reviewClickable(enabled = !selected && !busy) { select(index) }.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Image(painterResource(resource), null, Modifier.size(48.dp).shadow(2.dp, RoundedCornerShape(12.dp)).clip(RoundedCornerShape(12.dp))); Spacer(Modifier.width(16.dp))
-                    Column(Modifier.weight(1f)) { Text(iconNames[index], fontSize = 16.sp, fontWeight = reviewWeight(FontWeight.SemiBold)); Text(iconDescriptions[index], fontSize = 14.sp, color = colors.onSurfaceVariant) }
+                    Column(Modifier.weight(1f)) { Text(iconNames[index], fontSize = 16.sp, fontWeight = reviewWeight(FontWeight.SemiBold)) }
                     Spacer(Modifier.width(12.dp))
                     if (selected) Row(Modifier.background(colors.primaryContainer, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.Check, null, Modifier.size(14.dp), tint = colors.primary); Spacer(Modifier.width(4.dp)); Text("使用中", fontSize = 12.sp, fontWeight = reviewWeight(FontWeight.Bold), color = colors.primary)
@@ -86,7 +84,6 @@ fun IconScreen() {
                 }
             }
         }
-        Spacer(Modifier.height(12.dp)); Text("💡 提示：内置官方预设图标不可删除，随时支持自由切换。切换后应用将一并同步关于页面等各处的应用图标展示。", Modifier.padding(horizontal = 8.dp), fontSize = 12.sp, lineHeight = 16.8.sp, color = colors.onSurfaceVariant.copy(alpha = .8f))
     }
     if (chosen in 0..2) ReviewAlertDialog(onDismissRequest = { if (!busy) chosen = -1 }, title = { Text("应用“${iconNames[chosen]}”") }, text = {
         Text("确定切换为“${iconNames[chosen]}”吗？\n\n⚠️ 提示：应用新图标需要结束应用进程以使手机桌面刷新图标。点击确认后将退出应用，请返回桌面查看全新图标。", fontSize = 13.5.sp, lineHeight = 19.575.sp)

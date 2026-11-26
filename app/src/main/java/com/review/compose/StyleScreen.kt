@@ -35,8 +35,8 @@ fun StyleScreen() {
                 SettingsCard {
                     ReviewListItem(headlineContent = { Text("时间显示模式", fontSize = 16.sp, fontWeight = reviewWeight(FontWeight.SemiBold)) }, supportingContent = { Text(if (model.option("timeMode", "relative") == "relative") "智能相对时间 (如3分钟前)" else "绝对时间 (如 2026-08-29 10:30)", fontSize = 14.sp) }, leadingContent = { Icon(Icons.Outlined.Schedule, null, tint = colors.primary) }, trailingContent = { Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent), modifier = Modifier.reviewClickable { expanded = !expanded })
                     AnimatedVisibility(expanded) { Column {
-                        listOf(Triple("relative", "智能相对时间", "显示“刚刚”、“3分钟前”、“昨天 15:30”等易读时间"), Triple("absolute", "绝对具体时间", "显示“2026-08-29 10:30”等具体年月日时间")).forEach { (value, title, subtitle) ->
-                            ReviewListItem(headlineContent = { Text(title, fontSize = 16.sp, fontWeight = reviewWeight(FontWeight.SemiBold)) }, supportingContent = { Text(subtitle, fontSize = 14.sp, lineHeight = 19.6.sp) }, leadingContent = { RadioButton(model.option("timeMode", "relative") == value, null) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent), modifier = Modifier.reviewClickable { model.setOption("timeMode", value) }.padding(vertical = 2.dp))
+                        listOf("relative" to "智能相对时间", "absolute" to "绝对具体时间").forEach { (value, title) ->
+                            ReviewListItem(headlineContent = { Text(title, fontSize = 16.sp, fontWeight = reviewWeight(FontWeight.SemiBold)) }, leadingContent = { RadioButton(model.option("timeMode", "relative") == value, null) }, colors = ListItemDefaults.colors(containerColor = Color.Transparent), modifier = Modifier.reviewClickable { model.setOption("timeMode", value) }.padding(vertical = 2.dp))
                         }
                         StyleSwitch("显示星期几 (如周五 / Friday)", "weekday")
                         StyleSwitch("显示具体年份 (跨年/强制显示)", "year")
@@ -56,14 +56,14 @@ fun StyleScreen() {
             }
             StyleSection("功能开关与视觉控制") {
                 SettingsCard {
-                    StyleSwitch("链接颜色跟随主题", "linkTheme", true, "使用当前个性化主题强调色作为超链接颜色")
+                    StyleSwitch("链接颜色跟随主题", "linkTheme", true)
                     StyleSwitch("同时显示备注和名字", "remark", subtitle = "如果存在好友备注，在名称旁标注备注")
-                    StyleSwitch("显示个人主页背景图", "postBackground", subtitle = "在个人主页顶部渲染博主自定义背景封面")
+                    StyleSwitch("显示个人主页背景图", "postBackground")
                     StyleSwitch("显示微博用户活动图标", "activityIcon", true, "在博主名称右侧展示认证徽章与活动标识")
                     StyleSwitch("大图片九宫格模式", "largeImages", true, "以大画幅高清展现九宫格图片")
-                    StyleSwitch("微博内图片圆角显示", "roundImages", true, "为正文中的九宫格图片与单图添加精致圆角")
+                    StyleSwitch("微博内图片圆角显示", "roundImages", true)
                     StyleSwitch("菜单键显示在底部", "menuBottom", true, "将卡片操作菜单（复制/收藏/屏蔽）置于底栏")
-                    StyleSwitch("主页显示赞过的微博", "profileLikes", subtitle = "在个人中心标签页展示点赞历史记录")
+                    StyleSwitch("主页显示赞过的微博", "profileLikes")
                 }
             }
         }

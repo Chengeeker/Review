@@ -76,8 +76,8 @@ fun ThemeScreen() {
         Spacer(Modifier.height(16.dp))
         FontSizeSetting(model.textScale, onCommit = model::updateTextScale)
         Spacer(Modifier.height(16.dp))
-        SettingsSection("底部导航") { ThemeToggle("使用悬浮底栏", "居中显示悬浮式导航栏", Icons.Outlined.Dock, model.bool("floating", true)) { model.setOption("floating", it) } }
-        SettingsSection("显示效果") { ThemeToggle("使用液态玻璃效果", "控制应用内液态玻璃控件效果", Icons.Outlined.BlurOn, model.bool("liquidGlass")) { model.setOption("liquidGlass", it) }
+        SettingsSection("底部导航") { ThemeToggle("使用悬浮底栏", "", Icons.Outlined.Dock, model.bool("floating", true)) { model.setOption("floating", it) } }
+        SettingsSection("显示效果") { ThemeToggle("使用液态玻璃效果", "", Icons.Outlined.BlurOn, model.bool("liquidGlass")) { model.setOption("liquidGlass", it) }
             if(model.bool("liquidGlass") && model.bool("floating", true)) NavigationGlassChoice(model.bool("translucentNavigationGlass", false), hapticsEnabled = model.bool("haptics", true)) { model.setOption("translucentNavigationGlass", it) }
         }
         SettingsSection("应用图标") { Preference("自定义应用图标", Icons.Outlined.AppShortcut, appIconName(model.number("icon", 0f).toInt())) { model.navigate("icons") } }
@@ -85,6 +85,6 @@ fun ThemeScreen() {
         if (Build.VERSION.SDK_INT >= 34) SettingsSection("手势与动效") {
             ThemeToggle("可预测性返回", "应用内页面随系统返回手势预览上一页", Icons.Outlined.Swipe, model.bool("predictiveBack")) { model.setOption("predictiveBack", it) }
         }
-        SettingsSection("触感与震动") { ThemeToggle("触感与震动反馈", "点击、长按和完成指定手势时轻振一次", Icons.Outlined.Vibration, model.bool("haptics", true)) { model.setOption("haptics", it) } }
+        SettingsSection("触感与震动") { ThemeToggle("触感与震动反馈", "", Icons.Outlined.Vibration, model.bool("haptics", true)) { model.setOption("haptics", it) } }
     }
 }
