@@ -259,11 +259,9 @@ internal fun VideoPlayerContent(player: Player, media: Media, active: Boolean, c
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = if (liveLayer && (!visible || !renderedFrame)) 0f else 1f }) { video() }
         if (!liveLayer && !initialized && error == null && media.url.isNotBlank()) MediaImage(media, "视频封面", Modifier.fillMaxSize(), fit = true, backgroundColor = Color.Black)
         if (controlsEnabled) Box(Modifier.matchParentSize().testTag("video-gestures").pointerInput(player, fullscreen) {
-            detectTapGestures(onTap = {
-                pulse(); controls = !controls; timer++; if (!fullscreen) onToggleChrome()
-            }, onDoubleTap = { point ->
+            var longPressHandled = false
+            detectTapGestures(onTap = {}, onDoubleTap = { point ->
                 if (initialized) {
-                    pulse()
                     when {
                         point.x < width * .35f || point.x > width * .65f -> {
                             val forward = point.x > width * .65f
@@ -275,9 +273,15 @@ internal fun VideoPlayerContent(player: Player, media: Media, active: Boolean, c
                     timer++
                 }
             }, onLongPress = { point ->
+                longPressHandled = true
                 if (initialized && (point.x < width * .45f || point.x > width * .55f)) { pulse(); fast = true; player.setPlaybackSpeed(2f) }
             }, onPress = {
-                try { tryAwaitRelease() } finally { if (fast) { fast = false; player.setPlaybackSpeed(speed); timer++ } }
+                longPressHandled = false
+                try {
+                    if (tryAwaitRelease() && !longPressHandled) {
+                        pulse(); controls = !controls; timer++; if (!fullscreen) onToggleChrome()
+                    }
+                } finally { if (fast) { fast = false; player.setPlaybackSpeed(speed); timer++ } }
             })
         }.pointerInput(player) {
             detectVerticalDragGestures(onDragStart = { point ->

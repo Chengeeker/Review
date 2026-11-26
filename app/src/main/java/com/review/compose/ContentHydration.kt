@@ -37,7 +37,7 @@ fun mergeStatusMedia(old: List<Media>, fresh: List<Media>): List<Media> {
             return@forEach
         }
         val index = merged.indexOfFirst {
-            it.video == media.video && (commentImageIdentity(it.url) == commentImageIdentity(media.url) ||
+            (it.video == media.video || it.live && media.live) && (it.url.isNotBlank() && commentImageIdentity(it.url) == commentImageIdentity(media.url) ||
                 it.card && media.card && it.cardLink.isNotBlank() && it.cardLink == media.cardLink)
         }
         if (index < 0) merged += media else {

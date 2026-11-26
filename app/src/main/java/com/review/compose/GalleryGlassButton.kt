@@ -44,6 +44,7 @@ fun glassButtonStretch(drag: Offset): FloatArray {
 fun GalleryGlassButton(icon: ImageVector, label: String, enabled: Boolean = true, busy: Boolean = false, click: () -> Unit) {
     val model = LocalReview.current
     val liquid = model.bool("liquidGlass")
+    val translucent = model.bool("translucentNavigationGlass", false)
     if (!liquid) {
         PlainGalleryControl(label, enabled, hapticClick(click)) {
             if (busy) CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
@@ -98,7 +99,7 @@ fun GalleryGlassButton(icon: ImageVector, label: String, enabled: Boolean = true
             scaleX = scale * stretch[0]; scaleY = scale * stretch[1]
             transformOrigin = TransformOrigin(stretch[2], stretch[3])
             translationX = stretch[4] * density; translationY = stretch[5] * density
-        }.liquidBackdrop(Color(0x66000000), pressed = growth, button = true), contentAlignment = Alignment.Center) {
+        }.liquidBackdrop(Color.Black.copy(alpha = if (translucent) .4f else .75f), pressed = growth, blur = 2.dp, button = true), contentAlignment = Alignment.Center) {
             if (busy) CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
             else Icon(icon, null, Modifier.size(22.dp), tint = Color.White)
         }

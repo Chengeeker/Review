@@ -80,7 +80,8 @@ fun parseComment(o: JSONObject, inherited: Set<String> = emptySet(), depth: Int 
         if (url.isBlank() || identity in inherited || pictures.any { commentImageIdentity(it.url) == identity }) return
         val uri = runCatching { java.net.URI(url) }.getOrNull() ?: return
         if (!(uri.host.endsWith(".sinaimg.cn") || Regex("\\.(jpg|jpeg|png|gif|webp|bmp|heic)([?#]|$)", RegexOption.IGNORE_CASE).containsMatchIn(url))) return
-        pictures += pictureMedia(info ?: JSONObject(), url)
+        val media = pictureMedia(info ?: JSONObject(), url)
+        pictures += if (media.gif) media else media.copy(url = highQualityPreviewUrl(media.url))
     }
     add(o.opt("pic")); o.optJSONArray("pics").objects().forEach(::add)
     o.optJSONObject("pic_infos")?.let { infos -> infos.keys().forEach { add(infos.opt(it)) } }
@@ -168,11 +169,15 @@ fun parsePost(o: JSONObject, depth: Int = 0): Post {
     }
     media += images.filterNot { image -> media.any { it.url == image.url } }
     if (!o.has("retweeted_status") && media.none { it.video.isNotBlank() && !it.live }) o.optJSONObject("page_info")?.let(::videoMedia)?.let { media += it }
+    val liveFids = infos?.keys()?.asSequence()?.mapNotNull { key ->
+        infos.optJSONObject(key)?.takeIf { it.optString("type") == "livephoto" }?.optString("fid")?.takeIf { it.matches(Regex("[0-9]+")) }
+    }?.toSet().orEmpty()
     links.filter { !o.has("retweeted_status") || statusReferencesLink(o, it) }
+        .filterNot { link -> videoObjectId(link.optString("long_url"))?.substringAfter(':') in liveFids }
         .mapNotNull(::linkedVideo).forEach(media::mergeVideo)
     for (image in embeddedMedia(o)) {
-        val existing = media.indexOfFirst { it.video.isBlank() && commentImageIdentity(it.url) == commentImageIdentity(image.url) }
-        if (existing < 0) media += image else media[existing] = if (image.card) image else image.copy(url = media[existing].url)
+        val existing = media.indexOfFirst { (it.video.isBlank() || it.live) && commentImageIdentity(it.url) == commentImageIdentity(image.url) }
+        if (existing < 0) media += image else if (!media[existing].live) media[existing] = if (image.card) image else image.copy(url = media[existing].url)
     }
     var text = o.optString("text_raw").ifEmpty { cleanRichHtml(o.optString("text")) }
     for (link in links) {

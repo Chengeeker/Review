@@ -277,9 +277,11 @@ class VideoPlayerTest {
         compose.onNodeWithTag("video-top-controls").assertDoesNotExist()
         val surface = compose.onNodeWithTag("video-gestures")
         surface.performTouchInput { click(center) }
+        compose.onNodeWithTag("video-bottom-controls").assertDoesNotExist()
+        assertEquals(1, chromeTaps)
         compose.mainClock.advanceTimeBy(350)
         surface.performTouchInput { click(center) }
-        compose.mainClock.advanceTimeBy(350)
+        compose.onNodeWithTag("video-bottom-controls").assertExists()
         assertEquals(2, chromeTaps)
         val previous = compose.activity.window.attributes.screenBrightness
         surface.performTouchInput { swipe(androidx.compose.ui.geometry.Offset(width * .2f, height * .6f), androidx.compose.ui.geometry.Offset(width * .2f, height * .25f), 500) }

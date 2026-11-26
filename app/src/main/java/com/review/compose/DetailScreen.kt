@@ -212,6 +212,7 @@ private fun DetailCapsule(modifier: Modifier, content: @Composable () -> Unit) {
     val colors = MaterialTheme.colorScheme
     val dark = colors.surface.luminance() < .5f
     val glass = LocalBackdrop.current != null
+    val translucent = LocalReview.current.bool("translucentNavigationGlass", false)
     val shape = RoundedCornerShape(24.dp)
     Surface(modifier, shape = shape, color = when {
         glass -> Color.Transparent
@@ -221,7 +222,9 @@ private fun DetailCapsule(modifier: Modifier, content: @Composable () -> Unit) {
         shadowElevation = if (glass) 0.dp else 2.dp) {
         Box {
             if (glass) Box(Modifier.matchParentSize().liquidBackdrop(
-                if (dark) Color.Black.copy(alpha = .4f) else Color.White.copy(alpha = 240f / 255f), blur = 1.5.dp))
+                (if (dark) Color.Black else if (translucent) Color(0xFFF5F5F5) else Color.White)
+                    .copy(alpha = if (!translucent) .75f else if (dark) .4f else .42f),
+                blur = if (translucent && !dark) 6.dp else 2.dp))
             content()
         }
     }

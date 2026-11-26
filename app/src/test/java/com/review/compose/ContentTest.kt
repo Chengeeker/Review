@@ -11,15 +11,28 @@ import java.time.LocalDateTime
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class ContentTest {
-    @Test fun commentPhotoPagesResolveOnlyTrustedImages() {
-        val page = "https://photo.weibo.com/h5/comment/compic_id/1022:2305974e19620d09b6e958141338527c378046"
+    @Test fun livePhotoLinksAreNotSeparateVideosAndRefreshDoesNotDuplicatePhotos() {
+        val json = JSONObject("""{"id":"1","pic_ids":["a"],"pic_infos":{"a":{"type":"livephoto","fid":"123456","video":"https://video.weibo.com/media/play?livephoto=one","largest":{"url":"https://wx1.sinaimg.cn/large/a.jpg"}}},"url_struct":[{"long_url":"https://video.weibo.com/show?fid=2376046001:123456"},{"long_url":"https://video.weibo.com/show?fid=2376046001:999999"}]}""")
+        val post = parsePost(json)
+        assertEquals(2, post.images.size)
+        assertTrue(post.images.first().live)
+        val refreshed = post.images.first().copy(video = "https://video.weibo.com/media/play?livephoto=renewed")
+        assertEquals(2, mergeStatusMedia(post.images, listOf(refreshed)).size)
+    }
+    @Test fun commentPhotoPagesAndMediaUseTrustedHighResolutionSources() {
+        val page = "https://photo.weibo.com/h5/comment/compic_id/1022:23144788a40e27e269ae15639eaaf0024adb93"
         assertTrue(isCommentPhotoPage(page))
+        assertTrue(isCommentPhotoPage("https://photo.weibo.com/h5/comment/compic_id/1022:2305974e19620d09b6e958141338527c378046"))
         assertFalse(isCommentPhotoPage(page.replace("photo.weibo.com", "photo.weibo.com.example.org")))
         assertFalse(isCommentPhotoPage("https://photo.weibo.com/h5/comment/compic_id/invalid"))
         val image = "https://wx1.sinaimg.cn/bmiddle/006AMmvKgy1ij1y25qoijj32c0340npd.jpg"
-        assertEquals(image, commentPhotoImage("<div class='img-box'><img src='$image'></div>"))
+        val largeImage = image.replace("/bmiddle/", "/orj960/")
+        assertEquals(largeImage, commentPhotoImage("<div class='img-box'><img src='$image'></div>"))
         assertNull(commentPhotoImage("<div class='img-box'><img src='https://evil.example/a.jpg'></div>"))
         assertNull(commentPhotoImage("<title>登录</title>"))
+        assertEquals(largeImage, parseComment(JSONObject().put("id", "1").put("pic", image)).images.single().url)
+        val gif = "https://wx1.sinaimg.cn/bmiddle/animation.gif"
+        assertEquals(gif, parseComment(JSONObject().put("id", "2").put("pic", gif)).images.single().url)
     }
     @Test fun officialWebLinksReuseNativeDestinations() {
         assertEquals("place:8008644030000000000", officialWebRoute("https://weibo.com/p/1001018008644030000000000"))
