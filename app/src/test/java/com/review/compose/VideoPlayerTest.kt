@@ -279,7 +279,6 @@ class VideoPlayerTest {
         surface.performTouchInput { click(center) }
         compose.onNodeWithTag("video-bottom-controls").assertDoesNotExist()
         assertEquals(1, chromeTaps)
-        compose.mainClock.advanceTimeBy(350)
         surface.performTouchInput { click(center) }
         compose.onNodeWithTag("video-bottom-controls").assertExists()
         assertEquals(2, chromeTaps)
@@ -406,6 +405,7 @@ class VideoPlayerTest {
                 "setPlaybackSpeed" -> { speed = args!![0] as Float; speeds += speed; null }
                 "prepare" -> { listeners.toList().forEach { it.onPlaybackStateChanged(state) }; null }
                 "setVolume" -> null
+                "getVideoSize" -> androidx.media3.common.VideoSize.UNKNOWN
                 "hashCode" -> System.identityHashCode(proxy)
                 "equals" -> args?.firstOrNull() === proxy
                 "toString" -> "ControlledPlayer"
